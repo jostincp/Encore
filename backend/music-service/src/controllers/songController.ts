@@ -1,0 +1,651 @@
+import { Request, Response } from 'express';
+import { SongModel, CreateSongData, UpdateSongData, SongSearchFilters } from '../models/Song';
+import { YouTubeService } from '../services/youtubeService';
+import { SpotifyService } from '../services/spotifyService';
+import { handleControllerError } from '../../../shared/utils/errors';
+import { logger } from '../../../shared/utils/logger';
+import { validatePagination } from '../../../shared/utils/validation';
+import { AuthenticatedRequest } from '../../../shared/types/auth';
+
+export class SongController {
+  // Create a new song
+  static async createSong(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const songData: CreateSongData = req.body;
+      
+      // Validate external IDs if provided
+      if (songData.youtube_id) {
+        const isValidYouTube = await YouTubeService.validateVideoId(songData.youtube_id);
+        if (!isValidYouTube) {
+          res.status(400).json({
+            success: false,
+            message: 'Invalid YouTube video ID'
+          });
+          return;
+        }
+      }
+      
+      if (songData.spotify_id) {
+        const isValidSpotify = await SpotifyService.validateTrackId(songData.spotify_id);
+        if (!isValidSpotify) {
+          res.status(400).json({
+            success: false,
+            message: 'Invalid Spotify track ID'
+          });
+          return;
+        }
+      }
+      
+      const song = await SongModel.create(songData);
+      
+      logger.info('Song created via API', {
+        songId: song.id,
+        title: song.title,
+        userId: req.user?.id
+      });
+      
+      res.status(201).json({
+        success: true,
+        data: song
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to create song');
+    }
+  }
+  
+  // Get song by ID
+  static async getSongById(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      
+      const song = await SongModel.findById(id);
+      
+      if (!song) {
+        res.status(404).json({
+          success: false,
+          message: 'Song not found'
+        });
+        return;
+      }
+      
+      res.json({
+        success: true,
+        data: song
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to get song');
+    }
+  }
+  
+  // Search songs
+  static async searchSongs(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        q: query,
+        source,
+        genre,
+        duration_min,
+        duration_max,
+        available_only,
+        sort_by,
+        sort_order,
+        page = 1,
+        limit = 25
+      } = req.query;
+      
+      const { offset, validatedLimit } = validatePagination(
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+      
+      const filters: SongSearchFilters = {};
+      
+      if (query) filters.query = query as string;
+      if (source) filters.source = source as 'youtube' | 'spotify' | 'both';
+      if (genre) filters.genre = genre as string;
+      if (duration_min) filters.duration_min = parseInt(duration_min as string);
+      if (duration_max) filters.duration_max = parseInt(duration_max as string);
+      if (available_only) filters.available_only = available_only === 'true';
+      if (sort_by) filters.sort_by = sort_by as 'popularity' | 'title' | 'artist' | 'duration' | 'created_at';
+      if (sort_order) filters.sort_order = sort_order as 'asc' | 'desc';
+      
+      const result = await SongModel.search(filters, validatedLimit, offset);
+      
+      res.json({
+        success: true,
+        data: result.items,
+        pagination: {
+          page: parseInt(page as string),
+          limit: validatedLimit,
+          total: result.total,
+          pages: Math.ceil(result.total / validatedLimit)
+        }
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to search songs');
+    }
+  }
+  
+  // Update song
+  static async updateSong(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const updateData: UpdateSongData = req.body;
+      
+      // Validate external IDs if provided
+      if (updateData.youtube_id) {
+        const isValidYouTube = await YouTubeService.validateVideoId(updateData.youtube_id);
+        if (!isValidYouTube) {
+          res.status(400).json({
+            success: false,
+            message: 'Invalid YouTube video ID'
+          });
+          return;
+        }
+      }
+      
+      if (updateData.spotify_id) {
+        const isValidSpotify = await SpotifyService.validateTrackId(updateData.spotify_id);
+        if (!isValidSpotify) {
+          res.status(400).json({
+            success: false,
+            message: 'Invalid Spotify track ID'
+          });
+          return;
+        }
+      }
+      
+      const song = await SongModel.update(id, updateData);
+      
+      if (!song) {
+        res.status(404).json({
+          success: false,
+          message: 'Song not found'
+        });
+        return;
+      }
+      
+      logger.info('Song updated via API', {
+        songId: id,
+        updatedFields: Object.keys(updateData),
+        userId: req.user?.id
+      });
+      
+      res.json({
+        success: true,
+        data: song
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to update song');
+    }
+  }
+  
+  // Delete song
+  static async deleteSong(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      
+      const deleted = await SongModel.delete(id);
+      
+      if (!deleted) {
+        res.status(404).json({
+          success: false,
+          message: 'Song not found'
+        });
+        return;
+      }
+      
+      logger.info('Song deleted via API', {
+        songId: id,
+        userId: req.user?.id
+      });
+      
+      res.json({
+        success: true,
+        message: 'Song deleted successfully'
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to delete song');
+    }
+  }
+  
+  // Get popular songs
+  static async getPopularSongs(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        genre,
+        days = 30,
+        page = 1,
+        limit = 25
+      } = req.query;
+      
+      const { offset, validatedLimit } = validatePagination(
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+      
+      const songs = await SongModel.getPopularSongs(
+        parseInt(days as string),
+        genre as string,
+        validatedLimit,
+        offset
+      );
+      
+      res.json({
+        success: true,
+        data: songs
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to get popular songs');
+    }
+  }
+  
+  // Get recent songs
+  static async getRecentSongs(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        page = 1,
+        limit = 25
+      } = req.query;
+      
+      const { offset, validatedLimit } = validatePagination(
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+      
+      const songs = await SongModel.getRecentSongs(validatedLimit, offset);
+      
+      res.json({
+        success: true,
+        data: songs
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to get recent songs');
+    }
+  }
+  
+  // Search YouTube
+  static async searchYouTube(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        q: query,
+        page = 1,
+        limit = 25
+      } = req.query;
+      
+      if (!query) {
+        res.status(400).json({
+          success: false,
+          message: 'Query parameter is required'
+        });
+        return;
+      }
+      
+      const { offset, validatedLimit } = validatePagination(
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+      
+      const results = await YouTubeService.searchSongs(
+        query as string,
+        validatedLimit,
+        offset
+      );
+      
+      res.json({
+        success: true,
+        data: results.videos,
+        pagination: {
+          page: parseInt(page as string),
+          limit: validatedLimit,
+          total: results.total,
+          pages: Math.ceil(results.total / validatedLimit)
+        }
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to search YouTube');
+    }
+  }
+  
+  // Search Spotify
+  static async searchSpotify(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        q: query,
+        page = 1,
+        limit = 25
+      } = req.query;
+      
+      if (!query) {
+        res.status(400).json({
+          success: false,
+          message: 'Query parameter is required'
+        });
+        return;
+      }
+      
+      const { offset, validatedLimit } = validatePagination(
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+      
+      const results = await SpotifyService.searchTracks(
+        query as string,
+        validatedLimit,
+        offset
+      );
+      
+      res.json({
+        success: true,
+        data: results.tracks,
+        pagination: {
+          page: parseInt(page as string),
+          limit: validatedLimit,
+          total: results.total,
+          pages: Math.ceil(results.total / validatedLimit)
+        }
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to search Spotify');
+    }
+  }
+  
+  // Get YouTube video details
+  static async getYouTubeDetails(req: Request, res: Response): Promise<void> {
+    try {
+      const { videoId } = req.params;
+      
+      const details = await YouTubeService.getVideoDetails(videoId);
+      
+      if (!details) {
+        res.status(404).json({
+          success: false,
+          message: 'YouTube video not found'
+        });
+        return;
+      }
+      
+      res.json({
+        success: true,
+        data: details
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to get YouTube video details');
+    }
+  }
+  
+  // Get Spotify track details
+  static async getSpotifyDetails(req: Request, res: Response): Promise<void> {
+    try {
+      const { trackId } = req.params;
+      
+      const details = await SpotifyService.getTrackDetails(trackId);
+      
+      if (!details) {
+        res.status(404).json({
+          success: false,
+          message: 'Spotify track not found'
+        });
+        return;
+      }
+      
+      res.json({
+        success: true,
+        data: details
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to get Spotify track details');
+    }
+  }
+  
+  // Get trending music from YouTube
+  static async getTrendingYouTube(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        region = 'US',
+        page = 1,
+        limit = 25
+      } = req.query;
+      
+      const { offset, validatedLimit } = validatePagination(
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+      
+      const results = await YouTubeService.getTrendingMusic(
+        region as string,
+        validatedLimit,
+        offset
+      );
+      
+      res.json({
+        success: true,
+        data: results
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to get trending YouTube music');
+    }
+  }
+  
+  // Get Spotify featured playlists
+  static async getSpotifyFeatured(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        country = 'US',
+        page = 1,
+        limit = 20
+      } = req.query;
+      
+      const { offset, validatedLimit } = validatePagination(
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+      
+      const results = await SpotifyService.getFeaturedPlaylists(
+        validatedLimit,
+        offset,
+        country as string
+      );
+      
+      res.json({
+        success: true,
+        data: results.playlists,
+        pagination: {
+          page: parseInt(page as string),
+          limit: validatedLimit,
+          total: results.total,
+          pages: Math.ceil(results.total / validatedLimit)
+        }
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to get Spotify featured playlists');
+    }
+  }
+  
+  // Get Spotify new releases
+  static async getSpotifyNewReleases(req: Request, res: Response): Promise<void> {
+    try {
+      const {
+        country = 'US',
+        page = 1,
+        limit = 20
+      } = req.query;
+      
+      const { offset, validatedLimit } = validatePagination(
+        parseInt(page as string),
+        parseInt(limit as string)
+      );
+      
+      const results = await SpotifyService.getNewReleases(
+        validatedLimit,
+        offset,
+        country as string
+      );
+      
+      res.json({
+        success: true,
+        data: results
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to get Spotify new releases');
+    }
+  }
+  
+  // Import song from external service
+  static async importSong(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { source, external_id } = req.body;
+      
+      if (!source || !external_id) {
+        res.status(400).json({
+          success: false,
+          message: 'Source and external_id are required'
+        });
+        return;
+      }
+      
+      let songData: CreateSongData;
+      
+      if (source === 'youtube') {
+        const details = await YouTubeService.getVideoDetails(external_id);
+        if (!details) {
+          res.status(404).json({
+            success: false,
+            message: 'YouTube video not found'
+          });
+          return;
+        }
+        
+        songData = {
+          title: details.title,
+          artist: details.artist,
+          duration: details.duration,
+          youtube_id: details.id,
+          thumbnail_url: details.thumbnail_url,
+          genre: 'Unknown' // Could be enhanced with genre detection
+        };
+      } else if (source === 'spotify') {
+        const details = await SpotifyService.getTrackDetails(external_id);
+        if (!details) {
+          res.status(404).json({
+            success: false,
+            message: 'Spotify track not found'
+          });
+          return;
+        }
+        
+        songData = {
+          title: details.title,
+          artist: details.artist,
+          duration: details.duration,
+          spotify_id: details.id,
+          thumbnail_url: details.thumbnail_url,
+          genre: details.genres[0] || 'Unknown'
+        };
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid source. Must be "youtube" or "spotify"'
+        });
+        return;
+      }
+      
+      // Check if song already exists
+      let existingSong = null;
+      if (source === 'youtube') {
+        existingSong = await SongModel.findByYouTubeId(external_id);
+      } else if (source === 'spotify') {
+        existingSong = await SongModel.findBySpotifyId(external_id);
+      }
+      
+      if (existingSong) {
+        res.json({
+          success: true,
+          data: existingSong,
+          message: 'Song already exists in database'
+        });
+        return;
+      }
+      
+      const song = await SongModel.create(songData);
+      
+      logger.info('Song imported via API', {
+        songId: song.id,
+        source,
+        external_id,
+        title: song.title,
+        userId: req.user?.id
+      });
+      
+      res.status(201).json({
+        success: true,
+        data: song,
+        message: 'Song imported successfully'
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to import song');
+    }
+  }
+  
+  // Mark song as unavailable
+  static async markUnavailable(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+      
+      const song = await SongModel.markAsUnavailable(id, reason);
+      
+      if (!song) {
+        res.status(404).json({
+          success: false,
+          message: 'Song not found'
+        });
+        return;
+      }
+      
+      logger.info('Song marked as unavailable via API', {
+        songId: id,
+        reason,
+        userId: req.user?.id
+      });
+      
+      res.json({
+        success: true,
+        data: song,
+        message: 'Song marked as unavailable'
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to mark song as unavailable');
+    }
+  }
+  
+  // Mark song as available
+  static async markAvailable(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      
+      const song = await SongModel.markAsAvailable(id);
+      
+      if (!song) {
+        res.status(404).json({
+          success: false,
+          message: 'Song not found'
+        });
+        return;
+      }
+      
+      logger.info('Song marked as available via API', {
+        songId: id,
+        userId: req.user?.id
+      });
+      
+      res.json({
+        success: true,
+        data: song,
+        message: 'Song marked as available'
+      });
+    } catch (error) {
+      handleControllerError(error, res, 'Failed to mark song as available');
+    }
+  }
+}

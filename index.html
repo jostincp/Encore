@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encore - Sistema Integral para Bares y Restaurantes</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Landing Page -->
+    <div id="landing-page" class="page active">
+        <div class="landing-container">
+            <div class="landing-header">
+                <h1 class="landing-title">🎵 Encore</h1>
+                <p class="landing-subtitle">Sistema Integral para Bares y Restaurantes</p>
+            </div>
+            <div class="role-selection">
+                <button type="button" class="role-card" data-role="cliente" tabindex="0">
+                    <div class="role-icon">📱</div>
+                    <h3>Cliente</h3>
+                    <p>Acceso móvil optimizado para pedir música y ver el menú</p>
+                </button>
+                <button type="button" class="role-card" data-role="admin" tabindex="0">
+                    <div class="role-icon">🎛️</div>
+                    <h3>Administrador</h3>
+                    <p>Panel de control completo para gestión del bar</p>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cliente Mobile Interface -->
+    <div id="cliente-page" class="page">
+        <!-- Mobile Header -->
+        <div class="mobile-header">
+            <button type="button" class="home-btn" onclick="goToHome()">← Inicio</button>
+            <div class="user-info">
+                <span>Mesa 7 | </span>
+                <span class="points-display">⭐ 185 puntos</span>
+            </div>
+        </div>
+
+        <!-- Mobile Navigation -->
+        <nav class="mobile-nav">
+            <button type="button" class="nav-item active" data-section="scanner">
+                <span class="nav-icon">📸</span>
+                <span class="nav-label">Scanner</span>
+            </button>
+            <button type="button" class="nav-item" data-section="buscar">
+                <span class="nav-icon">🔍</span>
+                <span class="nav-label">Buscar</span>
+            </button>
+            <button type="button" class="nav-item" data-section="cola">
+                <span class="nav-icon">🎵</span>
+                <span class="nav-label">Mi Cola</span>
+            </button>
+            <button type="button" class="nav-item" data-section="menu">
+                <span class="nav-icon">🍽️</span>
+                <span class="nav-label">Menú</span>
+            </button>
+            <button type="button" class="nav-item" data-section="puntos">
+                <span class="nav-icon">⭐</span>
+                <span class="nav-label">Puntos</span>
+            </button>
+        </nav>
+
+        <!-- Scanner Section -->
+        <div class="mobile-section active" data-section="scanner">
+            <div class="section-header">
+                <h2>Escanear QR para Música</h2>
+            </div>
+            <div class="qr-scanner">
+                <div class="scanner-frame">
+                    <div class="scanner-line"></div>
+                    <div class="scanner-corners"></div>
+                </div>
+                <p class="scanner-text">Posiciona el código QR dentro del marco</p>
+                <button type="button" class="btn btn--primary simulate-scan">Simular Escaneo</button>
+            </div>
+        </div>
+
+        <!-- Buscar Música Section -->
+        <div class="mobile-section" data-section="buscar">
+            <div class="section-header">
+                <h2>Buscar Música</h2>
+                <div class="search-bar">
+                    <input type="text" class="form-control search-input" placeholder="Buscar canciones, artistas...">
+                </div>
+            </div>
+            <div class="genre-filters">
+                <button type="button" class="genre-btn active" data-genre="all">Todos</button>
+                <button type="button" class="genre-btn" data-genre="Pop">Pop</button>
+                <button type="button" class="genre-btn" data-genre="Rock">Rock</button>
+                <button type="button" class="genre-btn" data-genre="Reggaeton">Reggaeton</button>
+                <button type="button" class="genre-btn" data-genre="Hip Hop">Hip Hop</button>
+            </div>
+            <div class="songs-list" id="songs-list">
+                <!-- Songs will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Mi Cola Section -->
+        <div class="mobile-section" data-section="cola">
+            <div class="section-header">
+                <h2>Mi Cola Personal</h2>
+                <div class="queue-stats">
+                    <span>0 canciones | Tiempo estimado: 0 min</span>
+                </div>
+            </div>
+            <div class="personal-queue" id="personal-queue">
+                <!-- Personal queue will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Menú Digital Section -->
+        <div class="mobile-section" data-section="menu">
+            <div class="section-header">
+                <h2>Menú Digital</h2>
+                <div class="menu-filters">
+                    <button type="button" class="menu-filter-btn active" data-category="all">Todos</button>
+                    <button type="button" class="menu-filter-btn" data-category="Bebidas">Bebidas</button>
+                    <button type="button" class="menu-filter-btn" data-category="Cócteles">Cócteles</button>
+                    <button type="button" class="menu-filter-btn" data-category="Comida">Comida</button>
+                </div>
+            </div>
+            <div class="menu-items" id="menu-items">
+                <!-- Menu items will be populated by JavaScript -->
+            </div>
+            <div class="cart-summary" id="cart-summary">
+                <button type="button" class="cart-button" style="display: none;">
+                    <span>🛒 Carrito (0)</span>
+                    <span class="cart-total">$0</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Puntos Section -->
+        <div class="mobile-section" data-section="puntos">
+            <div class="section-header">
+                <h2>Mis Puntos</h2>
+            </div>
+            <div class="points-overview">
+                <div class="points-card">
+                    <div class="points-total">
+                        <span class="points-number">185</span>
+                        <span class="points-label">Puntos Disponibles</span>
+                    </div>
+                    <div class="points-actions">
+                        <button type="button" class="btn btn--primary">Canjear por Canción (50 pts)</button>
+                    </div>
+                </div>
+                <div class="points-history">
+                    <h3>Historial Reciente</h3>
+                    <div class="history-item">
+                        <span>+20 pts - Compra Cerveza IPA</span>
+                        <span class="history-time">14:30</span>
+                    </div>
+                    <div class="history-item">
+                        <span>-50 pts - Canción: Blinding Lights</span>
+                        <span class="history-time">14:25</span>
+                    </div>
+                    <div class="history-item">
+                        <span>+30 pts - Compra Mojito</span>
+                        <span class="history-time">14:15</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Desktop Interface -->
+    <div id="admin-page" class="page">
+        <!-- Admin Header -->
+        <header class="admin-header">
+            <div class="admin-nav">
+                <h1 class="admin-title" onclick="goToHome()" style="cursor: pointer;">🎛️ Encore Admin</h1>
+                <nav class="admin-menu">
+                    <button type="button" class="admin-nav-item active" data-admin-section="dashboard">Dashboard</button>
+                    <button type="button" class="admin-nav-item" data-admin-section="queue">Cola Global</button>
+                    <button type="button" class="admin-nav-item" data-admin-section="stats">Estadísticas</button>
+                    <button type="button" class="admin-nav-item" data-admin-section="menu-admin">Gestión Menú</button>
+                    <button type="button" class="admin-nav-item" data-admin-section="config">Configuración</button>
+                </nav>
+            </div>
+        </header>
+
+        <!-- Dashboard Section -->
+        <div class="admin-section active" data-admin-section="dashboard">
+            <div class="dashboard-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">🍽️</div>
+                    <div class="stat-content">
+                        <div class="stat-number">15</div>
+                        <div class="stat-label">Mesas Activas</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🎵</div>
+                    <div class="stat-content">
+                        <div class="stat-number">47</div>
+                        <div class="stat-label">Canciones Hoy</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-content">
+                        <div class="stat-number">$2,840</div>
+                        <div class="stat-label">Ingresos Hoy</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⏱️</div>
+                    <div class="stat-content">
+                        <div class="stat-number">8 min</div>
+                        <div class="stat-label">Tiempo Promedio</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="dashboard-widgets">
+                <div class="widget now-playing">
+                    <h3>Reproduciendo Ahora</h3>
+                    <div class="current-song">
+                        <div class="song-info">
+                            <div class="song-title">Blinding Lights</div>
+                            <div class="song-artist">The Weeknd</div>
+                        </div>
+                        <div class="playback-controls">
+                            <button type="button" class="control-btn">⏮️</button>
+                            <button type="button" class="control-btn">⏸️</button>
+                            <button type="button" class="control-btn">⏭️</button>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 65%"></div>
+                    </div>
+                </div>
+                
+                <div class="widget quick-stats">
+                    <h3>Género Más Popular</h3>
+                    <div class="genre-chart">
+                        <div class="genre-bar">
+                            <span>Pop</span>
+                            <div class="bar">
+                                <div class="bar-fill" style="width: 45%"></div>
+                            </div>
+                            <span>45%</span>
+                        </div>
+                        <div class="genre-bar">
+                            <span>Rock</span>
+                            <div class="bar">
+                                <div class="bar-fill" style="width: 30%"></div>
+                            </div>
+                            <span>30%</span>
+                        </div>
+                        <div class="genre-bar">
+                            <span>Reggaeton</span>
+                            <div class="bar">
+                                <div class="bar-fill" style="width: 25%"></div>
+                            </div>
+                            <span>25%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cola Global Section -->
+        <div class="admin-section" data-admin-section="queue">
+            <div class="queue-header">
+                <h2>Gestión Cola Global</h2>
+                <div class="queue-controls">
+                    <button type="button" class="btn btn--primary">▶️ Reproducir</button>
+                    <button type="button" class="btn btn--secondary">⏸️ Pausar</button>
+                    <button type="button" class="btn btn--outline">🔀 Aleatorio</button>
+                </div>
+            </div>
+            <div class="global-queue" id="global-queue">
+                <!-- Global queue will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Estadísticas Section -->
+        <div class="admin-section" data-admin-section="stats">
+            <div class="stats-header">
+                <h2>Estadísticas Detalladas</h2>
+                <div class="stats-filters">
+                    <select class="form-control">
+                        <option>Hoy</option>
+                        <option>Esta Semana</option>
+                        <option>Este Mes</option>
+                    </select>
+                </div>
+            </div>
+            <div class="stats-grid">
+                <div class="stats-chart">
+                    <canvas id="revenueChart" style="position: relative; height: 300px;"></canvas>
+                </div>
+                <div class="popular-items">
+                    <h3>Items Más Populares</h3>
+                    <div class="popular-list">
+                        <div class="popular-item">
+                            <span>🍺 Cerveza Artesanal IPA</span>
+                            <span class="popular-count">23 ventas</span>
+                        </div>
+                        <div class="popular-item">
+                            <span>🍹 Mojito Clásico</span>
+                            <span class="popular-count">18 ventas</span>
+                        </div>
+                        <div class="popular-item">
+                            <span>🍔 Hamburguesa Gourmet</span>
+                            <span class="popular-count">15 ventas</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gestión Menú Section -->
+        <div class="admin-section" data-admin-section="menu-admin">
+            <div class="menu-admin-header">
+                <h2>Gestión de Menú</h2>
+                <button type="button" class="btn btn--primary">+ Agregar Item</button>
+            </div>
+            <div class="admin-menu-grid" id="admin-menu-items">
+                <!-- Admin menu items will be populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Configuración Section -->
+        <div class="admin-section" data-admin-section="config">
+            <div class="config-header">
+                <h2>Configuración del Sistema</h2>
+            </div>
+            <div class="config-grid">
+                <div class="config-card">
+                    <h3>Configuración de Música</h3>
+                    <div class="form-group">
+                        <label class="form-label">Costo por Canción (puntos)</label>
+                        <input type="number" class="form-control" value="50">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Tiempo máximo de cola (min)</label>
+                        <input type="number" class="form-control" value="30">
+                    </div>
+                </div>
+                <div class="config-card">
+                    <h3>Sistema de Puntos</h3>
+                    <div class="form-group">
+                        <label class="form-label">Puntos por $1 de compra</label>
+                        <input type="number" class="form-control" value="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Bono por primera compra</label>
+                        <input type="number" class="form-control" value="100">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Cart -->
+    <div id="cart-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Carrito de Compras</h3>
+                <button type="button" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="cart-items">
+                <!-- Cart items will be populated by JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn--outline modal-close">Cancelar</button>
+                <button type="button" class="btn btn--primary" id="confirm-order">Confirmar Pedido</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Global Functions -->
+    <script>
+        function goToHome() {
+            console.log('Going to home...');
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById('landing-page').classList.add('active');
+        }
+        
+        function selectRole(role) {
+            console.log('Role selected:', role);
+            
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            
+            if (role === 'cliente') {
+                document.getElementById('cliente-page').classList.add('active');
+            } else if (role === 'admin') {
+                document.getElementById('admin-page').classList.add('active');
+            }
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

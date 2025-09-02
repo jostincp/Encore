@@ -1,0 +1,366 @@
+import { Request, Response } from 'express';
+import { 
+  asyncHandler, 
+  sendSuccess, 
+  sendError, 
+  ValidationError, 
+  NotFoundError, 
+  ForbiddenError,
+  BadRequestError
+} from '../../../shared/utils/errors';
+import { AuthenticatedRequest } from '../../../shared/utils/jwt';
+import { validateEmail, validateNonEmptyString } from '../../../shared/utils/validation';
+import { UserModel } from '../models/User';
+import { logger } from '../../../shared/utils/logger';
+import { User } from '../../../shared/types';
+
+/**
+ * Get all users (admin only)
+ */
+export const getUsers = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const userRole = req.user?.role;
+  
+  if (userRole !== 'admin') {
+    throw new ForbiddenError('Acceso denegado');
+  }
+
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const role = req.query.role as string;
+  const search = req.query.search as string;
+  const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+
+  const filters: any = {};
+  if (role) filters.role = role;
+  if (search) filters.search = search;
+  if (isActive !== undefined) filters.isActive = isActive;
+
+  const result = await UserModel.findMany({
+    page,
+    limit,
+    filters
+  });
+
+  sendSuccess(res, {
+    users: result.users,
+    pagination: result.pagination
+  }, 'Usuarios obtenidos exitosamente');
+});
+
+/**
+ * Get user by ID
+ */
+export const getUserById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const currentUserId = req.user?.userId;
+  const currentUserRole = req.user?.role;
+
+  if (!id) {
+    throw new BadRequestError('ID de usuario requerido');
+  }
+
+  // Users can only view their own profile unless they are admin
+  if (currentUserRole !== 'admin' && currentUserId !== id) {
+    throw new ForbiddenError('Acceso denegado');
+  }
+
+  const user = await UserModel.findById(id);
+  if (!user) {
+    throw new NotFoundError('Usuario no encontrado');
+  }
+
+  sendSuccess(res, {
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      isEmailVerified: user.isEmailVerified,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    }
+  }, 'Usuario obtenido exitosamente');
+});
+
+/**
+ * Update user profile
+ */
+export const updateUser = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const currentUserId = req.user?.userId;
+  const currentUserRole = req.user?.role;
+  const { firstName, lastName, email } = req.body;
+
+  if (!id) {
+    throw new BadRequestError('ID de usuario requerido');
+  }
+
+  // Users can only update their own profile unless they are admin
+  if (currentUserRole !== 'admin' && currentUserId !== id) {
+    throw new ForbiddenError('Acceso denegado');
+  }
+
+  // Validate input
+  const updateData: any = {};
+  
+  if (firstName !== undefined) {
+    if (!validateNonEmptyString(firstName)) {
+      throw new ValidationError('Nombre inválido');
+    }
+    updateData.firstName = firstName;
+  }
+
+  if (lastName !== undefined) {
+    if (!validateNonEmptyString(lastName)) {
+      throw new ValidationError('Apellido inválido');
+    }
+    updateData.lastName = lastName;
+  }
+
+  if (email !== undefined) {
+    if (!validateEmail(email)) {
+      throw new ValidationError('Email inválido');
+    }
+    
+    // Check if email is already taken by another user
+    const existingUser = await UserModel.findByEmail(email);
+    if (existingUser && existingUser.id !== id) {
+      throw new ValidationError('El email ya está en uso');
+    }
+    
+    updateData.email = email;
+    updateData.isEmailVerified = false; // Reset email verification if email changes
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    throw new BadRequestError('No hay datos para actualizar');
+  }
+
+  const updatedUser = await UserModel.update(id, updateData);
+  if (!updatedUser) {
+    throw new NotFoundError('Usuario no encontrado');
+  }
+
+  logger.info('User updated', { userId: id, updatedBy: currentUserId });
+
+  sendSuccess(res, {
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      firstName: updatedUser.firstName,
+      lastName: updatedUser.lastName,
+      role: updatedUser.role,
+      isEmailVerified: updatedUser.isEmailVerified,
+      isActive: updatedUser.isActive,
+      createdAt: updatedUser.createdAt,
+      updatedAt: updatedUser.updatedAt
+    }
+  }, 'Usuario actualizado exitosamente');
+});
+
+/**
+ * Deactivate user (admin only)
+ */
+export const deactivateUser = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const currentUserId = req.user?.userId;
+  const currentUserRole = req.user?.role;
+
+  if (!id) {
+    throw new BadRequestError('ID de usuario requerido');
+  }
+
+  if (currentUserRole !== 'admin') {
+    throw new ForbiddenError('Acceso denegado');
+  }
+
+  // Prevent admin from deactivating themselves
+  if (currentUserId === id) {
+    throw new BadRequestError('No puedes desactivar tu propia cuenta');
+  }
+
+  const success = await UserModel.deactivate(id);
+  if (!success) {
+    throw new NotFoundError('Usuario no encontrado');
+  }
+
+  logger.info('User deactivated', { userId: id, deactivatedBy: currentUserId });
+
+  sendSuccess(res, null, 'Usuario desactivado exitosamente');
+});
+
+/**
+ * Activate user (admin only)
+ */
+export const activateUser = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const currentUserId = req.user?.userId;
+  const currentUserRole = req.user?.role;
+
+  if (!id) {
+    throw new BadRequestError('ID de usuario requerido');
+  }
+
+  if (currentUserRole !== 'admin') {
+    throw new ForbiddenError('Acceso denegado');
+  }
+
+  const updatedUser = await UserModel.update(id, { isActive: true });
+  if (!updatedUser) {
+    throw new NotFoundError('Usuario no encontrado');
+  }
+
+  logger.info('User activated', { userId: id, activatedBy: currentUserId });
+
+  sendSuccess(res, {
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      firstName: updatedUser.firstName,
+      lastName: updatedUser.lastName,
+      role: updatedUser.role,
+      isEmailVerified: updatedUser.isEmailVerified,
+      isActive: updatedUser.isActive,
+      createdAt: updatedUser.createdAt,
+      updatedAt: updatedUser.updatedAt
+    }
+  }, 'Usuario activado exitosamente');
+});
+
+/**
+ * Delete user (admin only)
+ */
+export const deleteUser = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const currentUserId = req.user?.userId;
+  const currentUserRole = req.user?.role;
+
+  if (!id) {
+    throw new BadRequestError('ID de usuario requerido');
+  }
+
+  if (currentUserRole !== 'admin') {
+    throw new ForbiddenError('Acceso denegado');
+  }
+
+  // Prevent admin from deleting themselves
+  if (currentUserId === id) {
+    throw new BadRequestError('No puedes eliminar tu propia cuenta');
+  }
+
+  const success = await UserModel.delete(id);
+  if (!success) {
+    throw new NotFoundError('Usuario no encontrado');
+  }
+
+  logger.info('User deleted', { userId: id, deletedBy: currentUserId });
+
+  sendSuccess(res, null, 'Usuario eliminado exitosamente');
+});
+
+/**
+ * Update user role (admin only)
+ */
+export const updateUserRole = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { role } = req.body;
+  const currentUserId = req.user?.userId;
+  const currentUserRole = req.user?.role;
+
+  if (!id) {
+    throw new BadRequestError('ID de usuario requerido');
+  }
+
+  if (currentUserRole !== 'admin') {
+    throw new ForbiddenError('Acceso denegado');
+  }
+
+  if (!role || !['customer', 'bar_owner', 'admin'].includes(role)) {
+    throw new ValidationError('Rol inválido');
+  }
+
+  // Prevent admin from changing their own role
+  if (currentUserId === id) {
+    throw new BadRequestError('No puedes cambiar tu propio rol');
+  }
+
+  const updatedUser = await UserModel.update(id, { role });
+  if (!updatedUser) {
+    throw new NotFoundError('Usuario no encontrado');
+  }
+
+  logger.info('User role updated', { userId: id, newRole: role, updatedBy: currentUserId });
+
+  sendSuccess(res, {
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      firstName: updatedUser.firstName,
+      lastName: updatedUser.lastName,
+      role: updatedUser.role,
+      isEmailVerified: updatedUser.isEmailVerified,
+      isActive: updatedUser.isActive,
+      createdAt: updatedUser.createdAt,
+      updatedAt: updatedUser.updatedAt
+    }
+  }, 'Rol de usuario actualizado exitosamente');
+});
+
+/**
+ * Get user statistics (admin only)
+ */
+export const getUserStats = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  const currentUserRole = req.user?.role;
+
+  if (currentUserRole !== 'admin') {
+    throw new ForbiddenError('Acceso denegado');
+  }
+
+  // Get user counts by role
+  const customerResult = await UserModel.findMany({ 
+    page: 1, 
+    limit: 1, 
+    filters: { role: 'customer' } 
+  });
+  
+  const barOwnerResult = await UserModel.findMany({ 
+    page: 1, 
+    limit: 1, 
+    filters: { role: 'bar_owner' } 
+  });
+  
+  const adminResult = await UserModel.findMany({ 
+    page: 1, 
+    limit: 1, 
+    filters: { role: 'admin' } 
+  });
+
+  const activeResult = await UserModel.findMany({ 
+    page: 1, 
+    limit: 1, 
+    filters: { isActive: true } 
+  });
+
+  const inactiveResult = await UserModel.findMany({ 
+    page: 1, 
+    limit: 1, 
+    filters: { isActive: false } 
+  });
+
+  sendSuccess(res, {
+    stats: {
+      total: customerResult.pagination.total + barOwnerResult.pagination.total + adminResult.pagination.total,
+      byRole: {
+        customers: customerResult.pagination.total,
+        barOwners: barOwnerResult.pagination.total,
+        admins: adminResult.pagination.total
+      },
+      byStatus: {
+        active: activeResult.pagination.total,
+        inactive: inactiveResult.pagination.total
+      }
+    }
+  }, 'Estadísticas de usuarios obtenidas exitosamente');
+});

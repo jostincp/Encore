@@ -1,0 +1,354 @@
+# =============================================================================
+# Encore Analytics Service - Git Ignore Configuration
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Environment & Configuration Files
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.staging
+config/local.json
+config/production.json
+config/development.json
+config/test.json
+
+# -----------------------------------------------------------------------------
+# Dependencies
+# -----------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+.yarn/
+.npm/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# -----------------------------------------------------------------------------
+# Build Output
+# -----------------------------------------------------------------------------
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.vite/
+*.tsbuildinfo
+.tsbuildinfo
+
+# -----------------------------------------------------------------------------
+# Runtime & Process Files
+# -----------------------------------------------------------------------------
+*.pid
+*.seed
+*.pid.lock
+.DS_Store
+Thumbs.db
+
+# -----------------------------------------------------------------------------
+# Logs
+# -----------------------------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+combined.log
+error.log
+access.log
+app.log
+
+# -----------------------------------------------------------------------------
+# Coverage & Testing
+# -----------------------------------------------------------------------------
+coverage/
+*.lcov
+.nyc_output/
+junit.xml
+test-results/
+.jest/
+
+# -----------------------------------------------------------------------------
+# Temporary Files
+# -----------------------------------------------------------------------------
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# -----------------------------------------------------------------------------
+# Storage & Uploads
+# -----------------------------------------------------------------------------
+storage/
+uploads/
+reports/
+files/
+static/uploads/
+public/uploads/
+
+# -----------------------------------------------------------------------------
+# Database Files
+# -----------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db3
+database.json
+db.json
+
+# -----------------------------------------------------------------------------
+# IDE & Editor Files
+# -----------------------------------------------------------------------------
+
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Atom
+.atom/
+
+# -----------------------------------------------------------------------------
+# Operating System Files
+# -----------------------------------------------------------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# -----------------------------------------------------------------------------
+# Docker
+# -----------------------------------------------------------------------------
+.dockerignore
+docker-compose.override.yml
+.docker/
+
+# -----------------------------------------------------------------------------
+# Kubernetes
+# -----------------------------------------------------------------------------
+*.kubeconfig
+kube-config
+
+# -----------------------------------------------------------------------------
+# SSL Certificates
+# -----------------------------------------------------------------------------
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+certs/
+ssl/
+
+# -----------------------------------------------------------------------------
+# Backup Files
+# -----------------------------------------------------------------------------
+*.bak
+*.backup
+*.old
+*.orig
+
+# -----------------------------------------------------------------------------
+# Archive Files
+# -----------------------------------------------------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# -----------------------------------------------------------------------------
+# Runtime Configuration
+# -----------------------------------------------------------------------------
+.pm2/
+ecosystem.config.js
+process.json
+
+# -----------------------------------------------------------------------------
+# Monitoring & Analytics
+# -----------------------------------------------------------------------------
+.newrelic.js
+newrelic_agent.log
+
+# -----------------------------------------------------------------------------
+# Security & Secrets
+# -----------------------------------------------------------------------------
+secrets/
+*.secret
+*.private
+auth.json
+credentials.json
+service-account.json
+
+# -----------------------------------------------------------------------------
+# Cache Directories
+# -----------------------------------------------------------------------------
+.cache/
+.npm/
+.eslintcache
+.stylelintcache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# -----------------------------------------------------------------------------
+# Miscellaneous
+# -----------------------------------------------------------------------------
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.vscode-test
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# -----------------------------------------------------------------------------
+# Custom Application Files
+# -----------------------------------------------------------------------------
+
+# Analytics specific
+analytics-data/
+metrics-cache/
+report-cache/
+event-logs/
+
+# Generated reports
+*.csv
+*.xlsx
+*.pdf
+reports/*.json
+
+# Queue data
+queue-data/
+job-logs/
+
+# WebSocket logs
+ws-logs/
+socket-logs/
+
+# Performance monitoring
+performance-logs/
+profile-*.log
+
+# -----------------------------------------------------------------------------
+# Development Tools
+# -----------------------------------------------------------------------------
+.storybook/
+storybook-static/
+.chromatic/
+
+# -----------------------------------------------------------------------------
+# Deployment
+# -----------------------------------------------------------------------------
+.vercel
+.netlify
+.firebase/
+.firebaserc
+firebase.json
+
+# -----------------------------------------------------------------------------
+# Documentation Build
+# -----------------------------------------------------------------------------
+docs/build/
+docs/.vuepress/dist/
+.docusaurus/
+
+# -----------------------------------------------------------------------------
+# Keep These Files (Exceptions)
+# -----------------------------------------------------------------------------
+!.gitkeep
+!.env.example
+!.dockerignore.example
+!README.md
+!CHANGELOG.md
+!LICENSE
+!docs/
+!scripts/
+!migrations/
+!seeds/

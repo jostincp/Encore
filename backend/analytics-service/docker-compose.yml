@@ -1,0 +1,337 @@
+# =============================================================================
+# Encore Analytics Service - Docker Compose Configuration
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Analytics Service - Main Application
+  # ---------------------------------------------------------------------------
+  analytics-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        BUILD_DATE: ${BUILD_DATE:-}
+        VCS_REF: ${VCS_REF:-}
+        VERSION: ${VERSION:-latest}
+    container_name: encore-analytics
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-3003}:3003"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - SERVER_PORT=3003
+      - SERVER_HOST=0.0.0.0
+      # Database
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-encore_analytics}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      # Queue Redis
+      - QUEUE_REDIS_HOST=redis
+      - QUEUE_REDIS_PORT=6379
+      - QUEUE_REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      # Security
+      - JWT_SECRET=${JWT_SECRET}
+      - SESSION_SECRET=${SESSION_SECRET}
+    volumes:
+      - analytics_storage:/app/storage
+      - analytics_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - encore_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.analytics.rule=Host(`analytics.encore.local`)"
+      - "traefik.http.services.analytics.loadbalancer.server.port=3003"
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: encore-analytics-db
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=${DB_NAME:-encore_analytics}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - encore_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-encore_analytics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+
+  # ---------------------------------------------------------------------------
+  # Redis Cache & Queue
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: encore-analytics-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - encore_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+
+  # ---------------------------------------------------------------------------
+  # Development Services (Optional)
+  # ---------------------------------------------------------------------------
+  
+  # Analytics Service - Development Mode
+  analytics-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: encore-analytics-dev
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-3003}:3003"
+      - "9229:9229"  # Debug port
+    environment:
+      - NODE_ENV=development
+      - SERVER_PORT=3003
+      - SERVER_HOST=0.0.0.0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-encore_analytics}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET:-dev_secret}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - analytics_storage:/app/storage
+      - analytics_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - encore_network
+    profiles:
+      - development
+
+  # ---------------------------------------------------------------------------
+  # Monitoring & Observability
+  # ---------------------------------------------------------------------------
+  
+  # Prometheus - Metrics Collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: encore-analytics-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - encore_network
+    profiles:
+      - monitoring
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  # Grafana - Metrics Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: encore-analytics-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - encore_network
+    profiles:
+      - monitoring
+    depends_on:
+      - prometheus
+
+  # Redis Commander - Redis GUI
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: encore-analytics-redis-gui
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    networks:
+      - encore_network
+    profiles:
+      - development
+      - monitoring
+    depends_on:
+      - redis
+
+  # pgAdmin - PostgreSQL GUI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: encore-analytics-pgadmin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@encore.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - encore_network
+    profiles:
+      - development
+      - monitoring
+    depends_on:
+      - postgres
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  encore_network:
+    driver: bridge
+    name: encore_network
+    external: false
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  # Application data
+  analytics_storage:
+    driver: local
+    name: encore_analytics_storage
+  
+  analytics_logs:
+    driver: local
+    name: encore_analytics_logs
+  
+  # Database data
+  postgres_data:
+    driver: local
+    name: encore_analytics_postgres
+  
+  redis_data:
+    driver: local
+    name: encore_analytics_redis
+  
+  # Monitoring data
+  prometheus_data:
+    driver: local
+    name: encore_analytics_prometheus
+  
+  grafana_data:
+    driver: local
+    name: encore_analytics_grafana
+  
+  pgadmin_data:
+    driver: local
+    name: encore_analytics_pgadmin
+
+# =============================================================================
+# Usage Examples:
+# =============================================================================
+#
+# Start production services:
+# docker-compose up -d
+#
+# Start development services:
+# docker-compose --profile development up -d
+#
+# Start with monitoring:
+# docker-compose --profile monitoring up -d
+#
+# Start everything:
+# docker-compose --profile development --profile monitoring up -d
+#
+# View logs:
+# docker-compose logs -f analytics-service
+#
+# Scale analytics service:
+# docker-compose up -d --scale analytics-service=3
+#
+# Stop all services:
+# docker-compose down
+#
+# Stop and remove volumes:
+# docker-compose down -v
+#
+# Rebuild and start:
+# docker-compose up -d --build
+#
+# =============================================================================

@@ -1,0 +1,66 @@
+{
+  "name": "encore-platform",
+  "version": "1.0.0",
+  "description": "Encore - Plataforma integral para bares y restaurantes - Sistema de rockola digital y menú interactivo",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend/auth-service",
+    "backend/music-service",
+    "backend/queue-service",
+    "backend/points-service",
+    "backend/menu-service",
+    "backend/analytics-service"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "concurrently \"npm run dev:auth\" \"npm run dev:music\" \"npm run dev:queue\" \"npm run dev:points\" \"npm run dev:menu\" \"npm run dev:analytics\"",
+    "dev:auth": "cd backend/auth-service && npm run dev",
+    "dev:music": "cd backend/music-service && npm run dev",
+    "dev:queue": "cd backend/queue-service && npm run dev",
+    "dev:points": "cd backend/points-service && npm run dev",
+    "dev:menu": "cd backend/menu-service && npm run dev",
+    "dev:analytics": "cd backend/analytics-service && npm run dev",
+    "build": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "npm run build:auth && npm run build:music && npm run build:queue && npm run build:points && npm run build:menu && npm run build:analytics",
+    "build:auth": "cd backend/auth-service && npm run build",
+    "build:music": "cd backend/music-service && npm run build",
+    "build:queue": "cd backend/queue-service && npm run build",
+    "build:points": "cd backend/points-service && npm run build",
+    "build:menu": "cd backend/menu-service && npm run build",
+    "build:analytics": "cd backend/analytics-service && npm run build",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend/auth-service && npm install && cd ../music-service && npm install && cd ../queue-service && npm install && cd ../points-service && npm install && cd ../menu-service && npm install && cd ../analytics-service && npm install",
+    "clean": "rimraf frontend/dist frontend/.next backend/*/dist backend/*/build",
+    "lint": "cd frontend && npm run lint",
+    "type-check": "cd frontend && npm run type-check"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "rimraf": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  },
+  "keywords": [
+    "encore",
+    "restaurant",
+    "bar",
+    "digital-jukebox",
+    "menu",
+    "pwa",
+    "react",
+    "nextjs",
+    "typescript",
+    "microservices"
+  ],
+  "author": "Encore Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}
