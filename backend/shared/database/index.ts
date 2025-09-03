@@ -1,25 +1,24 @@
-import { Pool, PoolClient, QueryResult } from 'pg';
+import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { logger } from '../utils/logger';
+import logger from '../utils/logger';
 import { config } from '../config';
+import { initializeSQLite, sqliteQuery, closeSQLite } from './sqlite';
 
 // Database connection pool
 let pool: Pool | null = null;
+let usingSQLite = false;
 
 /**
  * Initialize database connection pool
  */
 export const initializeDatabase = async (): Promise<void> => {
   try {
+    // Try PostgreSQL first
     pool = new Pool({
-      host: config.database.host,
-      port: config.database.port,
-      database: config.database.name,
-      user: config.database.user,
-      password: config.database.password,
-      ssl: config.database.ssl ? { rejectUnauthorized: false } : false,
-      max: config.database.maxConnections,
+      connectionString: config.database.url,
+      ssl: config.nodeEnv === 'production' ? { rejectUnauthorized: false } : false,
+      max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,
     });
@@ -29,10 +28,21 @@ export const initializeDatabase = async (): Promise<void> => {
     await client.query('SELECT NOW()');
     client.release();
 
-    logger.info('Database connection pool initialized successfully');
+    logger.info('PostgreSQL database connection pool initialized successfully');
+    usingSQLite = false;
   } catch (error) {
-    logger.error('Failed to initialize database connection pool:', error);
-    throw error;
+    logger.warn('PostgreSQL connection failed, falling back to SQLite:', error);
+    
+    // Close PostgreSQL pool if it was created
+    if (pool) {
+      await pool.end();
+      pool = null;
+    }
+    
+    // Initialize SQLite as fallback
+    await initializeSQLite();
+    usingSQLite = true;
+    logger.info('SQLite database initialized as fallback');
   }
 };
 
@@ -40,6 +50,9 @@ export const initializeDatabase = async (): Promise<void> => {
  * Get database connection pool
  */
 export const getPool = (): Pool => {
+  if (usingSQLite) {
+    throw new Error('Cannot get PostgreSQL pool when using SQLite. Use query() function instead.');
+  }
   if (!pool) {
     throw new Error('Database pool not initialized. Call initializeDatabase() first.');
   }
@@ -50,7 +63,9 @@ export const getPool = (): Pool => {
  * Close database connection pool
  */
 export const closeDatabase = async (): Promise<void> => {
-  if (pool) {
+  if (usingSQLite) {
+    await closeSQLite();
+  } else if (pool) {
     await pool.end();
     pool = null;
     logger.info('Database connection pool closed');
@@ -60,10 +75,21 @@ export const closeDatabase = async (): Promise<void> => {
 /**
  * Execute a query with parameters
  */
-export const query = async <T = any>(
+export const query = async <T extends QueryResultRow = any>(
   text: string,
   params?: any[]
 ): Promise<QueryResult<T>> => {
+  if (usingSQLite) {
+    const result = await sqliteQuery<T>(text, params || []);
+    return {
+      rows: result.rows,
+      rowCount: result.rowCount,
+      command: '',
+      oid: 0,
+      fields: []
+    } as QueryResult<T>;
+  }
+  
   const client = await getPool().connect();
   try {
     const start = Date.now();
@@ -196,7 +222,7 @@ export const dbOperations = {
   /**
    * Find record by ID
    */
-  findById: async <T = any>(table: string, id: string): Promise<T | null> => {
+  findById: async <T extends QueryResultRow = any>(table: string, id: string): Promise<T | null> => {
     const result = await query<T>(
       `SELECT * FROM ${table} WHERE id = $1`,
       [id]
@@ -207,7 +233,7 @@ export const dbOperations = {
   /**
    * Find records by field
    */
-  findByField: async <T = any>(
+  findByField: async <T extends QueryResultRow = any>(
     table: string,
     field: string,
     value: any
@@ -222,7 +248,7 @@ export const dbOperations = {
   /**
    * Find one record by conditions
    */
-  findOne: async <T = any>(
+  findOne: async <T extends QueryResultRow = any>(
     table: string,
     conditions: Record<string, any>
   ): Promise<T | null> => {
@@ -240,7 +266,7 @@ export const dbOperations = {
   /**
    * Find many records with pagination
    */
-  findMany: async <T = any>(
+  findMany: async <T extends QueryResultRow = any>(
     table: string,
     conditions: Record<string, any> = {},
     options: {
@@ -280,7 +306,7 @@ export const dbOperations = {
   /**
    * Create new record
    */
-  create: async <T = any>(
+  create: async <T extends QueryResultRow = any>(
     table: string,
     data: Record<string, any>
   ): Promise<T> => {
@@ -299,7 +325,7 @@ export const dbOperations = {
   /**
    * Update record by ID
    */
-  update: async <T = any>(
+  update: async <T extends QueryResultRow = any>(
     table: string,
     id: string,
     data: Record<string, any>
@@ -329,7 +355,7 @@ export const dbOperations = {
   /**
    * Soft delete (set is_active = false)
    */
-  softDelete: async <T = any>(
+  softDelete: async <T extends QueryResultRow = any>(
     table: string,
     id: string
   ): Promise<T | null> => {
@@ -342,5 +368,5 @@ export const dbOperations = {
 };
 
 // Export everything
-export * from '../utils/database';
-export { Pool, PoolClient, QueryResult } from 'pg';
+export { Pool } from 'pg';
+export type { PoolClient, QueryResult } from 'pg';

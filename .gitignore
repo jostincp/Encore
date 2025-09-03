@@ -144,20 +144,52 @@ backend/*/.env
 backend/*/.env.local
 backend/*/.env.production
 backend/*/.env.test
+build/
+dist/
+*.env
+*.env.local
+*.env.development.local
+*.env.test.local
+*.env.production.local
 
 # Database
 *.sqlite
 *.sqlite3
 *.db
+data/
+database/
+
+# Cache and memory files
+cache/
+memory-cache/
+*.cache
+.cache/
+redis-dump.rdb
+
+# Service-specific build outputs
+auth-service/build/
+music-service/build/
+queue-service/build/
+analytics-service/build/
+points-service/build/
+menu-service/build/
+
+# Test coverage
+coverage/
+.nyc_output/
+*.lcov
 
 # Temporary files
 *.tmp
 *.temp
+.tmp/
+.temp/
 
 # Package files
 *.tar.gz
 *.zip
 *.rar
+*.tgz
 
 # Editor directories and files
 .vscode/
@@ -167,6 +199,17 @@ backend/*/.env.test
 *.njsproj
 *.sln
 *.sw?
+*.swp
+*.swo
+*~
+
+# Project specific
+.encore/
+shared/cache/
+shared/data/
+backend/*/data/
+frontend/.next/
+frontend/out/
 
 # Local development
 .local

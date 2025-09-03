@@ -1,9 +1,9 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import pointsRoutes from './points';
 import paymentsRoutes from './payments';
-import { logger } from '../../../shared/utils/logger';
+import logger from '../../../shared/utils/logger';
 
-const router = Router();
+const router: Router = Router();
 
 // Health check endpoint
 router.get('/health', (req, res) => {

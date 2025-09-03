@@ -129,9 +129,12 @@ export interface ApiResponse<T = any> {
 }
 export interface SocketEvent {
     type: string;
-    payload: any;
+    data?: any;
+    payload?: any;
     barId: string;
     tableId?: string;
+    userId?: string;
+    timestamp?: Date;
 }
 export interface QueueUpdateEvent extends SocketEvent {
     type: 'queue_updated';
@@ -148,6 +151,7 @@ export interface SongRequestEvent extends SocketEvent {
 }
 export interface PointsUpdateEvent extends SocketEvent {
     type: 'points_updated';
+    userId?: string;
     payload: {
         pointsBalance: number;
         transaction: PointsTransaction;

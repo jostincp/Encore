@@ -1,6 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import { logInfo, logError, logWarn, CreateDailySpecialData, UpdateDailySpecialData } from '../types/shared';
+import { logInfo, logError, logWarn, CreateDailySpecialData, UpdateDailySpecialData, DailySpecialData } from '../types/shared';
 
 // Interfaces
 export interface MenuItemData {
@@ -114,23 +114,7 @@ export interface PaginatedMenuResult {
   totalPages: number;
 }
 
-export interface DailySpecialData {
-  id: string;
-  bar_id: string;
-  menu_item_id: string;
-  special_price?: number;
-  description?: string;
-  valid_from: Date;
-  valid_until: Date;
-  is_active: boolean;
-  created_at: Date;
-  updated_at: Date;
-  // Joined data from menu_items
-  item_name?: string;
-  item_description?: string;
-  original_price?: number;
-  item_image_url?: string;
-}
+
 
 export interface MenuStats {
   total_items: number;

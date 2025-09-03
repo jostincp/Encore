@@ -1,5 +1,5 @@
-import { database } from '../../../shared/database';
-import { logger } from '../../../shared/utils/logger';
+import { query, findById, findByField, findOne, update, deleteById } from '../../../shared/database';
+import logger from '../../../shared/utils/logger';
 import { ValidationError, NotFoundError } from '../../../shared/utils/errors';
 import { validateRequired, validateString, validateNumber, validateUrl } from '../../../shared/utils/validation';
 import { ID, Timestamp } from '../../../shared/types';
@@ -117,7 +117,7 @@ export class SongModel {
       }
       
       // Check for duplicate songs (same title and artist)
-      const existingSong = await database.findOne(
+      const existingSong = await findOne(
         'songs',
         'title = $1 AND artist = $2',
         [songData.title.trim(), songData.artist.trim()]
@@ -127,7 +127,7 @@ export class SongModel {
         throw new ValidationError('A song with this title and artist already exists');
       }
       
-      const query = `
+      const queryStr = `
         INSERT INTO songs (
           title, artist, album, duration, youtube_id, spotify_id,
           youtube_url, spotify_url, thumbnail_url, preview_url,
@@ -155,7 +155,7 @@ export class SongModel {
         songData.metadata ? JSON.stringify(songData.metadata) : null
       ];
       
-      const result = await database.query(query, values);
+      const result = await query(queryStr, values);
       const song = result.rows[0] as SongData;
       
       logger.info(`Song created: ${song.title} by ${song.artist}`, { songId: song.id });
@@ -168,7 +168,7 @@ export class SongModel {
   
   static async findById(id: ID): Promise<SongData | null> {
     try {
-      return await database.findById('songs', id) as SongData | null;
+      return await findById('songs', id) as SongData | null;
     } catch (error) {
       logger.error('Error finding song by ID:', error);
       throw error;
@@ -177,7 +177,7 @@ export class SongModel {
   
   static async findByYouTubeId(youtubeId: string): Promise<SongData | null> {
     try {
-      return await database.findByField('songs', 'youtube_id', youtubeId) as SongData | null;
+      return await findByField('songs', 'youtube_id', youtubeId) as SongData | null;
     } catch (error) {
       logger.error('Error finding song by YouTube ID:', error);
       throw error;
@@ -186,7 +186,7 @@ export class SongModel {
   
   static async findBySpotifyId(spotifyId: string): Promise<SongData | null> {
     try {
-      return await database.findByField('songs', 'spotify_id', spotifyId) as SongData | null;
+      return await findByField('songs', 'spotify_id', spotifyId) as SongData | null;
     } catch (error) {
       logger.error('Error finding song by Spotify ID:', error);
       throw error;
@@ -272,7 +272,7 @@ export class SongModel {
       
       // Get total count
       const countQuery = `SELECT COUNT(*) FROM songs WHERE ${whereClause}`;
-      const countResult = await database.query(countQuery, values);
+      const countResult = await query(countQuery, values);
       const total = parseInt(countResult.rows[0]?.count || '0');
       
       // Get songs with pagination
@@ -289,7 +289,7 @@ export class SongModel {
       `;
       
       values.push(limit, offset);
-      const songsResult = await database.query(songsQuery, values);
+      const songsResult = await query(songsQuery, values);
       const songs = songsResult.rows as SongData[];
       
       return { songs, total };
@@ -347,7 +347,7 @@ export class SongModel {
         validateNumber(updateData.popularity_score, 'popularity_score', { min: 0, max: 100 });
       }
       
-      const updatedSong = await database.update('songs', id, updateData) as SongData;
+      const updatedSong = await update('songs', id, updateData) as SongData;
       
       logger.info(`Song updated: ${updatedSong.title} by ${updatedSong.artist}`, { songId: id });
       return updatedSong;
@@ -364,7 +364,7 @@ export class SongModel {
         throw new NotFoundError('Song not found');
       }
       
-      await database.deleteById('songs', id);
+      await deleteById('songs', id);
       
       logger.info(`Song deleted: ${song.title} by ${song.artist}`, { songId: id });
     } catch (error) {
@@ -410,14 +410,14 @@ export class SongModel {
   
   static async getPopularSongs(limit: number = 50): Promise<SongData[]> {
     try {
-      const query = `
+      const queryStr = `
         SELECT * FROM songs 
         WHERE is_available = true
         ORDER BY popularity_score DESC, created_at DESC
         LIMIT $1
       `;
       
-      const result = await database.query(query, [limit]);
+      const result = await query(queryStr, [limit]);
       return result.rows as SongData[];
     } catch (error) {
       logger.error('Error getting popular songs:', error);
@@ -427,14 +427,14 @@ export class SongModel {
   
   static async getRecentSongs(limit: number = 50): Promise<SongData[]> {
     try {
-      const query = `
+      const queryStr = `
         SELECT * FROM songs 
         WHERE is_available = true
         ORDER BY created_at DESC
         LIMIT $1
       `;
       
-      const result = await database.query(query, [limit]);
+      const result = await query(queryStr, [limit]);
       return result.rows as SongData[];
     } catch (error) {
       logger.error('Error getting recent songs:', error);

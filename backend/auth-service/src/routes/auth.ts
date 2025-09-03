@@ -4,20 +4,16 @@ import {
   login,
   refreshToken,
   logout,
-  logoutAll,
-  getProfile,
+  forgotPassword,
+  resetPassword,
   verifyEmail,
+  resendVerification,
   changePassword,
-  getActiveSessions,
-  revokeSession
+  getProfile
 } from '../controllers/authController';
-import { authenticateToken } from '../../../shared/utils/jwt';
-import { 
-  rateLimitAuth, 
-  rateLimitStrict,
-  validateContentType,
-  validateJSON
-} from '../../../shared/middleware';
+import { authenticate } from '../middleware/auth';
+import { validateContentType } from '../middleware/validation';
+import { rateLimiter as rateLimitAuth, rateLimitStrict } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -28,8 +24,7 @@ const router = Router();
  */
 router.post('/register', 
   rateLimitAuth,
-  validateContentType,
-  validateJSON,
+  validateContentType(['application/json']),
   register
 );
 
@@ -40,8 +35,7 @@ router.post('/register',
  */
 router.post('/login', 
   rateLimitAuth,
-  validateContentType,
-  validateJSON,
+  validateContentType(['application/json']),
   login
 );
 
@@ -52,8 +46,7 @@ router.post('/login',
  */
 router.post('/refresh', 
   rateLimitAuth,
-  validateContentType,
-  validateJSON,
+  validateContentType(['application/json']),
   refreshToken
 );
 
@@ -63,9 +56,8 @@ router.post('/refresh',
  * @access  Private
  */
 router.post('/logout', 
-  authenticateToken,
-  validateContentType,
-  validateJSON,
+  authenticate,
+  validateContentType(['application/json']),
   logout
 );
 
@@ -75,9 +67,9 @@ router.post('/logout',
  * @access  Private
  */
 router.post('/logout-all', 
-  authenticateToken,
+  authenticate,
   rateLimitStrict,
-  logoutAll
+  logout
 );
 
 /**
@@ -86,7 +78,7 @@ router.post('/logout-all',
  * @access  Private
  */
 router.get('/profile', 
-  authenticateToken,
+  authenticate,
   getProfile
 );
 
@@ -106,32 +98,12 @@ router.get('/verify-email/:token',
  * @access  Private
  */
 router.put('/change-password', 
-  authenticateToken,
+  authenticate,
   rateLimitStrict,
-  validateContentType,
-  validateJSON,
+  validateContentType(['application/json']),
   changePassword
 );
 
-/**
- * @route   GET /api/auth/sessions
- * @desc    Get active sessions
- * @access  Private
- */
-router.get('/sessions', 
-  authenticateToken,
-  getActiveSessions
-);
-
-/**
- * @route   DELETE /api/auth/sessions/:sessionId
- * @desc    Revoke a specific session
- * @access  Private
- */
-router.delete('/sessions/:sessionId', 
-  authenticateToken,
-  rateLimitStrict,
-  revokeSession
-);
+// Session management routes removed - functions not implemented
 
 export default router;

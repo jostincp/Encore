@@ -3,25 +3,20 @@ import {
   getUsers,
   getUserById,
   updateUser,
-  deactivateUser,
-  activateUser,
-  deleteUser,
-  updateUserRole,
-  getUserStats
+  deactivateUser
 } from '../controllers/userController';
-import { authenticateToken, requireRole } from '../../../shared/utils/jwt';
-import { 
-  rateLimitBasic,
-  rateLimitStrict,
-  validateContentType,
-  validateJSON,
-  validatePagination
-} from '../../../shared/middleware';
+import { authenticate } from '../utils/jwt';
+import { rateLimiter, rateLimitStrict } from '../middleware/rateLimiter';
+import { requireRole } from '../middleware/auth';
+import { validateContentType } from '../middleware/validation';
 
 const router = Router();
 
 // All routes require authentication
-router.use(authenticateToken);
+router.use(authenticate);
+
+// Alias for rate limiters
+const rateLimitBasic = rateLimiter;
 
 /**
  * @route   GET /api/users
@@ -30,18 +25,8 @@ router.use(authenticateToken);
  */
 router.get('/', 
   requireRole(['admin']),
-  validatePagination,
-  getUsers
-);
 
-/**
- * @route   GET /api/users/stats
- * @desc    Get user statistics (admin only)
- * @access  Private (Admin)
- */
-router.get('/stats', 
-  requireRole(['admin']),
-  getUserStats
+  getUsers
 );
 
 /**
@@ -61,22 +46,7 @@ router.get('/:id',
  */
 router.put('/:id', 
   rateLimitBasic,
-  validateContentType,
-  validateJSON,
   updateUser
-);
-
-/**
- * @route   PUT /api/users/:id/role
- * @desc    Update user role (admin only)
- * @access  Private (Admin)
- */
-router.put('/:id/role', 
-  requireRole(['admin']),
-  rateLimitStrict,
-  validateContentType,
-  validateJSON,
-  updateUserRole
 );
 
 /**
@@ -88,28 +58,6 @@ router.put('/:id/deactivate',
   requireRole(['admin']),
   rateLimitStrict,
   deactivateUser
-);
-
-/**
- * @route   PUT /api/users/:id/activate
- * @desc    Activate user (admin only)
- * @access  Private (Admin)
- */
-router.put('/:id/activate', 
-  requireRole(['admin']),
-  rateLimitStrict,
-  activateUser
-);
-
-/**
- * @route   DELETE /api/users/:id
- * @desc    Delete user (admin only)
- * @access  Private (Admin)
- */
-router.delete('/:id', 
-  requireRole(['admin']),
-  rateLimitStrict,
-  deleteUser
 );
 
 export default router;

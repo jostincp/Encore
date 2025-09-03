@@ -199,21 +199,38 @@ export interface UpdateMenuItemData {
   sort_order?: number;
 }
 
+// Daily Specials interfaces
+export interface DailySpecialData {
+  id: string;
+  bar_id: string;
+  menu_item_id: string;
+  special_price?: number;
+  description?: string;
+  valid_from: Date;
+  valid_until: Date;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+  // Joined data from menu_items
+  item_name?: string;
+  item_description?: string;
+  original_price?: number;
+  item_image_url?: string;
+}
+
 export interface CreateDailySpecialData {
   bar_id: string;
   menu_item_id: string;
-  special_price: number;
+  special_price?: number;
+  description?: string;
   start_date: Date;
   end_date: Date;
-  description?: string;
-  is_active?: boolean;
 }
 
 export interface UpdateDailySpecialData {
-  menu_item_id?: string;
   special_price?: number;
+  description?: string;
   start_date?: Date;
   end_date?: Date;
-  description?: string;
   is_active?: boolean;
 }

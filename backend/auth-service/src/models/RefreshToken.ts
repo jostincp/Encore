@@ -1,4 +1,4 @@
-import { query, dbOperations } from '../../../shared/database';
+import { query, dbOperations } from '../utils/database';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 
@@ -10,6 +10,9 @@ export interface RefreshTokenData {
   isRevoked: boolean;
   createdAt: Date;
 }
+
+// Alias for backward compatibility
+export type RefreshToken = RefreshTokenData;
 
 export class RefreshTokenModel {
   /**
@@ -208,6 +211,6 @@ export class RefreshTokenModel {
    * Delete refresh token (hard delete)
    */
   static async delete(id: string): Promise<boolean> {
-    return await dbOperations.deleteById('refresh_tokens', id);
+    return await dbOperations.delete('refresh_tokens', id);
   }
 }

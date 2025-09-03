@@ -1,8 +1,8 @@
-import { Pool } from 'pg';
-import { pool } from '../../../shared/database';
-import { redisClient } from '../../../shared/cache';
-import { logger } from '../../../shared/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import { Pool } from 'pg';
+import { query, transaction } from '../../../shared/database';
+import { getRedisClient } from '../../../shared/utils/redis';
+import logger from '../../../shared/utils/logger';
 
 // Interfaces
 export interface PointsData {
@@ -21,13 +21,13 @@ export interface PointsTransaction {
   id: string;
   user_id: string;
   bar_id: string;
-  type: 'earn' | 'spend' | 'refund' | 'bonus' | 'penalty';
+  type: 'earn' | 'spend' | 'bonus' | 'penalty' | 'refund';
   amount: number;
   balance_before: number;
   balance_after: number;
   description: string;
-  reference_id?: string; // ID of related entity (queue entry, purchase, etc.)
-  reference_type?: string; // Type of reference (queue, purchase, bonus, etc.)
+  reference_id?: string;
+  reference_type?: string;
   metadata?: any;
   created_at: Date;
 }
@@ -35,7 +35,7 @@ export interface PointsTransaction {
 export interface CreatePointsTransactionData {
   user_id: string;
   bar_id: string;
-  type: 'earn' | 'spend' | 'refund' | 'bonus' | 'penalty';
+  type: 'earn' | 'spend' | 'bonus' | 'penalty' | 'refund';
   amount: number;
   description: string;
   reference_id?: string;
@@ -45,8 +45,7 @@ export interface CreatePointsTransactionData {
 
 export interface PointsFilters {
   user_id?: string;
-  bar_id?: string;
-  type?: string;
+  type?: 'earn' | 'spend' | 'bonus' | 'penalty' | 'refund';
   date_from?: Date;
   date_to?: Date;
   reference_type?: string;
@@ -66,43 +65,26 @@ export interface PointsStats {
   total_points_spent: number;
   total_points_in_circulation: number;
   average_balance: number;
-  top_earners: Array<{
-    user_id: string;
-    username: string;
-    total_earned: number;
-  }>;
-  top_spenders: Array<{
-    user_id: string;
-    username: string;
-    total_spent: number;
-  }>;
-  transaction_volume_by_type: Array<{
-    type: string;
-    count: number;
-    total_amount: number;
-  }>;
-  daily_activity: Array<{
-    date: string;
-    transactions: number;
-    points_earned: number;
-    points_spent: number;
-  }>;
+  top_earners: Array<{ user_id: string; username: string; total_earned: number }>;
+  top_spenders: Array<{ user_id: string; username: string; total_spent: number }>;
+  transaction_volume_by_type: Array<{ type: string; count: number; total_amount: number }>;
+  daily_activity: Array<{ date: string; transactions: number; points_earned: number; points_spent: number }>;
 }
 
 export class PointsModel {
-  // Get or create user points record for a bar
+  // Get or create user points record
   static async getOrCreateUserPoints(userId: string, barId: string): Promise<PointsData> {
     try {
       const cacheKey = `points:user:${userId}:bar:${barId}`;
       
       // Try to get from cache first
-      const cached = await redisClient.get(cacheKey);
-      if (cached) {
+      const cached = await getRedisClient().get(cacheKey);
+      if (cached && typeof cached === 'string') {
         return JSON.parse(cached);
       }
 
       // Check if record exists
-      let result = await pool.query(
+      let result = await query(
         'SELECT * FROM user_points WHERE user_id = $1 AND bar_id = $2',
         [userId, barId]
       );
@@ -112,7 +94,7 @@ export class PointsModel {
       if (result.rows.length === 0) {
         // Create new points record
         const id = uuidv4();
-        const insertResult = await pool.query(
+        const insertResult = await query(
           `INSERT INTO user_points (id, user_id, bar_id, current_balance, total_earned, total_spent, last_activity, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), NOW())
            RETURNING *`,
@@ -124,7 +106,7 @@ export class PointsModel {
       }
 
       // Cache the result
-      await redisClient.setex(cacheKey, 300, JSON.stringify(pointsData)); // 5 minutes cache
+      await getRedisClient().setex(cacheKey, 300, JSON.stringify(pointsData));
 
       return pointsData;
     } catch (error) {
@@ -133,12 +115,9 @@ export class PointsModel {
     }
   }
 
-  // Add points transaction (earn, spend, refund, etc.)
+  // Add points transaction
   static async addTransaction(transactionData: CreatePointsTransactionData): Promise<PointsTransaction> {
-    const client = await pool.connect();
-    
-    try {
-      await client.query('BEGIN');
+    return await transaction(async (client) => {
 
       // Get current points balance
       const currentPoints = await this.getOrCreateUserPoints(transactionData.user_id, transactionData.bar_id);
@@ -151,7 +130,6 @@ export class PointsModel {
       } else if (transactionData.type === 'spend' || transactionData.type === 'penalty') {
         balanceAfter = balanceBefore - Math.abs(transactionData.amount);
         
-        // Check if user has enough points
         if (balanceAfter < 0) {
           throw new Error('Insufficient points balance');
         }
@@ -197,23 +175,15 @@ export class PointsModel {
         updateValues
       );
 
-      await client.query('COMMIT');
-
       // Clear cache
       await this.clearUserPointsCache(transactionData.user_id, transactionData.bar_id);
 
-      const transaction = transactionResult.rows[0];
+      const transactionRecord = transactionResult.rows[0];
       
-      logger.info(`Points transaction created: ${transaction.type} ${transaction.amount} points for user ${transactionData.user_id} in bar ${transactionData.bar_id}`);
+      logger.info(`Points transaction created: ${transactionRecord.type} ${transactionRecord.amount} points for user ${transactionData.user_id} in bar ${transactionData.bar_id}`);
       
-      return transaction;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      logger.error('Error adding points transaction:', error);
-      throw error;
-    } finally {
-      client.release();
-    }
+      return transactionRecord;
+    });
   }
 
   // Get user points balance
@@ -231,7 +201,7 @@ export class PointsModel {
   static async getUserTransactions(
     userId: string,
     barId: string,
-    filters: PointsFilters = {},
+    filters?: PointsFilters,
     page: number = 1,
     limit: number = 20
   ): Promise<PaginatedPointsResult> {
@@ -242,26 +212,25 @@ export class PointsModel {
       let queryParams: any[] = [userId, barId];
       let paramIndex = 3;
 
-      // Add filters
-      if (filters.type) {
+      if (filters?.type) {
         whereConditions.push(`type = $${paramIndex}`);
         queryParams.push(filters.type);
         paramIndex++;
       }
 
-      if (filters.date_from) {
+      if (filters?.date_from) {
         whereConditions.push(`created_at >= $${paramIndex}`);
         queryParams.push(filters.date_from);
         paramIndex++;
       }
 
-      if (filters.date_to) {
+      if (filters?.date_to) {
         whereConditions.push(`created_at <= $${paramIndex}`);
         queryParams.push(filters.date_to);
         paramIndex++;
       }
 
-      if (filters.reference_type) {
+      if (filters?.reference_type) {
         whereConditions.push(`reference_type = $${paramIndex}`);
         queryParams.push(filters.reference_type);
         paramIndex++;
@@ -270,14 +239,14 @@ export class PointsModel {
       const whereClause = whereConditions.join(' AND ');
 
       // Get total count
-      const countResult = await pool.query(
+      const countResult = await query(
         `SELECT COUNT(*) FROM points_transactions WHERE ${whereClause}`,
         queryParams
       );
       const total = parseInt(countResult.rows[0].count);
 
       // Get transactions
-      const transactionsResult = await pool.query(
+      const transactionsResult = await query(
         `SELECT * FROM points_transactions 
          WHERE ${whereClause}
          ORDER BY created_at DESC
@@ -299,13 +268,16 @@ export class PointsModel {
   }
 
   // Get bar points statistics
-  static async getBarPointsStats(barId: string, dateFrom?: Date, dateTo?: Date): Promise<PointsStats> {
+  static async getBarPointsStats(
+    barId: string,
+    dateFrom?: Date,
+    dateTo?: Date
+  ): Promise<PointsStats> {
     try {
       const cacheKey = `points:stats:bar:${barId}:${dateFrom?.toISOString() || 'all'}:${dateTo?.toISOString() || 'all'}`;
       
-      // Try cache first
-      const cached = await redisClient.get(cacheKey);
-      if (cached) {
+      const cached = await getRedisClient().get(cacheKey);
+      if (cached && typeof cached === 'string') {
         return JSON.parse(cached);
       }
 
@@ -326,7 +298,7 @@ export class PointsModel {
       }
 
       // Get basic stats
-      const basicStatsResult = await pool.query(
+      const basicStatsResult = await query(
         `SELECT 
            COUNT(DISTINCT up.user_id) as total_users,
            COALESCE(SUM(up.total_earned), 0) as total_points_earned,
@@ -339,7 +311,7 @@ export class PointsModel {
       );
 
       // Get top earners
-      const topEarnersResult = await pool.query(
+      const topEarnersResult = await query(
         `SELECT up.user_id, u.username, up.total_earned
          FROM user_points up
          JOIN users u ON up.user_id = u.id
@@ -350,7 +322,7 @@ export class PointsModel {
       );
 
       // Get top spenders
-      const topSpendersResult = await pool.query(
+      const topSpendersResult = await query(
         `SELECT up.user_id, u.username, up.total_spent
          FROM user_points up
          JOIN users u ON up.user_id = u.id
@@ -361,17 +333,17 @@ export class PointsModel {
       );
 
       // Get transaction volume by type
-      const transactionVolumeResult = await pool.query(
+      const transactionVolumeResult = await query(
         `SELECT pt.type, COUNT(*) as count, COALESCE(SUM(pt.amount), 0) as total_amount
          FROM points_transactions pt
          WHERE pt.bar_id = $1 ${dateFilter}
          GROUP BY pt.type
          ORDER BY total_amount DESC`,
-        [barId, ...dateParams]
+        [barId].concat(dateParams)
       );
 
       // Get daily activity
-      const dailyActivityResult = await pool.query(
+      const dailyActivityResult = await query(
         `SELECT 
            DATE(pt.created_at) as date,
            COUNT(*) as transactions,
@@ -382,7 +354,7 @@ export class PointsModel {
          GROUP BY DATE(pt.created_at)
          ORDER BY date DESC
          LIMIT 30`,
-        [barId, ...dateParams]
+        [barId].concat(dateParams)
       );
 
       const stats: PointsStats = {
@@ -398,7 +370,7 @@ export class PointsModel {
       };
 
       // Cache for 10 minutes
-      await redisClient.setex(cacheKey, 600, JSON.stringify(stats));
+      await getRedisClient().setex(cacheKey, 600, JSON.stringify(stats));
 
       return stats;
     } catch (error) {
@@ -407,7 +379,7 @@ export class PointsModel {
     }
   }
 
-  // Transfer points between users (admin only)
+  // Transfer points between users
   static async transferPoints(
     fromUserId: string,
     toUserId: string,
@@ -416,10 +388,7 @@ export class PointsModel {
     description: string,
     adminId: string
   ): Promise<{ fromTransaction: PointsTransaction; toTransaction: PointsTransaction }> {
-    const client = await pool.connect();
-    
-    try {
-      await client.query('BEGIN');
+    return await transaction(async (client) => {
 
       // Deduct points from sender
       const fromTransaction = await this.addTransaction({
@@ -443,25 +412,17 @@ export class PointsModel {
         metadata: { from_user_id: fromUserId, admin_id: adminId }
       });
 
-      await client.query('COMMIT');
-
       logger.info(`Points transferred: ${amount} from ${fromUserId} to ${toUserId} in bar ${barId} by admin ${adminId}`);
 
       return { fromTransaction, toTransaction };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      logger.error('Error transferring points:', error);
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   // Clear user points cache
   static async clearUserPointsCache(userId: string, barId: string): Promise<void> {
     try {
       const cacheKey = `points:user:${userId}:bar:${barId}`;
-      await redisClient.del(cacheKey);
+      await getRedisClient().del(cacheKey);
     } catch (error) {
       logger.error('Error clearing user points cache:', error);
     }
@@ -471,9 +432,11 @@ export class PointsModel {
   static async clearBarStatsCache(barId: string): Promise<void> {
     try {
       const pattern = `points:stats:bar:${barId}:*`;
-      const keys = await redisClient.keys(pattern);
-      if (keys.length > 0) {
-        await redisClient.del(...keys);
+      const keys = await getRedisClient().keys(pattern);
+      if (keys && keys.length > 0) {
+        for (const key of keys) {
+          await getRedisClient().del(key);
+        }
       }
     } catch (error) {
       logger.error('Error clearing bar stats cache:', error);
@@ -489,9 +452,8 @@ export class PointsModel {
     try {
       const cacheKey = `points:leaderboard:bar:${barId}:${type}:${limit}`;
       
-      // Try cache first
-      const cached = await redisClient.get(cacheKey);
-      if (cached) {
+      const cached = await getRedisClient().get(cacheKey);
+      if (cached && typeof cached === 'string') {
         return JSON.parse(cached);
       }
 
@@ -510,7 +472,7 @@ export class PointsModel {
           orderField = 'up.total_earned';
       }
 
-      const result = await pool.query(
+      const result = await query(
         `SELECT 
            up.user_id,
            u.username,
@@ -524,7 +486,7 @@ export class PointsModel {
         [barId, limit]
       );
 
-      const leaderboard = result.rows.map(row => ({
+      const leaderboard = result.rows.map((row: any) => ({
         user_id: row.user_id,
         username: row.username,
         value: parseInt(row.value),
@@ -532,7 +494,7 @@ export class PointsModel {
       }));
 
       // Cache for 5 minutes
-      await redisClient.setex(cacheKey, 300, JSON.stringify(leaderboard));
+      await getRedisClient().setex(cacheKey, 300, JSON.stringify(leaderboard));
 
       return leaderboard;
     } catch (error) {

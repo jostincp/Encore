@@ -1,13 +1,13 @@
 import { Pool } from 'pg';
-import { pool } from '../../../shared/database';
-import { redisClient } from '../../../shared/cache';
-import { logger } from '../../../shared/utils/logger';
+import { getPool } from '../../../shared/database';
+import { getRedisClient } from '../../../shared/utils/redis';
+import logger from '../../../shared/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import Stripe from 'stripe';
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16'
+  apiVersion: '2025-08-27.basil'
 });
 
 // Interfaces
@@ -94,7 +94,7 @@ export interface StripeWebhookEvent {
 export class PaymentModel {
   // Create payment intent with Stripe
   static async createPaymentIntent(paymentData: CreatePaymentData): Promise<PaymentData> {
-    const client = await pool.connect();
+    const client = await getPool().connect();
     
     try {
       await client.query('BEGIN');
@@ -156,12 +156,13 @@ export class PaymentModel {
       const cacheKey = `payment:${paymentId}`;
       
       // Try cache first
+      const redisClient = getRedisClient();
       const cached = await redisClient.get(cacheKey);
-      if (cached) {
+      if (cached && typeof cached === 'string') {
         return JSON.parse(cached);
       }
 
-      const result = await pool.query(
+      const result = await getPool().query(
         'SELECT * FROM payments WHERE id = $1',
         [paymentId]
       );
@@ -185,7 +186,7 @@ export class PaymentModel {
   // Get payment by Stripe Payment Intent ID
   static async findByStripePaymentIntentId(stripePaymentIntentId: string): Promise<PaymentData | null> {
     try {
-      const result = await pool.query(
+      const result = await getPool().query(
         'SELECT * FROM payments WHERE stripe_payment_intent_id = $1',
         [stripePaymentIntentId]
       );
@@ -209,7 +210,7 @@ export class PaymentModel {
     failureReason?: string
   ): Promise<PaymentData> {
     try {
-      const result = await pool.query(
+      const result = await getPool().query(
         `UPDATE payments 
          SET status = $2, payment_method = $3, failure_reason = $4, updated_at = NOW()
          WHERE id = $1
@@ -237,7 +238,7 @@ export class PaymentModel {
 
   // Process successful payment (add points to user)
   static async processSuccessfulPayment(paymentId: string): Promise<void> {
-    const client = await pool.connect();
+    const client = await getPool().connect();
     
     try {
       await client.query('BEGIN');
@@ -301,7 +302,7 @@ export class PaymentModel {
 
   // Refund payment
   static async refundPayment(paymentId: string, amount?: number, reason?: string): Promise<PaymentData> {
-    const client = await pool.connect();
+    const client = await getPool().connect();
     
     try {
       await client.query('BEGIN');
@@ -328,7 +329,7 @@ export class PaymentModel {
       });
 
       // Update payment record
-      const result = await pool.query(
+      const result = await getPool().query(
         `UPDATE payments 
          SET status = $2, refund_amount = $3, refunded_at = NOW(), updated_at = NOW()
          WHERE id = $1
@@ -433,14 +434,14 @@ export class PaymentModel {
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
       // Get total count
-      const countResult = await pool.query(
+      const countResult = await getPool().query(
         `SELECT COUNT(*) FROM payments ${whereClause}`,
         queryParams
       );
       const total = parseInt(countResult.rows[0].count);
 
       // Get payments
-      const paymentsResult = await pool.query(
+      const paymentsResult = await getPool().query(
         `SELECT p.*, u.username 
          FROM payments p
          LEFT JOIN users u ON p.user_id = u.id
@@ -469,8 +470,8 @@ export class PaymentModel {
       const cacheKey = `payment:stats:${barId || 'all'}:${dateFrom?.toISOString() || 'all'}:${dateTo?.toISOString() || 'all'}`;
       
       // Try cache first
-      const cached = await redisClient.get(cacheKey);
-      if (cached) {
+      const cached = await getRedisClient().get(cacheKey);
+      if (cached && typeof cached === 'string') {
         return JSON.parse(cached);
       }
 
@@ -499,7 +500,7 @@ export class PaymentModel {
       const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
       // Get basic stats
-      const basicStatsResult = await pool.query(
+      const basicStatsResult = await getPool().query(
         `SELECT 
            COUNT(*) as total_payments,
            COALESCE(SUM(amount), 0) as total_amount,
@@ -512,7 +513,7 @@ export class PaymentModel {
       );
 
       // Get payment volume by status
-      const statusVolumeResult = await pool.query(
+      const statusVolumeResult = await getPool().query(
         `SELECT status, COUNT(*) as count, COALESCE(SUM(amount), 0) as total_amount
          FROM payments p
          ${whereClause}
@@ -522,7 +523,7 @@ export class PaymentModel {
       );
 
       // Get daily revenue
-      const dailyRevenueResult = await pool.query(
+      const dailyRevenueResult = await getPool().query(
         `SELECT 
            DATE(p.created_at) as date,
            COUNT(*) as payments,
@@ -537,7 +538,7 @@ export class PaymentModel {
       );
 
       // Get top customers
-      const topCustomersResult = await pool.query(
+      const topCustomersResult = await getPool().query(
         `SELECT 
            p.user_id,
            u.username,
@@ -564,7 +565,7 @@ export class PaymentModel {
       };
 
       // Cache for 10 minutes
-      await redisClient.setex(cacheKey, 600, JSON.stringify(stats));
+      await getRedisClient().setex(cacheKey, 600, JSON.stringify(stats));
 
       return stats;
     } catch (error) {
@@ -659,7 +660,7 @@ export class PaymentModel {
   static async clearPaymentCache(paymentId: string): Promise<void> {
     try {
       const cacheKey = `payment:${paymentId}`;
-      await redisClient.del(cacheKey);
+      await getRedisClient().del(cacheKey);
     } catch (error) {
       logger.error('Error clearing payment cache:', error);
     }
@@ -669,9 +670,11 @@ export class PaymentModel {
   static async clearPaymentStatsCache(barId?: string): Promise<void> {
     try {
       const pattern = barId ? `payment:stats:${barId}:*` : 'payment:stats:*';
-      const keys = await redisClient.keys(pattern);
+      const keys = await getRedisClient().keys(pattern);
       if (keys.length > 0) {
-        await redisClient.del(...keys);
+        for (const key of keys) {
+          await getRedisClient().del(key);
+        }
       }
     } catch (error) {
       logger.error('Error clearing payment stats cache:', error);

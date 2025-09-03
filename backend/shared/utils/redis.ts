@@ -1,9 +1,11 @@
 import Redis from 'ioredis';
 import { config } from '../config';
 import { logInfo, logError, logWarn } from './logger';
+import { memoryCache, MemoryCache } from './memory-cache';
 
 // Cliente Redis singleton
 let redisClient: Redis | null = null;
+let usingMemoryCache = false;
 
 // Configuración de Redis
 const REDIS_CONFIG = {
@@ -17,13 +19,17 @@ const REDIS_CONFIG = {
 };
 
 // Inicializar cliente Redis
-export const initRedis = async (): Promise<Redis> => {
+export const initRedis = async (): Promise<Redis | MemoryCache> => {
   if (redisClient) {
     return redisClient;
   }
 
+  if (usingMemoryCache) {
+    return memoryCache;
+  }
+
   try {
-    redisClient = new Redis(config.redisUrl, REDIS_CONFIG);
+    redisClient = new Redis(config.redis.url, REDIS_CONFIG);
 
     redisClient.on('connect', () => {
       logInfo('Redis connected successfully');
@@ -47,13 +53,18 @@ export const initRedis = async (): Promise<Redis> => {
 
     return redisClient;
   } catch (error) {
-    logError('Failed to initialize Redis client', error as Error);
-    throw error;
+    logError('Failed to initialize Redis client, falling back to memory cache', error as Error);
+    usingMemoryCache = true;
+    logWarn('Using in-memory cache as Redis fallback');
+    return memoryCache;
   }
 };
 
 // Obtener cliente Redis
-export const getRedisClient = (): Redis => {
+export const getRedisClient = (): Redis | MemoryCache => {
+  if (usingMemoryCache) {
+    return memoryCache;
+  }
   if (!redisClient) {
     throw new Error('Redis client not initialized. Call initRedis() first.');
   }
@@ -62,7 +73,11 @@ export const getRedisClient = (): Redis => {
 
 // Cerrar conexión Redis
 export const closeRedis = async (): Promise<void> => {
-  if (redisClient) {
+  if (usingMemoryCache) {
+    await memoryCache.quit();
+    usingMemoryCache = false;
+    logInfo('Memory cache cleared');
+  } else if (redisClient) {
     await redisClient.quit();
     redisClient = null;
     logInfo('Redis connection closed');
@@ -71,18 +86,19 @@ export const closeRedis = async (): Promise<void> => {
 
 // Utilidades de caché
 export class CacheService {
-  private redis: Redis;
+  private client: Redis | MemoryCache;
   private defaultTTL: number = 3600; // 1 hora por defecto
 
-  constructor(redis?: Redis) {
-    this.redis = redis || getRedisClient();
+  constructor(client?: Redis | MemoryCache) {
+    this.client = client || getRedisClient();
   }
 
   // Obtener valor del caché
   async get<T>(key: string): Promise<T | null> {
     try {
-      const value = await this.redis.get(key);
-      return value ? JSON.parse(value) : null;
+      const value = await this.client.get(key);
+      if (!value) return null;
+      return typeof value === 'string' ? JSON.parse(value) as T : value as T;
     } catch (error) {
       logError(`Cache get error for key: ${key}`, error as Error);
       return null;
@@ -92,10 +108,16 @@ export class CacheService {
   // Establecer valor en caché
   async set(key: string, value: any, ttl?: number): Promise<boolean> {
     try {
-      const serializedValue = JSON.stringify(value);
       const expiration = ttl || this.defaultTTL;
       
-      await this.redis.setex(key, expiration, serializedValue);
+      if ('setex' in this.client) {
+        // Redis client
+        const serializedValue = JSON.stringify(value);
+        await (this.client as Redis).setex(key, expiration, serializedValue);
+      } else {
+        // Memory cache
+        await (this.client as MemoryCache).set(key, value, expiration);
+      }
       return true;
     } catch (error) {
       logError(`Cache set error for key: ${key}`, error as Error);
@@ -106,8 +128,8 @@ export class CacheService {
   // Eliminar valor del caché
   async del(key: string): Promise<boolean> {
     try {
-      const result = await this.redis.del(key);
-      return result > 0;
+      const result = await this.client.del(key);
+      return typeof result === 'number' ? result > 0 : result;
     } catch (error) {
       logError(`Cache delete error for key: ${key}`, error as Error);
       return false;
@@ -117,8 +139,8 @@ export class CacheService {
   // Verificar si existe una clave
   async exists(key: string): Promise<boolean> {
     try {
-      const result = await this.redis.exists(key);
-      return result === 1;
+      const result = await this.client.exists(key);
+      return typeof result === 'number' ? result === 1 : result;
     } catch (error) {
       logError(`Cache exists error for key: ${key}`, error as Error);
       return false;
@@ -128,8 +150,11 @@ export class CacheService {
   // Obtener múltiples valores
   async mget<T>(keys: string[]): Promise<(T | null)[]> {
     try {
-      const values = await this.redis.mget(...keys);
-      return values.map(value => value ? JSON.parse(value) : null);
+      const values = await this.client.mget(keys);
+      return values.map(value => {
+        if (!value) return null;
+        return typeof value === 'string' ? JSON.parse(value) : value;
+      });
     } catch (error) {
       logError(`Cache mget error for keys: ${keys.join(', ')}`, error as Error);
       return keys.map(() => null);
@@ -139,15 +164,20 @@ export class CacheService {
   // Establecer múltiples valores
   async mset(keyValuePairs: Record<string, any>, ttl?: number): Promise<boolean> {
     try {
-      const pipeline = this.redis.pipeline();
       const expiration = ttl || this.defaultTTL;
 
-      for (const [key, value] of Object.entries(keyValuePairs)) {
-        const serializedValue = JSON.stringify(value);
-        pipeline.setex(key, expiration, serializedValue);
+      if ('pipeline' in this.client) {
+        // Redis client
+        const pipeline = this.client.pipeline();
+        for (const [key, value] of Object.entries(keyValuePairs)) {
+          const serializedValue = JSON.stringify(value);
+          pipeline.setex(key, expiration, serializedValue);
+        }
+        await pipeline.exec();
+      } else {
+        // Memory cache
+        await this.client.mset(keyValuePairs, expiration);
       }
-
-      await pipeline.exec();
       return true;
     } catch (error) {
       logError('Cache mset error', error as Error);
@@ -158,13 +188,17 @@ export class CacheService {
   // Incrementar contador
   async incr(key: string, ttl?: number): Promise<number> {
     try {
-      const result = await this.redis.incr(key);
-      
-      if (ttl && result === 1) {
-        await this.redis.expire(key, ttl);
+      if ('incr' in this.client && typeof this.client.incr === 'function') {
+        // Redis client
+        const result = await (this.client as Redis).incr(key);
+        if (ttl && result === 1) {
+          await (this.client as Redis).expire(key, ttl);
+        }
+        return result;
+      } else {
+        // Memory cache
+        return await (this.client as MemoryCache).incr(key, ttl);
       }
-      
-      return result;
     } catch (error) {
       logError(`Cache incr error for key: ${key}`, error as Error);
       return 0;
@@ -174,7 +208,7 @@ export class CacheService {
   // Obtener claves por patrón
   async keys(pattern: string): Promise<string[]> {
     try {
-      return await this.redis.keys(pattern);
+      return await this.client.keys(pattern);
     } catch (error) {
       logError(`Cache keys error for pattern: ${pattern}`, error as Error);
       return [];
@@ -184,10 +218,15 @@ export class CacheService {
   // Limpiar caché por patrón
   async clearByPattern(pattern: string): Promise<number> {
     try {
-      const keys = await this.keys(pattern);
-      if (keys.length === 0) return 0;
-      
-      return await this.redis.del(...keys);
+      if ('del' in this.client && !('clearByPattern' in this.client)) {
+        // Redis client
+        const keys = await this.keys(pattern);
+        if (keys.length === 0) return 0;
+        return await (this.client as Redis).del(...keys);
+      } else {
+        // Memory cache
+        return await (this.client as MemoryCache).clearByPattern(pattern);
+      }
     } catch (error) {
       logError(`Cache clear by pattern error: ${pattern}`, error as Error);
       return 0;
@@ -197,7 +236,7 @@ export class CacheService {
   // Obtener TTL de una clave
   async ttl(key: string): Promise<number> {
     try {
-      return await this.redis.ttl(key);
+      return await this.client.ttl(key);
     } catch (error) {
       logError(`Cache TTL error for key: ${key}`, error as Error);
       return -1;
@@ -207,8 +246,13 @@ export class CacheService {
   // Renovar TTL de una clave
   async expire(key: string, ttl: number): Promise<boolean> {
     try {
-      const result = await this.redis.expire(key, ttl);
-      return result === 1;
+      if ('expire' in this.client) {
+        const result = await (this.client as Redis).expire(key, ttl);
+        return result === 1;
+      } else {
+        // Memory cache
+        return (await (this.client as MemoryCache).expire(key, ttl)) === 1;
+      }
     } catch (error) {
       logError(`Cache expire error for key: ${key}`, error as Error);
       return false;
@@ -329,10 +373,32 @@ export class RateLimitService {
   }
 }
 
-// Instancias globales
-export const cacheService = new CacheService();
-export const sessionService = new SessionService();
-export const rateLimitService = new RateLimitService();
+// Instancias globales (se inicializan después de Redis)
+let cacheService: CacheService | null = null;
+let sessionService: SessionService | null = null;
+let rateLimitService: RateLimitService | null = null;
+
+// Función para obtener instancias de servicios
+export const getCacheService = (): CacheService => {
+  if (!cacheService) {
+    cacheService = new CacheService();
+  }
+  return cacheService;
+};
+
+export const getSessionService = (): SessionService => {
+  if (!sessionService) {
+    sessionService = new SessionService();
+  }
+  return sessionService;
+};
+
+export const getRateLimitService = (): RateLimitService => {
+  if (!rateLimitService) {
+    rateLimitService = new RateLimitService();
+  }
+  return rateLimitService;
+};
 
 // Función de utilidad para generar claves de caché
 export const generateCacheKey = (...parts: (string | number)[]): string => {
@@ -348,8 +414,9 @@ export const clearBarCache = async (barId: string): Promise<void> => {
     `analytics:${barId}:*`
   ];
 
+  const cache = getCacheService();
   for (const pattern of patterns) {
-    await cacheService.clearByPattern(pattern);
+    await cache.clearByPattern(pattern);
   }
 };
 
@@ -360,7 +427,8 @@ export const clearUserCache = async (userId: string): Promise<void> => {
     `points:${userId}:*`
   ];
 
+  const cache = getCacheService();
   for (const pattern of patterns) {
-    await cacheService.clearByPattern(pattern);
+    await cache.clearByPattern(pattern);
   }
 };

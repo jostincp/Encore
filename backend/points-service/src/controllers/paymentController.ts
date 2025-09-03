@@ -1,65 +1,69 @@
 import { Request, Response } from 'express';
-import { PaymentModel, CreatePaymentData, PaymentFilters } from '../models/Payment';
-import { logger } from '../../../shared/utils/logger';
-import { AuthenticatedRequest } from '../../../shared/types/auth';
 import Stripe from 'stripe';
+import { PaymentModel, PaymentFilters } from '../models/Payment';
+import { AuthenticatedRequest } from '../../../shared/utils/jwt';
+import logger from '../../../shared/utils/logger';
+import { getPool } from '../../../shared/database';
 
-// Initialize Stripe
+// Initialize Stripe with the latest API version
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16'
+  apiVersion: '2025-08-27.basil'
 });
 
 export class PaymentController {
-  // Create payment intent for points purchase
+  // Create payment intent
   static async createPaymentIntent(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { bar_id, points_amount, payment_method_types = ['card'] } = req.body;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
 
       // Validate points amount
       if (!points_amount || points_amount <= 0) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Invalid points amount'
         });
+        return;
       }
 
-      // Calculate price based on points (e.g., 1 point = $0.01)
+      // Calculate amount in cents (assuming 1 point = $0.01)
       const pointsRate = parseFloat(process.env.POINTS_RATE || '0.01');
       const amount = Math.round(points_amount * pointsRate * 100); // Convert to cents
 
-      // Validate minimum amount (Stripe minimum is $0.50)
-      if (amount < 50) {
-        return res.status(400).json({
-          success: false,
-          message: 'Minimum purchase amount is $0.50'
-        });
-      }
-
-      const paymentData: CreatePaymentData = {
-        user_id: userId,
-        bar_id,
-        amount: amount / 100, // Store in dollars
+      // Create payment intent with Stripe
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount,
         currency: 'usd',
-        points_amount,
         payment_method_types,
         metadata: {
           user_id: userId,
-          bar_id,
+          bar_id: bar_id || '',
           points_amount: points_amount.toString()
         }
-      };
+      });
 
-      const payment = await PaymentModel.createPaymentIntent(paymentData);
+      // Save payment record to database
+      const payment = await PaymentModel.createPaymentIntent({
+        user_id: userId,
+        bar_id: bar_id || '',
+        amount: amount / 100, // Store in dollars
+        currency: 'USD',
+        points_purchased: points_amount,
+        description: `Purchase of ${points_amount} points`,
+        metadata: {
+          user_id: userId,
+          bar_id: bar_id || '',
+          points_amount: points_amount.toString()
+        }
+      });
 
-      res.status(201).json({
+      res.json({
         success: true,
         data: {
+          client_secret: paymentIntent.client_secret,
           payment_id: payment.id,
-          client_secret: payment.stripe_client_secret,
-          amount: payment.amount,
-          points_amount: payment.points_amount,
-          status: payment.status
+          amount: amount / 100,
+          points_amount
         }
       });
     } catch (error) {
@@ -71,39 +75,43 @@ export class PaymentController {
     }
   }
 
-  // Get payment details
+  // Get single payment
   static async getPayment(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { paymentId } = req.params;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
+     
+     const payment = await PaymentModel.findById(paymentId);
+     if (!payment) {
+       res.status(404).json({
+         success: false,
+         message: 'Payment not found'
+       });
+       return;
+     }
 
-      const payment = await PaymentModel.findById(paymentId);
+     // Check if user has permission to view this payment
+     if (payment.user_id !== userId && req.user!.role !== 'admin') {
+       // Check if user owns the bar
+       const result = await getPool().query(
+         'SELECT owner_id FROM bars WHERE id = $1',
+         [payment.bar_id]
+       );
+       const bar = result.rows[0];
+         
+         if (!bar || bar.owner_id !== userId) {
+           res.status(403).json({
+             success: false,
+             message: 'Insufficient permissions'
+           });
+           return;
+         }
+       }
 
-      if (!payment) {
-        return res.status(404).json({
-          success: false,
-          message: 'Payment not found'
-        });
-      }
-
-      // Check if user owns this payment or is admin
-      if (payment.user_id !== userId && req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-        // Check if user is bar owner
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(payment.bar_id);
-        
-        if (!bar || bar.owner_id !== userId) {
-          return res.status(403).json({
-            success: false,
-            message: 'Access denied'
-          });
-        }
-      }
-
-      res.json({
-        success: true,
-        data: payment
-      });
+       res.json({
+         success: true,
+         data: payment
+       });
     } catch (error) {
       logger.error('Error getting payment:', error);
       res.status(500).json({
@@ -116,32 +124,43 @@ export class PaymentController {
   // Get user payments
   static async getUserPayments(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       const {
         bar_id,
         status,
-        date_from,
-        date_to,
+        limit = 20,
         page = 1,
-        limit = 20
+        date_from,
+        date_to
       } = req.query;
 
-      const filters: PaymentFilters = { user_id: userId };
+      const filters: any = { user_id: userId };
       
-      if (bar_id) filters.bar_id = bar_id as string;
-      if (status) filters.status = status as string;
+      if (bar_id) filters.bar_id = bar_id;
+      if (status) filters.status = status;
       if (date_from) filters.date_from = new Date(date_from as string);
       if (date_to) filters.date_to = new Date(date_to as string);
 
       const result = await PaymentModel.getPayments(
         filters,
-        parseInt(page as string),
-        parseInt(limit as string)
+        parseInt(page as string) || 1,
+        parseInt(limit as string) || 20
       );
+      const payments = result.payments;
+      const total = result.total;
 
       res.json({
         success: true,
-        data: result
+        data: {
+          payments,
+          pagination: {
+            total,
+            limit: parseInt(limit as string),
+            page: parseInt(page as string),
+            totalPages: result.totalPages,
+            has_more: parseInt(page as string) < result.totalPages
+          }
+        }
       });
     } catch (error) {
       logger.error('Error getting user payments:', error);
@@ -156,46 +175,59 @@ export class PaymentController {
   static async getBarPayments(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(barId);
+      if (req.user!.role !== 'admin') {
+        const result = await getPool().query(
+          'SELECT owner_id FROM bars WHERE id = $1',
+          [barId]
+        );
+        const bar = result.rows[0];
         
         if (!bar || bar.owner_id !== userId) {
-          return res.status(403).json({
+          res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
           });
+          return;
         }
       }
 
       const {
-        user_id,
         status,
-        date_from,
-        date_to,
+        limit = 20,
         page = 1,
-        limit = 20
+        date_from,
+        date_to
       } = req.query;
 
-      const filters: PaymentFilters = { bar_id: barId };
+      const filters: any = { bar_id: barId };
       
-      if (user_id) filters.user_id = user_id as string;
-      if (status) filters.status = status as string;
+      if (status) filters.status = status;
       if (date_from) filters.date_from = new Date(date_from as string);
       if (date_to) filters.date_to = new Date(date_to as string);
 
       const result = await PaymentModel.getPayments(
         filters,
-        parseInt(page as string),
-        parseInt(limit as string)
+        parseInt(page as string) || 1,
+        parseInt(limit as string) || 20
       );
+      const payments = result.payments;
+      const total = result.total;
 
       res.json({
         success: true,
-        data: result
+        data: {
+          payments,
+          pagination: {
+            total,
+            limit: parseInt(limit as string),
+            page: parseInt(page as string),
+            totalPages: result.totalPages,
+            has_more: parseInt(page as string) < result.totalPages
+          }
+        }
       });
     } catch (error) {
       logger.error('Error getting bar payments:', error);
@@ -210,61 +242,71 @@ export class PaymentController {
   static async refundPayment(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { paymentId } = req.params;
-      const { reason, amount } = req.body;
-      const userId = req.user!.id;
+      const { reason } = req.body;
+      const userId = req.user!.userId;
 
+      // Get payment details
       const payment = await PaymentModel.findById(paymentId);
-
       if (!payment) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           message: 'Payment not found'
         });
+        return;
       }
 
-      // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(payment.bar_id);
+      // Check if payment can be refunded
+      if (payment.status !== 'succeeded') {
+        res.status(400).json({
+          success: false,
+          message: 'Payment cannot be refunded'
+        });
+        return;
+      }
+
+      // Verify admin has permission for this payment
+      if (req.user!.role !== 'admin') {
+        const result = await getPool().query(
+          'SELECT owner_id FROM bars WHERE id = $1',
+          [payment.bar_id]
+        );
+        const bar = result.rows[0];
         
         if (!bar || bar.owner_id !== userId) {
-          return res.status(403).json({
+          res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
           });
+          return;
         }
       }
 
-      if (payment.status !== 'succeeded') {
-        return res.status(400).json({
-          success: false,
-          message: 'Can only refund successful payments'
-        });
-      }
+      // Create refund with Stripe
+      const refund = await stripe.refunds.create({
+        payment_intent: payment.stripe_payment_intent_id,
+        reason: 'requested_by_customer',
+        metadata: {
+          refunded_by: userId,
+          reason: reason || 'No reason provided'
+        }
+      });
 
-      const refundAmount = amount ? Math.min(amount, payment.amount) : payment.amount;
-      
-      const refundedPayment = await PaymentModel.refundPayment(
-        paymentId,
-        refundAmount,
-        reason || 'Refund requested by admin'
-      );
+      // Update payment status
+      const updatedPayment = await PaymentModel.refundPayment(paymentId, refund.amount / 100, reason);
 
       res.json({
         success: true,
-        data: refundedPayment,
-        message: 'Payment refunded successfully'
+        data: {
+          payment: updatedPayment,
+          refund: {
+            id: refund.id,
+            amount: refund.amount / 100,
+            status: refund.status
+          }
+        }
       });
     } catch (error) {
       logger.error('Error refunding payment:', error);
-      
-      if (error instanceof Error && error.message.includes('already been refunded')) {
-        return res.status(400).json({
-          success: false,
-          message: 'Payment has already been refunded'
-        });
-      }
-      
       res.status(500).json({
         success: false,
         message: 'Failed to refund payment'
@@ -277,18 +319,22 @@ export class PaymentController {
     try {
       const { barId } = req.params;
       const { date_from, date_to } = req.query;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(barId);
+      if (req.user!.role !== 'admin') {
+        const result = await getPool().query(
+          'SELECT owner_id FROM bars WHERE id = $1',
+          [barId]
+        );
+        const bar = result.rows[0];
         
         if (!bar || bar.owner_id !== userId) {
-          return res.status(403).json({
+          res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
           });
+          return;
         }
       }
 
@@ -318,7 +364,8 @@ export class PaymentController {
 
       if (!sig || !endpointSecret) {
         logger.error('Missing Stripe signature or webhook secret');
-        return res.status(400).json({ error: 'Missing signature or secret' });
+        res.status(400).json({ error: 'Missing signature or secret' });
+        return;
       }
 
       let event: Stripe.Event;
@@ -327,7 +374,8 @@ export class PaymentController {
         event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
       } catch (err) {
         logger.error('Webhook signature verification failed:', err);
-        return res.status(400).json({ error: 'Invalid signature' });
+        res.status(400).json({ error: 'Invalid signature' });
+        return;
       }
 
       // Handle the event
@@ -348,19 +396,23 @@ export class PaymentController {
   // Get payment methods for user
   static async getPaymentMethods(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
 
-      // Get user's Stripe customer ID
-      const { UserModel } = await import('../../../shared/models/User');
-      const user = await UserModel.findById(userId);
+      // Get user's Stripe customer ID from database
+      const userResult = await getPool().query(
+        'SELECT stripe_customer_id FROM users WHERE id = $1',
+        [userId]
+      );
+      const user = userResult.rows[0];
 
       if (!user || !user.stripe_customer_id) {
-        return res.json({
+        res.json({
           success: true,
           data: {
             payment_methods: []
           }
         });
+        return;
       }
 
       // Get payment methods from Stripe
@@ -434,10 +486,10 @@ export class PaymentController {
   // Get user payment summary
   static async getUserPaymentSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
 
       // Get user payment summary
-      const result = await PaymentModel.pool.query(
+      const result = await getPool().query(
         `SELECT 
            COUNT(*) as total_payments,
            COALESCE(SUM(amount), 0) as total_spent,

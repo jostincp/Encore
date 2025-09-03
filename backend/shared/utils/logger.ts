@@ -1,32 +1,19 @@
-import { createLogger, format, transports } from 'winston';
+import winston from 'winston';
 
-const { combine, timestamp, errors, json, colorize, simple } = format;
-
-// Configuración del logger
-const logger = createLogger({
+// Configuración simplificada del logger para evitar problemas en testing
+const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
-  format: combine(
-    timestamp(),
-    errors({ stack: true }),
-    json()
-  ),
-  defaultMeta: { service: process.env.SERVICE_NAME || 'encore-service' },
+  format: winston.format.json(),
+  defaultMeta: { service: 'encore-backend' },
   transports: [
-    // Escribir logs de error a error.log
-    new transports.File({ filename: 'logs/error.log', level: 'error' }),
-    // Escribir todos los logs a combined.log
-    new transports.File({ filename: 'logs/combined.log' })
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'logs/combined.log' })
   ]
 });
 
 // Si no estamos en producción, también log a la consola
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new transports.Console({
-    format: combine(
-      colorize(),
-      simple()
-    )
-  }));
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
+  logger.add(new winston.transports.Console());
 }
 
 export default logger;

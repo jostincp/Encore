@@ -14,6 +14,13 @@ export interface AuthenticatedSocket extends Socket {
   barId?: string;
   tableId?: string;
   isTableSession?: boolean;
+  // Propiedades explícitas de Socket
+  id: string;
+  emit: (event: string, ...args: any[]) => boolean;
+  on: (event: string, listener: (...args: any[]) => void) => this;
+  join: (room: string | string[]) => Promise<void> | void;
+  leave: (room: string) => Promise<void> | void;
+  disconnect: (close?: boolean) => this;
 }
 
 // Configuración de Socket.IO
@@ -23,7 +30,7 @@ const SOCKET_CONFIG = {
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket', 'polling'],
+  transports: ['websocket' as const, 'polling' as const],
   pingTimeout: 60000,
   pingInterval: 25000,
   upgradeTimeout: 10000,
@@ -219,7 +226,7 @@ export class SocketManager {
     // Emitir específicamente a admins
     this.io.to(`admin:${socket.barId}`).emit('admin:song:requested', event);
     
-    logInfo(`Song requested: ${data.songId} by user: ${socket.user!.userId}`);
+    logInfo(`Song requested: ${data.payload?.queueItem?.songId || 'unknown'} by user: ${socket.user!.userId}`);
   }
 
   // Manejar actualización de cola

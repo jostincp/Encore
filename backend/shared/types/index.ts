@@ -1,5 +1,15 @@
 // Tipos compartidos entre microservicios
 
+// Basic types
+export type ID = string;
+export type Timestamp = Date;
+
+// Validation types
+export interface ValidationResult {
+  isValid: boolean;
+  errors: ValidationError[];
+}
+
 export interface User {
   id: string;
   email: string;
@@ -200,6 +210,7 @@ export interface PaymentServiceConfig extends ServiceConfig {
 
 // Tipos para validación
 export interface ValidationError {
+  name: string;
   field: string;
   message: string;
 }

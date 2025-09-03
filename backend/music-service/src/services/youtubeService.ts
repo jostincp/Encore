@@ -1,439 +1,361 @@
-import axios from 'axios';
-import { config } from '../../../shared/config';
-import { logger } from '../../../shared/utils/logger';
-import { cacheService } from '../../../shared/utils/cache';
-import { ExternalServiceError } from '../../../shared/utils/errors';
+import axios, { AxiosInstance } from 'axios';
+import { redisHelpers } from '../config/redis';
 
-export interface YouTubeSearchResult {
-  id: string;
-  title: string;
-  artist: string;
-  duration: number; // in seconds
-  thumbnail_url: string;
-  url: string;
-  view_count?: number;
-  published_at?: string;
-  description?: string;
+interface YouTubeVideo {
+  id: {
+    videoId: string;
+  };
+  snippet: {
+    title: string;
+    channelTitle: string;
+    description: string;
+    publishedAt: string;
+    thumbnails: {
+      default: { url: string };
+      medium: { url: string };
+      high: { url: string };
+    };
+  };
 }
 
-export interface YouTubeVideoDetails {
+interface YouTubeVideoDetails {
   id: string;
-  title: string;
-  artist: string;
-  duration: number;
-  thumbnail_url: string;
-  url: string;
-  view_count: number;
-  like_count?: number;
-  published_at: string;
-  description: string;
-  tags?: string[];
-  category_id?: string;
+  snippet: {
+    title: string;
+    channelTitle: string;
+    description: string;
+    publishedAt: string;
+    thumbnails: {
+      default: { url: string };
+      medium: { url: string };
+      high: { url: string };
+    };
+  };
+  contentDetails: {
+    duration: string;
+  };
+  statistics: {
+    viewCount: string;
+    likeCount: string;
+  };
+}
+
+interface YouTubeSearchResponse {
+  items: YouTubeVideo[];
+  nextPageToken?: string;
+  pageInfo: {
+    totalResults: number;
+    resultsPerPage: number;
+  };
+}
+
+interface YouTubeVideoDetailsResponse {
+  items: YouTubeVideoDetails[];
 }
 
 export class YouTubeService {
-  private static readonly BASE_URL = 'https://www.googleapis.com/youtube/v3';
-  private static readonly API_KEY = config.youtube.apiKey;
-  private static readonly CACHE_TTL = 3600; // 1 hour
-  
-  static async searchSongs(
-    query: string,
-    maxResults: number = 25
-  ): Promise<YouTubeSearchResult[]> {
-    try {
-      if (!this.API_KEY) {
-        throw new ExternalServiceError('YouTube API key not configured');
-      }
-      
-      const cacheKey = `youtube:search:${query}:${maxResults}`;
-      const cached = await cacheService.get(cacheKey);
-      
-      if (cached) {
-        logger.debug('YouTube search results retrieved from cache', { query });
-        return JSON.parse(cached);
-      }
-      
-      const searchUrl = `${this.BASE_URL}/search`;
-      const searchParams = {
-        part: 'snippet',
-        q: query,
-        type: 'video',
-        videoCategoryId: '10', // Music category
-        maxResults: maxResults,
-        key: this.API_KEY,
-        order: 'relevance',
-        safeSearch: 'moderate'
-      };
-      
-      logger.debug('Searching YouTube', { query, maxResults });
-      const searchResponse = await axios.get(searchUrl, { params: searchParams });
-      
-      if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
-        logger.info('No YouTube results found', { query });
-        return [];
-      }
-      
-      // Get video IDs for duration lookup
-      const videoIds = searchResponse.data.items.map((item: any) => item.id.videoId).join(',');
-      
-      // Get video details including duration
-      const detailsUrl = `${this.BASE_URL}/videos`;
-      const detailsParams = {
-        part: 'contentDetails,statistics,snippet',
-        id: videoIds,
-        key: this.API_KEY
-      };
-      
-      const detailsResponse = await axios.get(detailsUrl, { params: detailsParams });
-      
-      const results: YouTubeSearchResult[] = searchResponse.data.items.map((item: any) => {
-        const details = detailsResponse.data.items.find((d: any) => d.id === item.id.videoId);
-        const duration = details ? this.parseDuration(details.contentDetails.duration) : 0;
-        
-        // Extract artist from title (common patterns)
-        const title = item.snippet.title;
-        const { cleanTitle, artist } = this.extractArtistFromTitle(title);
-        
-        return {
-          id: item.id.videoId,
-          title: cleanTitle,
-          artist: artist,
-          duration: duration,
-          thumbnail_url: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default.url,
-          url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
-          view_count: details ? parseInt(details.statistics.viewCount || '0') : undefined,
-          published_at: item.snippet.publishedAt,
-          description: item.snippet.description
-        };
-      });
-      
-      // Filter out very short or very long videos (likely not music)
-      const filteredResults = results.filter(result => 
-        result.duration >= 30 && result.duration <= 600 // 30 seconds to 10 minutes
-      );
-      
-      // Cache results
-      await cacheService.set(cacheKey, JSON.stringify(filteredResults), this.CACHE_TTL);
-      
-      logger.info(`YouTube search completed`, { 
-        query, 
-        totalResults: results.length, 
-        filteredResults: filteredResults.length 
-      });
-      
-      return filteredResults;
-    } catch (error) {
-      logger.error('YouTube search error:', error);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.response?.status === 403) {
-          throw new ExternalServiceError('YouTube API quota exceeded or invalid API key');
-        }
-        if (error.response?.status === 400) {
-          throw new ExternalServiceError('Invalid YouTube search parameters');
-        }
-      }
-      
-      throw new ExternalServiceError('YouTube search failed');
-    }
+  private static instance: YouTubeService;
+  private client: AxiosInstance;
+  private apiKey: string;
+
+  private constructor() {
+    this.apiKey = process.env.YOUTUBE_API_KEY || '';
+    this.client = axios.create({
+      baseURL: 'https://www.googleapis.com/youtube/v3',
+      timeout: 10000,
+      params: {
+        key: this.apiKey,
+      },
+    });
   }
-  
-  static async getVideoDetails(videoId: string): Promise<YouTubeVideoDetails | null> {
-    try {
-      if (!this.API_KEY) {
-        throw new ExternalServiceError('YouTube API key not configured');
-      }
-      
-      const cacheKey = `youtube:video:${videoId}`;
-      const cached = await cacheService.get(cacheKey);
-      
-      if (cached) {
-        logger.debug('YouTube video details retrieved from cache', { videoId });
-        return JSON.parse(cached);
-      }
-      
-      const url = `${this.BASE_URL}/videos`;
-      const params = {
-        part: 'snippet,contentDetails,statistics',
-        id: videoId,
-        key: this.API_KEY
-      };
-      
-      logger.debug('Getting YouTube video details', { videoId });
-      const response = await axios.get(url, { params });
-      
-      if (!response.data.items || response.data.items.length === 0) {
-        logger.warn('YouTube video not found', { videoId });
-        return null;
-      }
-      
-      const item = response.data.items[0];
-      const duration = this.parseDuration(item.contentDetails.duration);
-      const { cleanTitle, artist } = this.extractArtistFromTitle(item.snippet.title);
-      
-      const videoDetails: YouTubeVideoDetails = {
-        id: item.id,
-        title: cleanTitle,
-        artist: artist,
-        duration: duration,
-        thumbnail_url: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default.url,
-        url: `https://www.youtube.com/watch?v=${item.id}`,
-        view_count: parseInt(item.statistics.viewCount || '0'),
-        like_count: parseInt(item.statistics.likeCount || '0'),
-        published_at: item.snippet.publishedAt,
-        description: item.snippet.description,
-        tags: item.snippet.tags,
-        category_id: item.snippet.categoryId
-      };
-      
-      // Cache video details
-      await cacheService.set(cacheKey, JSON.stringify(videoDetails), this.CACHE_TTL);
-      
-      logger.info('YouTube video details retrieved', { videoId, title: cleanTitle });
-      return videoDetails;
-    } catch (error) {
-      logger.error('YouTube video details error:', error);
-      
-      if (axios.isAxiosError(error)) {
-        if (error.response?.status === 403) {
-          throw new ExternalServiceError('YouTube API quota exceeded or invalid API key');
-        }
-        if (error.response?.status === 404) {
-          return null;
-        }
-      }
-      
-      throw new ExternalServiceError('Failed to get YouTube video details');
+
+  public static getInstance(): YouTubeService {
+    if (!YouTubeService.instance) {
+      YouTubeService.instance = new YouTubeService();
     }
+    return YouTubeService.instance;
   }
-  
-  static async validateVideoId(videoId: string): Promise<boolean> {
-    try {
-      const details = await this.getVideoDetails(videoId);
-      return details !== null;
-    } catch (error) {
-      logger.error('YouTube video validation error:', error);
-      return false;
-    }
-  }
-  
-  static async getPlaylistVideos(playlistId: string, maxResults: number = 50): Promise<YouTubeSearchResult[]> {
-    try {
-      if (!this.API_KEY) {
-        throw new ExternalServiceError('YouTube API key not configured');
-      }
-      
-      const cacheKey = `youtube:playlist:${playlistId}:${maxResults}`;
-      const cached = await cacheService.get(cacheKey);
-      
-      if (cached) {
-        logger.debug('YouTube playlist retrieved from cache', { playlistId });
-        return JSON.parse(cached);
-      }
-      
-      const url = `${this.BASE_URL}/playlistItems`;
-      const params = {
-        part: 'snippet',
-        playlistId: playlistId,
-        maxResults: maxResults,
-        key: this.API_KEY
-      };
-      
-      logger.debug('Getting YouTube playlist videos', { playlistId, maxResults });
-      const response = await axios.get(url, { params });
-      
-      if (!response.data.items || response.data.items.length === 0) {
-        logger.info('No videos found in YouTube playlist', { playlistId });
-        return [];
-      }
-      
-      // Get video IDs for duration lookup
-      const videoIds = response.data.items
-        .map((item: any) => item.snippet.resourceId.videoId)
-        .join(',');
-      
-      // Get video details including duration
-      const detailsUrl = `${this.BASE_URL}/videos`;
-      const detailsParams = {
-        part: 'contentDetails,statistics',
-        id: videoIds,
-        key: this.API_KEY
-      };
-      
-      const detailsResponse = await axios.get(detailsUrl, { params: detailsParams });
-      
-      const results: YouTubeSearchResult[] = response.data.items.map((item: any) => {
-        const videoId = item.snippet.resourceId.videoId;
-        const details = detailsResponse.data.items.find((d: any) => d.id === videoId);
-        const duration = details ? this.parseDuration(details.contentDetails.duration) : 0;
-        
-        const title = item.snippet.title;
-        const { cleanTitle, artist } = this.extractArtistFromTitle(title);
-        
-        return {
-          id: videoId,
-          title: cleanTitle,
-          artist: artist,
-          duration: duration,
-          thumbnail_url: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default.url,
-          url: `https://www.youtube.com/watch?v=${videoId}`,
-          view_count: details ? parseInt(details.statistics.viewCount || '0') : undefined,
-          published_at: item.snippet.publishedAt,
-          description: item.snippet.description
-        };
-      });
-      
-      // Filter out invalid videos
-      const filteredResults = results.filter(result => 
-        result.duration >= 30 && result.duration <= 600
-      );
-      
-      // Cache results
-      await cacheService.set(cacheKey, JSON.stringify(filteredResults), this.CACHE_TTL);
-      
-      logger.info(`YouTube playlist videos retrieved`, { 
-        playlistId, 
-        totalResults: results.length, 
-        filteredResults: filteredResults.length 
-      });
-      
-      return filteredResults;
-    } catch (error) {
-      logger.error('YouTube playlist error:', error);
-      throw new ExternalServiceError('Failed to get YouTube playlist videos');
-    }
-  }
-  
-  // Helper method to parse YouTube duration format (PT4M13S -> 253 seconds)
+
   private static parseDuration(duration: string): number {
-    const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+    // Parse ISO 8601 duration format (PT4M13S) to seconds
+    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
     if (!match) return 0;
-    
-    const hours = parseInt(match[1]?.replace('H', '') || '0');
-    const minutes = parseInt(match[2]?.replace('M', '') || '0');
-    const seconds = parseInt(match[3]?.replace('S', '') || '0');
-    
+
+    const hours = parseInt(match[1] || '0', 10);
+    const minutes = parseInt(match[2] || '0', 10);
+    const seconds = parseInt(match[3] || '0', 10);
+
     return hours * 3600 + minutes * 60 + seconds;
   }
-  
-  // Helper method to extract artist from video title
-  private static extractArtistFromTitle(title: string): { cleanTitle: string; artist: string } {
-    // Common patterns: "Artist - Title", "Artist: Title", "Title by Artist", "Title - Artist"
+
+  private static extractArtistFromTitle(title: string, channelTitle: string): string {
+    // Try to extract artist from title patterns like "Artist - Song" or "Song by Artist"
     const patterns = [
-      /^(.+?)\s*-\s*(.+)$/, // Artist - Title
-      /^(.+?)\s*:\s*(.+)$/, // Artist: Title
-      /^(.+?)\s+by\s+(.+)$/i, // Title by Artist
-      /^(.+?)\s*\|\s*(.+)$/, // Artist | Title
-      /^(.+?)\s*–\s*(.+)$/, // Artist – Title (em dash)
+      /^(.+?)\s*[-–—]\s*(.+)$/, // Artist - Song
+      /^(.+?)\s*by\s+(.+)$/i,   // Song by Artist
+      /^(.+?)\s*\|\s*(.+)$/,    // Artist | Song
     ];
-    
+
     for (const pattern of patterns) {
       const match = title.match(pattern);
       if (match) {
-        const [, part1, part2] = match;
+        // Assume first part is artist if it's shorter or contains common artist indicators
+        const part1 = match[1].trim();
+        const part2 = match[2].trim();
         
-        // Heuristic: if part1 looks like an artist name (shorter, no common title words)
-        const titleWords = ['official', 'video', 'music', 'lyrics', 'audio', 'live', 'remix', 'cover'];
-        const part1Lower = part1.toLowerCase();
-        const hasVideoWords = titleWords.some(word => part1Lower.includes(word));
-        
-        if (!hasVideoWords && part1.length < part2.length) {
-          return {
-            cleanTitle: part2.trim(),
-            artist: part1.trim()
-          };
+        if (part1.length < part2.length || /official|video|lyrics|audio/i.test(part2)) {
+          return part1;
         } else {
-          return {
-            cleanTitle: part1.trim(),
-            artist: part2.trim()
-          };
+          return part2;
         }
       }
     }
-    
-    // If no pattern matches, try to extract artist from common formats
-    const artistMatch = title.match(/\(([^)]+)\)$/) || title.match(/\[([^\]]+)\]$/);
-    if (artistMatch) {
-      return {
-        cleanTitle: title.replace(artistMatch[0], '').trim(),
-        artist: artistMatch[1].trim()
-      };
-    }
-    
-    // Default: use channel name as artist (would need to be passed from search results)
-    return {
-      cleanTitle: title.trim(),
-      artist: 'Unknown Artist'
-    };
+
+    // Fallback to channel title, but clean it up
+    return channelTitle
+      .replace(/official|channel|music|records|entertainment/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Unknown Artist';
   }
-  
-  static async getTrendingMusic(regionCode: string = 'US', maxResults: number = 50): Promise<YouTubeSearchResult[]> {
+
+  public static async searchVideos(
+    query: string,
+    options: { maxResults?: number; pageToken?: string } = {}
+  ): Promise<any[]> {
+    const instance = YouTubeService.getInstance();
+    const { maxResults = 25, pageToken } = options;
+
+    if (!instance.apiKey) {
+      console.error('YouTube API key not configured');
+      throw new Error('YouTube API key not configured');
+    }
+
     try {
-      if (!this.API_KEY) {
-        throw new ExternalServiceError('YouTube API key not configured');
-      }
-      
-      const cacheKey = `youtube:trending:${regionCode}:${maxResults}`;
-      const cached = await cacheService.get(cacheKey);
-      
+      const cacheKey = `youtube:search:${query}:${maxResults}:${pageToken || 'first'}`;
+      const cached = await redisHelpers.get(cacheKey);
       if (cached) {
-        logger.debug('YouTube trending music retrieved from cache', { regionCode });
-        return JSON.parse(cached);
+        return cached;
       }
-      
-      const url = `${this.BASE_URL}/videos`;
-      const params = {
-        part: 'snippet,contentDetails,statistics',
-        chart: 'mostPopular',
+
+      const params: any = {
+        part: 'snippet',
+        q: query,
+        type: 'video',
+        maxResults,
         videoCategoryId: '10', // Music category
-        regionCode: regionCode,
-        maxResults: maxResults,
-        key: this.API_KEY
+        order: 'relevance',
       };
-      
-      logger.debug('Getting YouTube trending music', { regionCode, maxResults });
-      const response = await axios.get(url, { params });
-      
-      if (!response.data.items || response.data.items.length === 0) {
-        logger.info('No trending music found on YouTube', { regionCode });
-        return [];
+
+      if (pageToken) {
+        params.pageToken = pageToken;
       }
-      
-      const results: YouTubeSearchResult[] = response.data.items.map((item: any) => {
-        const duration = this.parseDuration(item.contentDetails.duration);
-        const { cleanTitle, artist } = this.extractArtistFromTitle(item.snippet.title);
+
+      const response = await instance.client.get<YouTubeSearchResponse>('/search', {
+        params,
+      });
+
+      const videos = response.data.items.map(video => ({
+        id: `youtube:video:${video.id.videoId}`,
+        title: video.snippet.title,
+        artist: YouTubeService.extractArtistFromTitle(
+          video.snippet.title,
+          video.snippet.channelTitle
+        ),
+        channel: video.snippet.channelTitle,
+        duration: 0, // Will be filled by getVideoDetails if needed
+        thumbnail_url: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.medium?.url,
+        external_url: `https://www.youtube.com/watch?v=${video.id.videoId}`,
+        source: 'youtube',
+        published_at: video.snippet.publishedAt,
+        description: video.snippet.description,
+      }));
+
+      // Cache results for 5 minutes
+      await redisHelpers.set(cacheKey, videos, 300);
+
+      return videos;
+    } catch (error) {
+      console.error('YouTube search error:', error);
+      throw new Error('Failed to search YouTube videos');
+    }
+  }
+
+  public static async getVideoDetails(videoId: string): Promise<any> {
+    const instance = YouTubeService.getInstance();
+
+    if (!instance.apiKey) {
+      console.error('YouTube API key not configured');
+      throw new Error('YouTube API key not configured');
+    }
+
+    try {
+      const cacheKey = `youtube:video:${videoId}`;
+      const cached = await redisHelpers.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const response = await instance.client.get<YouTubeVideoDetailsResponse>('/videos', {
+        params: {
+          part: 'snippet,contentDetails,statistics',
+          id: videoId,
+        },
+      });
+
+      if (!response.data.items.length) {
+        throw new Error('Video not found');
+      }
+
+      const video = response.data.items[0];
+      const duration = YouTubeService.parseDuration(video.contentDetails.duration);
+
+      const videoDetails = {
+        id: `youtube:video:${video.id}`,
+        title: video.snippet.title,
+        artist: YouTubeService.extractArtistFromTitle(
+          video.snippet.title,
+          video.snippet.channelTitle
+        ),
+        channel: video.snippet.channelTitle,
+        duration,
+        thumbnail_url: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.medium?.url,
+        external_url: `https://www.youtube.com/watch?v=${video.id}`,
+        source: 'youtube',
+        published_at: video.snippet.publishedAt,
+        description: video.snippet.description,
+        view_count: parseInt(video.statistics.viewCount, 10),
+        like_count: parseInt(video.statistics.likeCount, 10),
+      };
+
+      // Cache for 1 hour
+      await redisHelpers.set(cacheKey, videoDetails, 3600);
+
+      return videoDetails;
+    } catch (error) {
+      console.error('YouTube video details error:', error);
+      throw new Error('Failed to get YouTube video details');
+    }
+  }
+
+  public static async getTrendingVideos(
+    options: { maxResults?: number; regionCode?: string } = {}
+  ): Promise<any[]> {
+    const instance = YouTubeService.getInstance();
+    const { maxResults = 25, regionCode = 'US' } = options;
+
+    if (!instance.apiKey) {
+      console.error('YouTube API key not configured');
+      throw new Error('YouTube API key not configured');
+    }
+
+    try {
+      const cacheKey = `youtube:trending:${maxResults}:${regionCode}`;
+      const cached = await redisHelpers.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const response = await instance.client.get('/videos', {
+        params: {
+          part: 'snippet,contentDetails,statistics',
+          chart: 'mostPopular',
+          videoCategoryId: '10', // Music category
+          regionCode,
+          maxResults,
+        },
+      });
+
+      const videos = response.data.items.map((video: any) => {
+        const duration = YouTubeService.parseDuration(video.contentDetails.duration);
         
         return {
-          id: item.id,
-          title: cleanTitle,
-          artist: artist,
-          duration: duration,
-          thumbnail_url: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default.url,
-          url: `https://www.youtube.com/watch?v=${item.id}`,
-          view_count: parseInt(item.statistics.viewCount || '0'),
-          published_at: item.snippet.publishedAt,
-          description: item.snippet.description
+          id: `youtube:video:${video.id}`,
+          title: video.snippet.title,
+          artist: YouTubeService.extractArtistFromTitle(
+            video.snippet.title,
+            video.snippet.channelTitle
+          ),
+          channel: video.snippet.channelTitle,
+          duration,
+          thumbnail_url: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.medium?.url,
+          external_url: `https://www.youtube.com/watch?v=${video.id}`,
+          source: 'youtube',
+          published_at: video.snippet.publishedAt,
+          view_count: parseInt(video.statistics.viewCount, 10),
+          like_count: parseInt(video.statistics.likeCount, 10),
         };
       });
-      
-      // Filter music videos
-      const filteredResults = results.filter(result => 
-        result.duration >= 30 && result.duration <= 600
-      );
-      
-      // Cache results for shorter time (trending changes frequently)
-      await cacheService.set(cacheKey, JSON.stringify(filteredResults), 1800); // 30 minutes
-      
-      logger.info(`YouTube trending music retrieved`, { 
-        regionCode, 
-        totalResults: results.length, 
-        filteredResults: filteredResults.length 
-      });
-      
-      return filteredResults;
+
+      // Cache for 30 minutes
+      await redisHelpers.set(cacheKey, videos, 1800);
+
+      return videos;
     } catch (error) {
-      logger.error('YouTube trending music error:', error);
-      throw new ExternalServiceError('Failed to get YouTube trending music');
+      console.error('YouTube trending videos error:', error);
+      throw new Error('Failed to get YouTube trending videos');
+    }
+  }
+
+  public static async getPlaylistVideos(
+    playlistId: string,
+    options: { maxResults?: number; pageToken?: string } = {}
+  ): Promise<any[]> {
+    const instance = YouTubeService.getInstance();
+    const { maxResults = 25, pageToken } = options;
+
+    if (!instance.apiKey) {
+      console.error('YouTube API key not configured');
+      throw new Error('YouTube API key not configured');
+    }
+
+    try {
+      const cacheKey = `youtube:playlist:${playlistId}:${maxResults}:${pageToken || 'first'}`;
+      const cached = await redisHelpers.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const params: any = {
+        part: 'snippet',
+        playlistId,
+        maxResults,
+      };
+
+      if (pageToken) {
+        params.pageToken = pageToken;
+      }
+
+      const response = await instance.client.get('/playlistItems', {
+        params,
+      });
+
+      const videos = response.data.items
+        .filter((item: any) => item.snippet.resourceId.kind === 'youtube#video')
+        .map((item: any) => ({
+          id: `youtube:video:${item.snippet.resourceId.videoId}`,
+          title: item.snippet.title,
+          artist: YouTubeService.extractArtistFromTitle(
+            item.snippet.title,
+            item.snippet.channelTitle
+          ),
+          channel: item.snippet.channelTitle,
+          duration: 0, // Would need separate API call to get duration
+          thumbnail_url: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+          external_url: `https://www.youtube.com/watch?v=${item.snippet.resourceId.videoId}`,
+          source: 'youtube',
+          published_at: item.snippet.publishedAt,
+          description: item.snippet.description,
+        }));
+
+      // Cache for 15 minutes
+      await redisHelpers.set(cacheKey, videos, 900);
+
+      return videos;
+    } catch (error) {
+      console.error('YouTube playlist videos error:', error);
+      throw new Error('Failed to get YouTube playlist videos');
     }
   }
 }
+
+export default YouTubeService

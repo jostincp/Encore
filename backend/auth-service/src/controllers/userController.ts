@@ -1,56 +1,80 @@
 import { Request, Response } from 'express';
-import { 
-  asyncHandler, 
-  sendSuccess, 
-  sendError, 
-  ValidationError, 
-  NotFoundError, 
-  ForbiddenError,
-  BadRequestError
-} from '../../../shared/utils/errors';
-import { AuthenticatedRequest } from '../../../shared/utils/jwt';
-import { validateEmail, validateNonEmptyString } from '../../../shared/utils/validation';
-import { UserModel } from '../models/User';
-import { logger } from '../../../shared/utils/logger';
-import { User } from '../../../shared/types';
+import bcrypt from 'bcrypt';
+import { User } from '../models/User';
+import { sendSuccess, sendError } from '../utils/response';
+import { ValidationError, UnauthorizedError, NotFoundError, ConflictError, ForbiddenError, BadRequestError } from '../utils/errors';
+import { RequestWithUser } from '../types';
+import { asyncHandler } from '../middleware/asyncHandler';
+import { logger } from '../utils/logger';
+
+// Model alias
+const UserModel = User;
+
+// Validation functions
+const validateNonEmptyString = (str: string): boolean => {
+  return typeof str === 'string' && str.trim().length > 0;
+};
+
+const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
 
 /**
  * Get all users (admin only)
  */
-export const getUsers = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getUsers = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userRole = req.user?.role;
   
   if (userRole !== 'admin') {
     throw new ForbiddenError('Acceso denegado');
   }
 
+  // Parse pagination parameters
   const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 10;
-  const role = req.query.role as string;
-  const search = req.query.search as string;
-  const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  const offset = (page - 1) * limit;
 
-  const filters: any = {};
-  if (role) filters.role = role;
-  if (search) filters.search = search;
-  if (isActive !== undefined) filters.isActive = isActive;
+  // Parse filters
+  const role = req.query.role as string;
+  const isActive = req.query.isActive ? req.query.isActive === 'true' : undefined;
+  const search = req.query.search as string;
 
   const result = await UserModel.findMany({
-    page,
     limit,
-    filters
+    offset,
+    role,
+    isActive,
+    search
   });
 
   sendSuccess(res, {
-    users: result.users,
-    pagination: result.pagination
+    users: result.users.map(user => ({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      isEmailVerified: user.isEmailVerified,
+      isActive: user.isActive,
+      phone: user.phone,
+      avatarUrl: user.avatarUrl,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    })),
+    pagination: {
+      page,
+      limit,
+      total: result.total,
+      totalPages: Math.ceil(result.total / limit)
+    }
   }, 'Usuarios obtenidos exitosamente');
 });
 
 /**
  * Get user by ID
  */
-export const getUserById = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getUserById = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const currentUserId = req.user?.userId;
   const currentUserRole = req.user?.role;
@@ -87,7 +111,7 @@ export const getUserById = asyncHandler(async (req: AuthenticatedRequest, res: R
 /**
  * Update user profile
  */
-export const updateUser = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const updateUser = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const currentUserId = req.user?.userId;
   const currentUserRole = req.user?.role;
@@ -163,7 +187,7 @@ export const updateUser = asyncHandler(async (req: AuthenticatedRequest, res: Re
 /**
  * Deactivate user (admin only)
  */
-export const deactivateUser = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const deactivateUser = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const currentUserId = req.user?.userId;
   const currentUserRole = req.user?.role;
@@ -194,7 +218,7 @@ export const deactivateUser = asyncHandler(async (req: AuthenticatedRequest, res
 /**
  * Activate user (admin only)
  */
-export const activateUser = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const activateUser = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const currentUserId = req.user?.userId;
   const currentUserRole = req.user?.role;
@@ -232,7 +256,7 @@ export const activateUser = asyncHandler(async (req: AuthenticatedRequest, res: 
 /**
  * Delete user (admin only)
  */
-export const deleteUser = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const deleteUser = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const currentUserId = req.user?.userId;
   const currentUserRole = req.user?.role;
@@ -263,7 +287,7 @@ export const deleteUser = asyncHandler(async (req: AuthenticatedRequest, res: Re
 /**
  * Update user role (admin only)
  */
-export const updateUserRole = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const updateUserRole = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const { role } = req.body;
   const currentUserId = req.user?.userId;
@@ -311,7 +335,7 @@ export const updateUserRole = asyncHandler(async (req: AuthenticatedRequest, res
 /**
  * Get user statistics (admin only)
  */
-export const getUserStats = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getUserStats = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const currentUserRole = req.user?.role;
 
   if (currentUserRole !== 'admin') {
@@ -320,46 +344,46 @@ export const getUserStats = asyncHandler(async (req: AuthenticatedRequest, res: 
 
   // Get user counts by role
   const customerResult = await UserModel.findMany({ 
-    page: 1, 
     limit: 1, 
-    filters: { role: 'customer' } 
+    offset: 0,
+    role: 'customer'
   });
   
   const barOwnerResult = await UserModel.findMany({ 
-    page: 1, 
     limit: 1, 
-    filters: { role: 'bar_owner' } 
+    offset: 0,
+    role: 'bar_owner'
   });
   
   const adminResult = await UserModel.findMany({ 
-    page: 1, 
     limit: 1, 
-    filters: { role: 'admin' } 
+    offset: 0,
+    role: 'admin'
   });
 
   const activeResult = await UserModel.findMany({ 
-    page: 1, 
     limit: 1, 
-    filters: { isActive: true } 
+    offset: 0,
+    isActive: true
   });
 
   const inactiveResult = await UserModel.findMany({ 
-    page: 1, 
     limit: 1, 
-    filters: { isActive: false } 
+    offset: 0,
+    isActive: false
   });
 
   sendSuccess(res, {
     stats: {
-      total: customerResult.pagination.total + barOwnerResult.pagination.total + adminResult.pagination.total,
+      total: customerResult.total + barOwnerResult.total + adminResult.total,
       byRole: {
-        customers: customerResult.pagination.total,
-        barOwners: barOwnerResult.pagination.total,
-        admins: adminResult.pagination.total
+        customers: customerResult.total,
+        barOwners: barOwnerResult.total,
+        admins: adminResult.total
       },
       byStatus: {
-        active: activeResult.pagination.total,
-        inactive: inactiveResult.pagination.total
+        active: activeResult.total,
+        inactive: inactiveResult.total
       }
     }
   }, 'Estadísticas de usuarios obtenidas exitosamente');

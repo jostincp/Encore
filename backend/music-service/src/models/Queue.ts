@@ -1,5 +1,5 @@
-import { db } from '../../../shared/database';
-import { logger } from '../../../shared/utils/logger';
+import { query, findById, update, deleteById } from '../../../shared/database';
+import logger from '../../../shared/utils/logger';
 import { ValidationError, NotFoundError } from '../../../shared/utils/errors';
 import { validateRequired, validateUUID, validatePositiveInteger } from '../../../shared/utils/validation';
 
@@ -95,7 +95,7 @@ export class QueueModel {
       }
       
       // Get next position in queue for this bar
-      const positionResult = await db.query(
+      const positionResult = await query(
         `SELECT COALESCE(MAX(position), 0) + 1 as next_position 
          FROM queue 
          WHERE bar_id = $1 AND status IN ('pending', 'playing')`,
@@ -108,7 +108,7 @@ export class QueueModel {
       let finalPosition = position;
       if (data.priority_play) {
         // Get position after currently playing song
-        const priorityPositionResult = await db.query(
+        const priorityPositionResult = await query(
           `SELECT COALESCE(MIN(position), 1) as priority_position 
            FROM queue 
            WHERE bar_id = $1 AND status = 'pending'`,
@@ -118,7 +118,7 @@ export class QueueModel {
         finalPosition = priorityPositionResult.rows[0].priority_position;
         
         // Shift other pending songs down
-        await db.query(
+        await query(
           `UPDATE queue 
            SET position = position + 1, updated_at = CURRENT_TIMESTAMP 
            WHERE bar_id = $1 AND status = 'pending' AND position >= $2`,
@@ -126,7 +126,7 @@ export class QueueModel {
         );
       }
       
-      const result = await db.query(
+      const result = await query(
         `INSERT INTO queue (
           bar_id, song_id, user_id, position, status, priority_play, points_used
         ) VALUES ($1, $2, $3, $4, 'pending', $5, $6)
@@ -163,11 +163,11 @@ export class QueueModel {
     try {
       validateUUID(id, 'id');
       
-      let query = 'SELECT * FROM queue WHERE id = $1';
+      let queryStr = 'SELECT * FROM queue WHERE id = $1';
       let params = [id];
       
       if (includeDetails) {
-        query = `
+        queryStr = `
           SELECT 
             q.*,
             json_build_object(
@@ -191,7 +191,7 @@ export class QueueModel {
         `;
       }
       
-      const result = await db.query(query, params);
+      const result = await query(queryStr, params);
       
       if (result.rows.length === 0) {
         return null;
@@ -267,7 +267,7 @@ export class QueueModel {
         WHERE ${whereClause}
       `;
       
-      const countResult = await db.query(countQuery, params);
+      const countResult = await query(countQuery, params);
       const total = parseInt(countResult.rows[0].total);
       
       // Main query
@@ -298,7 +298,7 @@ export class QueueModel {
         `;
       }
       
-      const query = `
+      const queryStr = `
         SELECT ${selectClause}
         FROM queue q
         ${joinClause}
@@ -314,7 +314,7 @@ export class QueueModel {
       
       params.push(limit, offset);
       
-      const result = await db.query(query, params);
+      const result = await query(queryStr, params);
       
       logger.debug('Queue entries retrieved', {
         barId,
@@ -366,7 +366,7 @@ export class QueueModel {
       
       updateFields.push('updated_at = CURRENT_TIMESTAMP');
       
-      const query = `
+      const queryStr = `
         UPDATE queue 
         SET ${updateFields.join(', ')}
         WHERE id = $${paramIndex}
@@ -375,12 +375,12 @@ export class QueueModel {
       
       params.push(id);
       
-      const result = await db.query(query, params);
-      
+      const result = await query(queryStr, params);
+
       if (result.rows.length === 0) {
         return null;
       }
-      
+
       const queue = result.rows[0];
       
       logger.info('Queue entry updated', {
@@ -399,7 +399,7 @@ export class QueueModel {
     try {
       validateUUID(id, 'id');
       
-      const result = await db.query(
+      const result = await query(
         'DELETE FROM queue WHERE id = $1 RETURNING id',
         [id]
       );
@@ -421,7 +421,7 @@ export class QueueModel {
     try {
       validateUUID(barId, 'barId');
       
-      const result = await db.query(
+      const result = await query(
         `SELECT 
           q.*,
           json_build_object(
@@ -458,7 +458,7 @@ export class QueueModel {
     try {
       validateUUID(barId, 'barId');
       
-      const result = await db.query(
+      const result = await query(
         `SELECT 
           q.*,
           json_build_object(
@@ -505,12 +505,12 @@ export class QueueModel {
       });
       
       // Start transaction
-      await db.query('BEGIN');
+      await query('BEGIN');
       
       try {
         // Update positions for each queue entry
         for (let i = 0; i < queueIds.length; i++) {
-          await db.query(
+          await query(
             `UPDATE queue 
              SET position = $1, updated_at = CURRENT_TIMESTAMP 
              WHERE id = $2 AND bar_id = $3 AND status = 'pending'`,
@@ -518,14 +518,14 @@ export class QueueModel {
           );
         }
         
-        await db.query('COMMIT');
+        await query('COMMIT');
         
         logger.info('Queue reordered', {
           barId,
           queueCount: queueIds.length
         });
       } catch (error) {
-        await db.query('ROLLBACK');
+        await query('ROLLBACK');
         throw error;
       }
     } catch (error) {
@@ -538,16 +538,16 @@ export class QueueModel {
     try {
       validateUUID(barId, 'barId');
       
-      let query = 'DELETE FROM queue WHERE bar_id = $1';
+      let queryStr = 'DELETE FROM queue WHERE bar_id = $1';
       let params = [barId];
       
       if (status && status.length > 0) {
         const statusPlaceholders = status.map((_, index) => `$${index + 2}`).join(', ');
-        query += ` AND status IN (${statusPlaceholders})`;
+        queryStr += ` AND status IN (${statusPlaceholders})`;
         params.push(...status);
       }
       
-      const result = await db.query(query + ' RETURNING id', params);
+      const result = await query(queryStr + ' RETURNING id', params);
       
       const deletedCount = result.rows.length;
       
@@ -608,7 +608,7 @@ export class QueueModel {
         WHERE ${whereClause}
       `;
       
-      const statsResult = await db.query(statsQuery, params);
+      const statsResult = await query(statsQuery, params);
       const stats = statsResult.rows[0];
       
       // Most requested songs
@@ -626,7 +626,7 @@ export class QueueModel {
         LIMIT 10
       `;
       
-      const songsResult = await db.query(songsQuery, params);
+      const songsResult = await query(songsQuery, params);
       
       // Top requesters
       const usersQuery = `
@@ -644,7 +644,7 @@ export class QueueModel {
         LIMIT 10
       `;
       
-      const usersResult = await db.query(usersQuery, params);
+      const usersResult = await query(usersQuery, params);
       
       const queueStats: QueueStats = {
         total_requests: parseInt(stats.total_requests),
@@ -675,7 +675,7 @@ export class QueueModel {
       validateUUID(barId, 'barId');
       validateUUID(userId, 'userId');
       
-      const result = await db.query(
+      const result = await query(
         `SELECT position
          FROM queue
          WHERE bar_id = $1 AND user_id = $2 AND status = 'pending'
@@ -701,7 +701,7 @@ export class QueueModel {
       validateUUID(userId, 'userId');
       validatePositiveInteger(maxSongsPerUser, 'maxSongsPerUser');
       
-      const result = await db.query(
+      const result = await query(
         `SELECT COUNT(*) as current_count
          FROM queue
          WHERE bar_id = $1 AND user_id = $2 AND status IN ('pending', 'playing')`,

@@ -1,4 +1,5 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions, VerifyOptions } from 'jsonwebtoken';
+import { StringValue } from 'ms';
 import { Request, Response, NextFunction } from 'express';
 import { UnauthorizedError, ForbiddenError } from './errors';
 import { logError } from './logger';
@@ -13,6 +14,15 @@ export interface JwtPayload {
   exp?: number;
 }
 
+// Extender la interfaz Request de Express para incluir user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: JwtPayload;
+    }
+  }
+}
+
 export interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
 }
@@ -24,33 +34,32 @@ const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 
 // Generar token de acceso
 export const generateAccessToken = (payload: Omit<JwtPayload, 'iat' | 'exp'>): string => {
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
+  const options: SignOptions = {
+    expiresIn: JWT_EXPIRES_IN as StringValue,
     issuer: 'encore-api',
     audience: 'encore-client'
-  });
+  };
+  return jwt.sign(payload, JWT_SECRET, options);
 };
 
 // Generar token de refresh
 export const generateRefreshToken = (userId: string): string => {
-  return jwt.sign(
-    { userId, type: 'refresh' },
-    JWT_SECRET,
-    {
-      expiresIn: JWT_REFRESH_EXPIRES_IN,
-      issuer: 'encore-api',
+  const options: SignOptions = {
+    expiresIn: JWT_REFRESH_EXPIRES_IN as StringValue,
+    issuer: 'encore-api',
     audience: 'encore-client'
-    }
-  );
+  };
+  return jwt.sign({ userId, type: 'refresh' }, JWT_SECRET, options);
 };
 
 // Verificar token
 export const verifyToken = (token: string): JwtPayload => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET, {
+    const options: VerifyOptions = {
       issuer: 'encore-api',
-    audience: 'encore-client'
-    }) as JwtPayload;
+      audience: 'encore-client'
+    };
+    const decoded = jwt.verify(token, JWT_SECRET, options) as JwtPayload;
     
     return decoded;
   } catch (error) {
@@ -65,7 +74,7 @@ export const verifyToken = (token: string): JwtPayload => {
 };
 
 // Middleware de autenticación
-export const authenticateToken = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -89,7 +98,7 @@ export const authenticateToken = (req: AuthenticatedRequest, res: Response, next
 
 // Middleware de autorización por rol
 export const requireRole = (roles: string | string[]) => {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+  return (req: Request, res: Response, next: NextFunction): void => {
     try {
       if (!req.user) {
         throw new UnauthorizedError('User not authenticated');
@@ -109,7 +118,7 @@ export const requireRole = (roles: string | string[]) => {
 };
 
 // Middleware de autorización por bar (para admins)
-export const requireBarAccess = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+export const requireBarAccess = (req: Request, res: Response, next: NextFunction): void => {
   try {
     if (!req.user) {
       throw new UnauthorizedError('User not authenticated');
@@ -133,7 +142,7 @@ export const requireBarAccess = (req: AuthenticatedRequest, res: Response, next:
 };
 
 // Middleware opcional de autenticación (no lanza error si no hay token)
-export const optionalAuth = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+export const optionalAuth = (req: Request, res: Response, next: NextFunction): void => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(' ')[1];
@@ -208,7 +217,7 @@ export const verifyTableSessionToken = (token: string): { tableId: string; barId
 };
 
 // Middleware para autenticación de sesión de mesa
-export const authenticateTableSession = (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+export const authenticateTableSession = (req: Request, res: Response, next: NextFunction): void => {
   try {
     const token = extractToken(req);
     

@@ -1,15 +1,16 @@
 import { Request, Response } from 'express';
 import { PointsModel, CreatePointsTransactionData, PointsFilters } from '../models/Points';
-import { logger } from '../../../shared/utils/logger';
+import { getPool } from '../../../shared/database';
+import logger from '../../../shared/utils/logger';
 import { validateRequest } from '../../../shared/middleware/validation';
-import { AuthenticatedRequest } from '../../../shared/types/auth';
+import { AuthenticatedRequest } from '../../../shared/utils/jwt';
 
 export class PointsController {
   // Get user points balance
   static async getUserBalance(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
 
       const balance = await PointsModel.getUserBalance(userId, barId);
 
@@ -34,7 +35,7 @@ export class PointsController {
   static async getUserTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       const {
         type,
@@ -47,7 +48,9 @@ export class PointsController {
 
       const filters: PointsFilters = {};
       
-      if (type) filters.type = type as string;
+      if (type && ['earn', 'spend', 'refund', 'bonus', 'penalty'].includes(type as string)) {
+        filters.type = type as 'earn' | 'spend' | 'refund' | 'bonus' | 'penalty';
+      }
       if (date_from) filters.date_from = new Date(date_from as string);
       if (date_to) filters.date_to = new Date(date_to as string);
       if (reference_type) filters.reference_type = reference_type as string;
@@ -77,19 +80,22 @@ export class PointsController {
   static async addTransaction(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { user_id, bar_id, type, amount, description, reference_id, reference_type, metadata } = req.body;
-      const adminId = req.user!.id;
+      const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+      if (req.user!.role !== 'admin') {
         // Check if user is bar owner
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(bar_id);
+        const result = await getPool().query(
+          'SELECT owner_id FROM bars WHERE id = $1',
+          [bar_id]
+        );
         
-        if (!bar || bar.owner_id !== adminId) {
-          return res.status(403).json({
+        if (result.rows.length === 0 || result.rows[0].owner_id !== adminId) {
+          res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
           });
+          return;
         }
       }
 
@@ -119,10 +125,11 @@ export class PointsController {
       logger.error('Error adding points transaction:', error);
       
       if (error instanceof Error && error.message === 'Insufficient points balance') {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Insufficient points balance'
         });
+        return;
       }
       
       res.status(500).json({
@@ -136,33 +143,36 @@ export class PointsController {
   static async transferPoints(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { from_user_id, to_user_id, bar_id, amount, description } = req.body;
-      const adminId = req.user!.id;
+      const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(bar_id);
+      if (req.user!.role !== 'admin') {
+        const result = await getPool().query(
+          'SELECT owner_id FROM bars WHERE id = $1',
+          [bar_id]
+        );
         
-        if (!bar || bar.owner_id !== adminId) {
-          return res.status(403).json({
+        if (result.rows.length === 0 || result.rows[0].owner_id !== adminId) {
+          res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
           });
+          return;
         }
       }
 
       // Validate users exist
-      const { UserModel } = await import('../../../shared/models/User');
-      const [fromUser, toUser] = await Promise.all([
-        UserModel.findById(from_user_id),
-        UserModel.findById(to_user_id)
+      const [fromUserResult, toUserResult] = await Promise.all([
+        getPool().query('SELECT id FROM users WHERE id = $1', [from_user_id]),
+        getPool().query('SELECT id FROM users WHERE id = $1', [to_user_id])
       ]);
 
-      if (!fromUser || !toUser) {
-        return res.status(404).json({
+      if (fromUserResult.rows.length === 0 || toUserResult.rows.length === 0) {
+        res.status(404).json({
           success: false,
           message: 'One or both users not found'
         });
+        return;
       }
 
       const result = await PointsModel.transferPoints(
@@ -183,10 +193,11 @@ export class PointsController {
       logger.error('Error transferring points:', error);
       
       if (error instanceof Error && error.message === 'Insufficient points balance') {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Insufficient points balance'
         });
+        return;
       }
       
       res.status(500).json({
@@ -201,18 +212,21 @@ export class PointsController {
     try {
       const { barId } = req.params;
       const { date_from, date_to } = req.query;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(barId);
+      if (req.user!.role !== 'admin') {
+        const result = await getPool().query(
+          'SELECT owner_id FROM bars WHERE id = $1',
+          [barId]
+        );
         
-        if (!bar || bar.owner_id !== userId) {
-          return res.status(403).json({
+        if (result.rows.length === 0 || result.rows[0].owner_id !== userId) {
+          res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
           });
+          return;
         }
       }
 
@@ -242,10 +256,11 @@ export class PointsController {
 
       // Validate type
       if (!['earned', 'spent', 'balance'].includes(type as string)) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Invalid leaderboard type. Must be: earned, spent, or balance'
         });
+        return;
       }
 
       const leaderboard = await PointsModel.getLeaderboard(
@@ -274,18 +289,21 @@ export class PointsController {
   static async getBarTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(barId);
+      if (req.user!.role !== 'admin') {
+        const result = await getPool().query(
+          'SELECT owner_id FROM bars WHERE id = $1',
+          [barId]
+        );
         
-        if (!bar || bar.owner_id !== userId) {
-          return res.status(403).json({
+        if (result.rows.length === 0 || result.rows[0].owner_id !== userId) {
+          res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
           });
+          return;
         }
       }
 
@@ -299,10 +317,12 @@ export class PointsController {
         limit = 20
       } = req.query;
 
-      const filters: PointsFilters = { bar_id: barId };
+      const filters: PointsFilters = {};
       
       if (user_id) filters.user_id = user_id as string;
-      if (type) filters.type = type as string;
+      if (type && ['earn', 'spend', 'refund', 'bonus', 'penalty'].includes(type as string)) {
+        filters.type = type as 'earn' | 'spend' | 'refund' | 'bonus' | 'penalty';
+      }
       if (date_from) filters.date_from = new Date(date_from as string);
       if (date_to) filters.date_to = new Date(date_to as string);
       if (reference_type) filters.reference_type = reference_type as string;
@@ -333,26 +353,30 @@ export class PointsController {
   static async bulkAddPoints(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { bar_id, users, amount, description, reference_type } = req.body;
-      const adminId = req.user!.id;
+      const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
-        const { BarModel } = await import('../../../shared/models/Bar');
-        const bar = await BarModel.findById(bar_id);
+      if (req.user!.role !== 'admin') {
+        const result = await getPool().query(
+          'SELECT owner_id FROM bars WHERE id = $1',
+          [bar_id]
+        );
         
-        if (!bar || bar.owner_id !== adminId) {
-          return res.status(403).json({
+        if (result.rows.length === 0 || result.rows[0].owner_id !== adminId) {
+          res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
           });
+          return;
         }
       }
 
       if (!Array.isArray(users) || users.length === 0) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Users array is required and cannot be empty'
         });
+        return;
       }
 
       const transactions = [];
@@ -406,10 +430,10 @@ export class PointsController {
   // Get user points summary across all bars
   static async getUserPointsSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
 
       // Get user points for all bars
-      const result = await PointsModel.pool.query(
+      const result = await getPool().query(
         `SELECT 
            up.bar_id,
            b.name as bar_name,
@@ -426,9 +450,9 @@ export class PointsController {
 
       const summary = {
         total_bars: result.rows.length,
-        total_balance: result.rows.reduce((sum, row) => sum + row.current_balance, 0),
-        total_earned: result.rows.reduce((sum, row) => sum + row.total_earned, 0),
-        total_spent: result.rows.reduce((sum, row) => sum + row.total_spent, 0),
+        total_balance: result.rows.reduce((sum: number, row: any) => sum + row.current_balance, 0),
+        total_earned: result.rows.reduce((sum: number, row: any) => sum + row.total_earned, 0),
+        total_spent: result.rows.reduce((sum: number, row: any) => sum + row.total_spent, 0),
         bars: result.rows
       };
 

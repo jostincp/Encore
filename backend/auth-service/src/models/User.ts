@@ -1,6 +1,9 @@
-import { query, dbOperations } from '../../../shared/database';
-import { User, ValidationResult } from '../../../shared/types';
-import { validateUserRegistration } from '../../../shared/utils/validation';
+import { query, dbOperations } from '../utils/database';
+import { User } from '../types/models';
+import { validateUserRegistration, ValidationResult } from '../utils/validation';
+
+// Re-export User interface for external use
+export { User } from '../types/models';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -62,7 +65,7 @@ export class UserModel {
     });
 
     // Remove password hash from response
-    const { password_hash, ...userWithoutPassword } = user;
+    const { password, ...userWithoutPassword } = user;
     return userWithoutPassword as User;
   }
 
@@ -249,6 +252,6 @@ export class UserModel {
    * Delete user (hard delete)
    */
   static async delete(id: string): Promise<boolean> {
-    return await dbOperations.deleteById('users', id);
+    return await dbOperations.delete('users', id);
   }
 }

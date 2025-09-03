@@ -2,28 +2,33 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import 'express-async-errors';
 
-import { config } from '../../shared/config/database';
-import { logger } from '../../shared/utils/logger';
-import { connectDB } from '../../shared/utils/database';
-import { connectRedis } from '../../shared/utils/redis';
-import { rateLimitMiddleware } from '../../shared/middleware/rateLimit';
+import { config } from '../../shared/config';
+import logger from '../../shared/utils/logger';
+import { initializeDatabase } from '../../shared/database';
+import { initRedis, getRedisClient } from '../../shared/utils/redis';
+import { 
+  securityMiddleware, 
+  corsOptions, 
+  helmetOptions, 
+  generalRateLimit,
+  authRateLimit,
+  externalApiRateLimit
+} from '../../shared/security';
 import routes from './routes';
 
-const app = express();
-const PORT = process.env.PORT || 3004;
+const app: express.Application = express();
+const PORT = config.services.points.port;
 
-// Security middleware
-app.use(helmet());
-app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
-  credentials: true
-}));
+// Security middleware con configuraciones centralizadas
+app.use(helmet(helmetOptions));
+app.use(cors(corsOptions));
 
 // Compression middleware
-app.use(compression());
+app.use(compression() as any);
 
 // Raw body parser for Stripe webhooks (must be before express.json)
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
@@ -39,12 +44,16 @@ app.use(morgan('combined', {
   }
 }));
 
-// Global rate limiting
-app.use(rateLimitMiddleware({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later'
-}));
+// Rate limiting específico para puntos
+app.use('/api/points/earn', authRateLimit);
+app.use('/api/points/redeem', authRateLimit);
+app.use('/api/rewards', generalRateLimit);
+
+// Rate limiting general para API
+app.use('/api', generalRateLimit);
+
+// Middleware de seguridad centralizado
+app.use(securityMiddleware);
 
 // Mount API routes
 app.use('/api', routes);
@@ -114,7 +123,7 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
 async function checkDatabaseHealth(): Promise<boolean> {
   try {
     const { Pool } = await import('pg');
-    const pool = new Pool(config.database);
+    const pool = new Pool({ connectionString: config.database.url });
     const client = await pool.connect();
     await client.query('SELECT 1');
     client.release();
@@ -128,7 +137,7 @@ async function checkDatabaseHealth(): Promise<boolean> {
 
 async function checkRedisHealth(): Promise<boolean> {
   try {
-    const redis = await connectRedis();
+    const redis = getRedisClient();
     await redis.ping();
     await redis.quit();
     return true;
@@ -168,12 +177,12 @@ function gracefulShutdown(signal: string) {
 async function startServer() {
   try {
     // Initialize database connection
-    await connectDB();
-    logger.info('Database connected successfully');
-    
-    // Initialize Redis connection
-    await connectRedis();
-    logger.info('Redis connected successfully');
+  await initializeDatabase();
+  logger.info('Database connected successfully');
+
+  // Initialize Redis connection
+  await initRedis();
+  logger.info('Redis connected successfully');
     
     // Start HTTP server
     app.listen(PORT, () => {

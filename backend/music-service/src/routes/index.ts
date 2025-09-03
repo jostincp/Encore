@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import songRoutes from './songs';
 import queueRoutes from './queue';
+import recommendationRoutes from './recommendations';
 import { Request, Response } from 'express';
 
 const router = Router();
@@ -67,6 +68,18 @@ router.get('/info', (req: Request, res: Response) => {
           'PATCH /bars/:barId/next': 'Play next song (admin/bar_owner)'
         }
       },
+      recommendations: {
+        base: '/api/recommendations',
+        description: 'AI-powered music recommendation system',
+        routes: {
+          'GET /personalized': 'Get personalized recommendations (auth required)',
+          'GET /popular/:barId': 'Get popular recommendations for bar (public)',
+          'GET /similar/:songId': 'Get similar songs (public)',
+          'GET /trending': 'Get trending music recommendations (public)',
+          'GET /genres': 'Get available genres (public)',
+          'POST /refresh': 'Clear recommendation cache (auth required)'
+        }
+      },
       health: {
         base: '/api/health',
         description: 'Service health check'
@@ -102,6 +115,10 @@ router.get('/info', (req: Request, res: Response) => {
       caching: {
         description: 'Redis-based caching for external API responses',
         capabilities: ['Response caching', 'Rate limit optimization', 'Performance improvement']
+      },
+      recommendations: {
+        description: 'AI-powered music recommendation engine',
+        capabilities: ['Personalized recommendations', 'Popular songs by bar', 'Similar song discovery', 'Trending music', 'User preference analysis']
       }
     },
     rate_limits: {
@@ -122,5 +139,6 @@ router.get('/info', (req: Request, res: Response) => {
 // Mount route modules
 router.use('/songs', songRoutes);
 router.use('/queue', queueRoutes);
+router.use('/recommendations', recommendationRoutes);
 
 export default router;

@@ -7,24 +7,56 @@ export * from './config';
 // Exportar utilidades
 export * from './utils/logger';
 export * from './utils/validation';
-export * from './utils/errors';
-export * from './utils/database';
+export {
+  AppError,
+  ValidationError,
+  NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+  ConflictError,
+  BadRequestError,
+  sendSuccess,
+  sendError,
+  sendValidationError,
+  errorHandler,
+  notFoundHandler,
+  asyncHandler,
+  handleUncaughtExceptions,
+  throwValidationError
+} from './utils/errors';
 export * from './utils/jwt';
 export * from './utils/redis';
 export * from './utils/socket';
+
+// Exportar funciones específicas
+export { logInfo, logError } from './utils/logger';
+export { closeRedis, initRedis } from './utils/redis';
 
 // Exportar middleware
 export * from './middleware';
 
 // Exportar servicios principales
 export {
-  cacheService,
-  sessionService,
-  rateLimitService,
+  getCacheService,
+  getSessionService,
+  getRateLimitService,
   CacheService,
   SessionService,
-  RateLimitService
+  RateLimitService,
+  initRedis,
+  closeRedis
 } from './utils/redis';
+
+// Mantener compatibilidad con las exportaciones anteriores
+export const cacheService = {
+  get: () => getCacheService()
+};
+export const sessionService = {
+  get: () => getSessionService()
+};
+export const rateLimitService = {
+  get: () => getRateLimitService()
+};
 
 export {
   SocketManager,
@@ -286,6 +318,9 @@ export type Timestamp = Date;
 
 // Función de inicialización para servicios compartidos
 export const initSharedServices = async (): Promise<void> => {
+  const { logInfo, logError } = await import('./utils/logger');
+  const { initRedis } = await import('./utils/redis');
+  
   try {
     // Inicializar Redis
     await initRedis();
@@ -298,6 +333,9 @@ export const initSharedServices = async (): Promise<void> => {
 
 // Función de limpieza para servicios compartidos
 export const cleanupSharedServices = async (): Promise<void> => {
+  const { logInfo, logError } = await import('./utils/logger');
+  const { closeRedis } = await import('./utils/redis');
+  
   try {
     await closeRedis();
     logInfo('Shared services cleaned up successfully');

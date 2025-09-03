@@ -2,7 +2,7 @@ import { Router } from 'express';
 import authRoutes from './auth';
 import userRoutes from './users';
 import barRoutes from './bars';
-import { healthCheck } from '../../../shared/middleware';
+import { healthCheck } from '../middleware/healthCheck';
 
 const router = Router();
 

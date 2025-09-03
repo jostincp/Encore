@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+// import { createProxyMiddleware } from 'http-proxy-middleware';
 import routes from './routes';
 import { errorHandler, notFoundHandler, addRequestId, handleValidationErrors } from './middleware/errorHandler';
 import { logger } from './utils/logger';
@@ -120,28 +120,28 @@ app.use('/api/bars/:barId/menu', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     return authLimiter(req, res, next);
   }
-  next();
+  return next();
 });
 
 app.use('/api/bars/:barId/categories', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     return authLimiter(req, res, next);
   }
-  next();
+  return next();
 });
 
 app.use('/api/bars/:barId/specials', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     return authLimiter(req, res, next);
   }
-  next();
+  return next();
 });
 
 app.use('/api/specials/:specialId', (req, res, next) => {
   if (['PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     return authLimiter(req, res, next);
   }
-  next();
+  return next();
 });
 
 // Request parsing middleware

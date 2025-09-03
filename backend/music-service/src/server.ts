@@ -2,23 +2,42 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import { config } from '../../shared/config';
-import { logger } from '../../shared/utils/logger';
-import { database } from '../../shared/database';
-import { redisClient } from '../../shared/utils/redis';
+import logger from '../../shared/utils/logger';
+import { initializeDatabase, closeDatabase, runMigrations } from '../../shared/database';
+import { initRedis, getRedisClient, closeRedis } from '../../shared/utils/redis';
 import { errorHandler, notFoundHandler } from '../../shared/utils/errors';
 import { requestLogger, healthCheck } from '../../shared/middleware';
+import { 
+  securityMiddleware, 
+  corsOptions, 
+  helmetOptions, 
+  rateLimiters 
+} from '../../shared/security';
 import routes from './routes';
+import { setupSwagger } from './swagger/swagger.config';
+import { 
+  performanceMonitoring, 
+  errorTracking, 
+  detailedHealthCheck, 
+  getMetrics 
+} from './middleware/monitoring';
 
 const app = express();
-const PORT = config.music.port || 3002;
+const PORT = config.services.music.port;
 
-// Security middleware
-app.use(helmet());
-app.use(cors({
-  origin: config.cors.origin,
-  credentials: config.cors.credentials
-}));
+// Enhanced security middleware
+app.use(helmet(helmetOptions));
+app.use(cors(corsOptions));
+
+// Rate limiting específico para APIs externas
+app.use('/api/music/search', rateLimiters.externalApi);
+app.use('/api/music/stream', rateLimiters.externalApi);
+app.use('/api', rateLimiters.general);
+
+// Performance monitoring
+app.use(performanceMonitoring);
 
 // Compression and parsing middleware
 app.use(compression());
@@ -28,15 +47,22 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Logging middleware
 app.use(requestLogger);
 
-// Health check endpoint
-app.use('/health', healthCheck);
+// Health checks and monitoring
+app.get('/health', detailedHealthCheck);
+app.get('/metrics', getMetrics);
+
+// Swagger documentation
+setupSwagger(app);
 
 // Routes
-import routes from './routes';
 app.use('/api', routes);
+
+// Centralized security middleware
+app.use(securityMiddleware);
 
 // Error handling middleware
 app.use(notFoundHandler);
+app.use(errorTracking);
 app.use(errorHandler);
 
 // Graceful shutdown handler
@@ -45,11 +71,11 @@ const gracefulShutdown = async (signal: string) => {
   
   try {
     // Close database connections
-    await database.close();
+    await closeDatabase();
     logger.info('Database connections closed');
     
     // Close Redis connection
-    await redisClient.quit();
+    await closeRedis();
     logger.info('Redis connection closed');
     
     logger.info('Graceful shutdown completed');
@@ -79,15 +105,15 @@ process.on('unhandledRejection', (reason, promise) => {
 const startServer = async () => {
   try {
     // Initialize database
-    await database.initialize();
+  await initializeDatabase();
     logger.info('Database initialized successfully');
     
     // Run migrations
-    await database.runMigrations();
+    await runMigrations();
     logger.info('Database migrations completed');
     
     // Initialize Redis
-    await redisClient.connect();
+    await initRedis();
     logger.info('Redis connected successfully');
     
     // Start HTTP server

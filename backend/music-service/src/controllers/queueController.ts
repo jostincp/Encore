@@ -1,21 +1,21 @@
 import { Request, Response } from 'express';
 import { QueueModel, CreateQueueData, UpdateQueueData, QueueFilters } from '../models/Queue';
 import { SongModel } from '../models/Song';
-import { handleControllerError } from '../../../shared/utils/errors';
-import { logger } from '../../../shared/utils/logger';
-import { validatePagination } from '../../../shared/utils/validation';
+import { asyncHandler } from '../../../shared/utils/errors';
+import logger from '../../../shared/utils/logger';
+import { validatePaginationParams } from '../../../shared/utils/validation';
 import { AuthenticatedRequest } from '../../../shared/types/auth';
-import { BarModel } from '../../auth-service/src/models/Bar'; // Import from auth service
+import { BarService } from '../services/barService';
 
 export class QueueController {
   // Add song to queue
   static async addToQueue(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { bar_id, song_id, priority_play, points_used } = req.body;
-      const user_id = req.user!.id;
+      const user_id = req.user!.userId;
       
       // Validate bar exists and is active
-      const bar = await BarModel.findById(bar_id);
+      const bar = await BarService.findById(bar_id);
       if (!bar) {
         res.status(404).json({
           success: false,
@@ -24,7 +24,7 @@ export class QueueController {
         return;
       }
       
-      if (!bar.is_active) {
+      if (!bar.isActive) {
         res.status(400).json({
           success: false,
           message: 'Bar is not active'
@@ -51,7 +51,7 @@ export class QueueController {
       }
       
       // Get bar settings to check limits
-      const barSettings = await BarModel.getSettings(bar_id);
+      const barSettings = await BarService.getSettings(bar_id);
       const maxSongsPerUser = barSettings?.max_songs_per_user || 3;
       
       // Check if user can add more songs
@@ -115,7 +115,11 @@ export class QueueController {
         data: fullQueueEntry
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to add song to queue');
+      logger.error('Failed to add song to queue', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to add song to queue'
+      });
     }
   }
   
@@ -133,7 +137,7 @@ export class QueueController {
         limit = 50
       } = req.query;
       
-      const { offset, validatedLimit } = validatePagination(
+      const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string),
         100 // Max limit for queue
@@ -173,7 +177,11 @@ export class QueueController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get queue');
+      logger.error('Failed to get queue', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get queue'
+      });
     }
   }
   
@@ -189,7 +197,11 @@ export class QueueController {
         data: currentSong
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get currently playing song');
+      logger.error('Failed to get currently playing song', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get currently playing song'
+      });
     }
   }
   
@@ -205,7 +217,11 @@ export class QueueController {
         data: nextSong
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get next song in queue');
+      logger.error('Failed to get next song in queue', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get next song in queue'
+      });
     }
   }
   
@@ -227,7 +243,7 @@ export class QueueController {
       
       // Check if user has permission to update this queue entry
       const userRole = req.user!.role;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       if (userRole !== 'admin') {
         // Check if user is bar owner
@@ -265,7 +281,11 @@ export class QueueController {
         data: fullUpdatedEntry
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to update queue entry');
+      logger.error('Failed to update queue entry', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update queue entry'
+      });
     }
   }
   
@@ -286,7 +306,7 @@ export class QueueController {
       
       // Check permissions
       const userRole = req.user!.role;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       if (userRole !== 'admin') {
         // Users can remove their own songs if they're pending
@@ -325,7 +345,11 @@ export class QueueController {
         message: 'Song removed from queue'
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to remove song from queue');
+      logger.error('Failed to remove song from queue', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to remove song from queue'
+      });
     }
   }
   
@@ -345,7 +369,7 @@ export class QueueController {
       
       // Check permissions
       const userRole = req.user!.role;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       if (userRole !== 'admin') {
         // Check if user is bar owner
@@ -372,7 +396,11 @@ export class QueueController {
         message: 'Queue reordered successfully'
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to reorder queue');
+      logger.error('Failed to reorder queue', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to reorder queue'
+      });
     }
   }
   
@@ -384,7 +412,7 @@ export class QueueController {
       
       // Check permissions
       const userRole = req.user!.role;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       if (userRole !== 'admin') {
         // Check if user is bar owner
@@ -412,7 +440,11 @@ export class QueueController {
         message: `${deletedCount} songs removed from queue`
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to clear queue');
+      logger.error('Failed to clear queue', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to clear queue'
+      });
     }
   }
   
@@ -424,7 +456,7 @@ export class QueueController {
       
       // Check permissions
       const userRole = req.user!.role;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       if (userRole !== 'admin') {
         // Check if user is bar owner
@@ -448,7 +480,11 @@ export class QueueController {
         data: stats
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get queue statistics');
+      logger.error('Failed to get queue statistics', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get queue statistics'
+      });
     }
   }
   
@@ -456,7 +492,7 @@ export class QueueController {
   static async getUserQueuePosition(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       const position = await QueueModel.getUserQueuePosition(barId, userId);
       
@@ -468,7 +504,11 @@ export class QueueController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get user queue position');
+      logger.error('Failed to get user queue position', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get user queue position'
+      });
     }
   }
   
@@ -476,14 +516,14 @@ export class QueueController {
   static async getUserQueue(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       const {
         status,
         page = 1,
         limit = 25
       } = req.query;
       
-      const { offset, validatedLimit } = validatePagination(
+      const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string)
       );
@@ -519,7 +559,11 @@ export class QueueController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get user queue');
+      logger.error('Failed to get user queue', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get user queue'
+      });
     }
   }
   
@@ -530,7 +574,7 @@ export class QueueController {
       
       // Check permissions
       const userRole = req.user!.role;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       if (userRole !== 'admin') {
         // Check if user is bar owner
@@ -586,7 +630,11 @@ export class QueueController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to skip current song');
+      logger.error('Failed to skip current song', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to skip current song'
+      });
     }
   }
   
@@ -597,7 +645,7 @@ export class QueueController {
       
       // Check permissions
       const userRole = req.user!.role;
-      const userId = req.user!.id;
+      const userId = req.user!.userId;
       
       if (userRole !== 'admin') {
         // Check if user is bar owner
@@ -658,7 +706,11 @@ export class QueueController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to play next song');
+      logger.error('Failed to play next song', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to play next song'
+      });
     }
   }
 }

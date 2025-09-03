@@ -126,15 +126,7 @@ export class AnalyticsApp {
     }));
 
     // Compression middleware
-    this.app.use(compression({
-      filter: (req, res) => {
-        if (req.headers['x-no-compression']) {
-          return false;
-        }
-        return compression.filter(req, res);
-      },
-      threshold: 1024
-    }));
+    this.app.use(compression() as any);
 
     // Body parsing middleware
     this.app.use(express.json({ 

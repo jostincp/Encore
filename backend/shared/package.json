@@ -1,0 +1,21 @@
+{
+  "name": "encore-shared",
+  "version": "1.0.0",
+  "description": "Shared utilities and configurations for Encore backend services",
+  "main": "index.js",
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express-rate-limit": "^8.0.1",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.1.0",
+    "isomorphic-dompurify": "^2.26.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.4",
+    "typescript": "^5.3.3"
+  }
+}

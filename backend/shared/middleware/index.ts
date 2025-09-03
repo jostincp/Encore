@@ -1,35 +1,30 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
+import mongoose from 'mongoose';
 import { config } from '../config';
-import { rateLimitService } from '../utils/redis';
+import { getRateLimitService } from '../utils/redis';
 import { logInfo, logWarn, requestLogger } from '../utils/logger';
-import { sendErrorResponse, AppError } from '../utils/errors';
+import { sendError, AppError } from '../utils/errors';
 import { AuthenticatedRequest } from '../utils/jwt';
 
 // Middleware de seguridad con Helmet
-export const securityMiddleware = helmet({
+export const securityMiddleware: RequestHandler = helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "wss:", "ws:"],
+      connectSrc: ["'self'"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
       frameSrc: ["'none'"],
     },
   },
-  crossOriginEmbedderPolicy: false,
-  hsts: {
-    maxAge: 31536000,
-    includeSubDomains: true,
-    preload: true
-  }
 });
 
 // Middleware de CORS
@@ -66,7 +61,7 @@ export const corsMiddleware = cors({
 });
 
 // Middleware de compresión
-export const compressionMiddleware = compression({
+export const compressionMiddleware: RequestHandler = compression({
   filter: (req, res) => {
     if (req.headers['x-no-compression']) {
       return false;
@@ -77,7 +72,7 @@ export const compressionMiddleware = compression({
 });
 
 // Rate limiting básico con express-rate-limit
-export const basicRateLimit = rateLimit({
+export const basicRateLimit: RequestHandler = rateLimit({
   windowMs: config.rateLimitWindowMs,
   max: config.rateLimitMaxRequests,
   message: {
@@ -121,7 +116,10 @@ export const advancedRateLimit = (options: {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const key = keyGenerator(req);
-      const result = await rateLimitService.checkRateLimit(key, maxRequests, windowMs);
+      if (!key) {
+        return next();
+      }
+      const result = await getRateLimitService().checkRateLimit(key, maxRequests, windowMs);
 
       // Agregar headers de rate limit
       res.set({
@@ -149,10 +147,12 @@ export const advancedRateLimit = (options: {
       res.send = function(data) {
         const statusCode = res.statusCode;
         
-        if (skipSuccessfulRequests && statusCode < 400) {
-          rateLimitService.clearRateLimit(key);
-        } else if (skipFailedRequests && statusCode >= 400) {
-          rateLimitService.clearRateLimit(key);
+        if (key) {
+          if (skipSuccessfulRequests && statusCode < 400) {
+            getRateLimitService().clearRateLimit(key);
+          } else if (skipFailedRequests && statusCode >= 400) {
+            getRateLimitService().clearRateLimit(key);
+          }
         }
         
         return originalSend.call(this, data);
@@ -203,16 +203,13 @@ export const validateContentType = (allowedTypes: string[]) => {
     const contentType = req.headers['content-type'];
     
     if (!contentType) {
-      return sendErrorResponse(res, new AppError('Content-Type header is required', 400));
+      return sendError(res, 'Content-Type header is required', 400);
     }
 
     const isAllowed = allowedTypes.some(type => contentType.includes(type));
     
     if (!isAllowed) {
-      return sendErrorResponse(res, new AppError(
-        `Invalid Content-Type. Allowed types: ${allowedTypes.join(', ')}`,
-        400
-      ));
+      return sendError(res, `Invalid Content-Type. Allowed types: ${allowedTypes.join(', ')}`, 400);
     }
 
     next();
@@ -225,11 +222,11 @@ export const validateApiKey = (req: Request, res: Response, next: NextFunction) 
   const validApiKeys = process.env.VALID_API_KEYS?.split(',') || [];
 
   if (!apiKey) {
-    return sendErrorResponse(res, new AppError('API Key required', 401));
+    return sendError(res, 'API Key required', 401);
   }
 
   if (!validApiKeys.includes(apiKey)) {
-    return sendErrorResponse(res, new AppError('Invalid API Key', 401));
+    return sendError(res, 'Invalid API Key', 401);
   }
 
   next();
@@ -240,13 +237,12 @@ export const validateBarId = (req: Request, res: Response, next: NextFunction) =
   const barId = req.params.barId || req.headers['x-bar-id'] || req.body.barId;
   
   if (!barId) {
-    return sendErrorResponse(res, new AppError('Bar ID is required', 400));
+    return sendError(res, 'Bar ID is required', 400);
   }
 
-  // Validar formato UUID
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(barId)) {
-    return sendErrorResponse(res, new AppError('Invalid Bar ID format', 400));
+  // Validate ObjectId format
+  if (!mongoose.Types.ObjectId.isValid(barId)) {
+    return sendError(res, 'Invalid Bar ID format', 400);
   }
 
   // Agregar barId al request para uso posterior
@@ -259,13 +255,13 @@ export const validateTableId = (req: Request, res: Response, next: NextFunction)
   const tableId = req.params.tableId || req.headers['x-table-id'] || req.body.tableId;
   
   if (!tableId) {
-    return sendErrorResponse(res, new AppError('Table ID is required', 400));
+    return sendError(res, 'Table ID is required', 400);
   }
 
   // Validar formato UUID
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(tableId)) {
-    return sendErrorResponse(res, new AppError('Invalid Table ID format', 400));
+    return sendError(res, 'Invalid Table ID format', 400);
   }
 
   // Agregar tableId al request para uso posterior
@@ -302,7 +298,7 @@ export const healthCheckMiddleware = (req: Request, res: Response, next: NextFun
       version: process.env.npm_package_version || '1.0.0'
     });
   }
-  next();
+  return next();
 };
 
 // Middleware de timeout
@@ -339,7 +335,7 @@ export const validateJsonMiddleware = (req: Request, res: Response, next: NextFu
   
   if (contentType && contentType.includes('application/json')) {
     if (Object.keys(req.body).length === 0) {
-      return sendErrorResponse(res, new AppError('Request body cannot be empty', 400));
+      return sendError(res, 'Request body cannot be empty', 400);
     }
   }
 
@@ -347,7 +343,7 @@ export const validateJsonMiddleware = (req: Request, res: Response, next: NextFu
 };
 
 // Middleware combinado para configuración básica
-export const basicMiddleware = [
+export const basicMiddleware: RequestHandler[] = [
   healthCheckMiddleware,
   securityMiddleware,
   corsMiddleware,
@@ -358,14 +354,14 @@ export const basicMiddleware = [
 ];
 
 // Middleware combinado para APIs protegidas
-export const protectedApiMiddleware = [
+export const protectedApiMiddleware: RequestHandler[] = [
   ...basicMiddleware,
   basicRateLimit,
   validateContentType(['application/json'])
 ];
 
 // Middleware combinado para APIs de autenticación
-export const authApiMiddleware = [
+export const authApiMiddleware: RequestHandler[] = [
   ...basicMiddleware,
   authRateLimit,
   validateContentType(['application/json'])

@@ -1,35 +1,43 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { PaymentController } from '../controllers/paymentController';
-import { authenticateToken } from '../../../shared/middleware/auth';
+import { authenticateToken } from '../../../shared/utils/jwt';
 import { validateRequest } from '../../../shared/middleware/validation';
-import { rateLimitMiddleware } from '../../../shared/middleware/rateLimit';
+import rateLimit from 'express-rate-limit';
 
-const router = Router();
+const router: Router = Router();
 
 // Rate limiting configurations
-const generalLimit = rateLimitMiddleware({
+const generalLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // 100 requests per window
-  message: 'Too many requests, please try again later'
+  max: 100,
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
-const paymentLimit = rateLimitMiddleware({
+const paymentLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 5, // 5 payment attempts per minute
-  message: 'Too many payment requests, please try again later'
+  max: 5,
+  message: 'Too many payment requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
-const adminLimit = rateLimitMiddleware({
-  windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 admin actions per minute
-  message: 'Too many admin requests, please try again later'
+const adminLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  message: 'Too many admin requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
-const webhookLimit = rateLimitMiddleware({
+const webhookLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 1000, // High limit for webhooks
-  message: 'Webhook rate limit exceeded'
+  max: 1000,
+  message: 'Too many webhook requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 // Validation schemas

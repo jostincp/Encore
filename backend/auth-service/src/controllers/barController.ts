@@ -1,27 +1,27 @@
 import { Request, Response } from 'express';
+import { RequestWithUser } from '../types';
+import { asyncHandler } from '../middleware/asyncHandler';
+import { sendSuccess, sendError } from '../utils/response';
 import { 
-  asyncHandler, 
-  sendSuccess, 
-  sendError, 
   ValidationError, 
   NotFoundError, 
   ForbiddenError,
   BadRequestError
-} from '../../../shared/utils/errors';
-import { AuthenticatedRequest } from '../../../shared/utils/jwt';
-import { validateBarCreation, validateNonEmptyString } from '../../../shared/utils/validation';
+} from '../utils/errors';
+
+import { validateBarCreation, validateNonEmptyString } from '../utils/validation';
 import { BarModel } from '../models/Bar';
 import { UserModel } from '../models/User';
-import { logger } from '../../../shared/utils/logger';
-import { Bar, BarSettings } from '../../../shared/types';
+import { logger } from '../utils/logger';
+import { Bar, BarSettings } from '../types/models';
 
 /**
  * Create a new bar (bar_owner or admin only)
  */
-export const createBar = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const createBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.userId;
   const userRole = req.user?.role;
-  const { name, address, phone, description, ownerId } = req.body;
+  const { name, address, city, country, phone, description, email, websiteUrl, logoUrl, coverImageUrl, timezone, ownerId } = req.body;
 
   if (!userId) {
     throw new BadRequestError('Usuario no autenticado');
@@ -45,7 +45,7 @@ export const createBar = asyncHandler(async (req: AuthenticatedRequest, res: Res
   }
 
   // Validate input
-  const validation = validateBarCreation({ name, address, phone, description });
+  const validation = validateBarCreation({ name, address, city, country, ownerId: actualOwnerId });
   if (!validation.isValid) {
     throw new ValidationError('Datos del bar inválidos', validation.errors);
   }
@@ -53,8 +53,15 @@ export const createBar = asyncHandler(async (req: AuthenticatedRequest, res: Res
   const bar = await BarModel.create({
     name,
     address,
+    city,
+    country,
     phone,
     description,
+    email,
+    websiteUrl,
+    logoUrl,
+    coverImageUrl,
+    timezone,
     ownerId: actualOwnerId
   });
 
@@ -68,25 +75,28 @@ export const createBar = asyncHandler(async (req: AuthenticatedRequest, res: Res
  */
 export const getBars = asyncHandler(async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 10;
+  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+  const offset = (page - 1) * limit;
   const search = req.query.search as string;
   const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
   const city = req.query.city as string;
 
-  const filters: any = {};
-  if (search) filters.search = search;
-  if (isActive !== undefined) filters.isActive = isActive;
-  if (city) filters.city = city;
-
   const result = await BarModel.findMany({
-    page,
     limit,
-    filters
+    offset,
+    search,
+    isActive,
+    city
   });
 
   sendSuccess(res, {
     bars: result.bars,
-    pagination: result.pagination
+    pagination: {
+      page,
+      limit,
+      total: result.total,
+      totalPages: Math.ceil(result.total / limit)
+    }
   }, 'Bares obtenidos exitosamente');
 });
 
@@ -118,7 +128,7 @@ export const getBarById = asyncHandler(async (req: Request, res: Response) => {
 /**
  * Update bar
  */
-export const updateBar = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const updateBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.userId;
   const userRole = req.user?.role;
@@ -185,7 +195,7 @@ export const updateBar = asyncHandler(async (req: AuthenticatedRequest, res: Res
 /**
  * Get bars owned by user
  */
-export const getMyBars = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getMyBars = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.userId;
   const userRole = req.user?.role;
 
@@ -205,7 +215,7 @@ export const getMyBars = asyncHandler(async (req: AuthenticatedRequest, res: Res
 /**
  * Deactivate bar
  */
-export const deactivateBar = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const deactivateBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.userId;
   const userRole = req.user?.role;
@@ -239,7 +249,7 @@ export const deactivateBar = asyncHandler(async (req: AuthenticatedRequest, res:
 /**
  * Activate bar (admin only)
  */
-export const activateBar = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const activateBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.userId;
   const userRole = req.user?.role;
@@ -265,7 +275,7 @@ export const activateBar = asyncHandler(async (req: AuthenticatedRequest, res: R
 /**
  * Delete bar (admin only)
  */
-export const deleteBar = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const deleteBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.userId;
   const userRole = req.user?.role;
@@ -291,7 +301,7 @@ export const deleteBar = asyncHandler(async (req: AuthenticatedRequest, res: Res
 /**
  * Get bar settings
  */
-export const getBarSettings = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getBarSettings = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.userId;
   const userRole = req.user?.role;
@@ -323,7 +333,7 @@ export const getBarSettings = asyncHandler(async (req: AuthenticatedRequest, res
 /**
  * Update bar settings
  */
-export const updateBarSettings = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const updateBarSettings = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { id } = req.params;
   const userId = req.user?.userId;
   const userRole = req.user?.role;
@@ -377,7 +387,7 @@ export const updateBarSettings = asyncHandler(async (req: AuthenticatedRequest, 
 /**
  * Get bar statistics (owner or admin only)
  */
-export const getBarStats = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getBarStats = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.userId;
   const userRole = req.user?.role;
 
@@ -385,39 +395,41 @@ export const getBarStats = asyncHandler(async (req: AuthenticatedRequest, res: R
     throw new BadRequestError('Usuario no autenticado');
   }
 
-  let filters: any = {};
+  let ownerId: string | undefined;
   
   // If not admin, only show stats for owned bars
   if (userRole !== 'admin') {
     if (userRole !== 'bar_owner') {
       throw new ForbiddenError('Acceso denegado');
     }
-    filters.ownerId = userId;
+    ownerId = userId;
   }
 
   const activeResult = await BarModel.findMany({ 
-    page: 1, 
     limit: 1, 
-    filters: { ...filters, isActive: true } 
+    offset: 0,
+    ownerId,
+    isActive: true
   });
   
   const inactiveResult = await BarModel.findMany({ 
-    page: 1, 
     limit: 1, 
-    filters: { ...filters, isActive: false } 
+    offset: 0,
+    ownerId,
+    isActive: false
   });
 
   const totalResult = await BarModel.findMany({ 
-    page: 1, 
     limit: 1, 
-    filters 
+    offset: 0,
+    ownerId
   });
 
   sendSuccess(res, {
     stats: {
-      total: totalResult.pagination.total,
-      active: activeResult.pagination.total,
-      inactive: inactiveResult.pagination.total
+      total: totalResult.total,
+      active: activeResult.total,
+      inactive: inactiveResult.total
     }
   }, 'Estadísticas de bares obtenidas exitosamente');
 });

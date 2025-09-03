@@ -1,5 +1,5 @@
-import { Response } from 'express';
-import { ApiResponse, ValidationError } from '../types';
+import { Request, Response, NextFunction } from 'express';
+import { ApiResponse, ValidationError as IValidationError } from '../types';
 import { logError } from './logger';
 
 // Clases de error personalizadas
@@ -17,9 +17,9 @@ export class AppError extends Error {
 }
 
 export class ValidationError extends AppError {
-  public validationErrors: ValidationError[];
+  public validationErrors: IValidationError[];
 
-  constructor(message: string, validationErrors: ValidationError[] = []) {
+  constructor(message: string, validationErrors: IValidationError[] = []) {
     super(message, 400);
     this.validationErrors = validationErrors;
   }
@@ -74,7 +74,7 @@ export const sendError = (res: Response, error: string, statusCode: number = 500
   res.status(statusCode).json(response);
 };
 
-export const sendValidationError = (res: Response, message: string, validationErrors: ValidationError[]): void => {
+export const sendValidationError = (res: Response, message: string, validationErrors: IValidationError[]): void => {
   const response: ApiResponse = {
     success: false,
     error: message,
@@ -84,7 +84,7 @@ export const sendValidationError = (res: Response, message: string, validationEr
 };
 
 // Middleware de manejo de errores global
-export const errorHandler = (error: Error, req: any, res: Response, next: any): void => {
+export const errorHandler = (error: Error, req: Request, res: Response, next: NextFunction): void => {
   let statusCode = 500;
   let message = 'Internal server error';
   let data: any = undefined;
@@ -120,7 +120,7 @@ export const errorHandler = (error: Error, req: any, res: Response, next: any): 
   } else if (error.name === 'TokenExpiredError') {
     statusCode = 401;
     message = 'Token expired';
-  } else if (error.code === 11000) {
+  } else if ((error as any).code === 11000) {
     // Error de duplicado en MongoDB
     statusCode = 409;
     message = 'Resource already exists';
@@ -135,13 +135,14 @@ export const errorHandler = (error: Error, req: any, res: Response, next: any): 
 };
 
 // Función para extraer errores de validación de diferentes ORMs
-const extractValidationErrors = (error: any): ValidationError[] => {
-  const validationErrors: ValidationError[] = [];
+const extractValidationErrors = (error: any): IValidationError[] => {
+  const validationErrors: IValidationError[] = [];
 
   if (error.errors) {
     // Mongoose validation errors
     Object.keys(error.errors).forEach(key => {
       validationErrors.push({
+        name: 'ValidationError',
         field: key,
         message: error.errors[key].message
       });
@@ -153,7 +154,7 @@ const extractValidationErrors = (error: any): ValidationError[] => {
 
 // Wrapper para funciones async que maneja errores automáticamente
 export const asyncHandler = (fn: Function) => {
-  return (req: any, res: Response, next: any) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 };
@@ -172,8 +173,14 @@ export const handleUncaughtExceptions = (): void => {
 };
 
 // Función para validar y lanzar errores de validación
-export const throwValidationError = (validationResult: { isValid: boolean; errors: ValidationError[] }): void => {
+export const throwValidationError = (validationResult: { isValid: boolean; errors: IValidationError[] }): void => {
   if (!validationResult.isValid) {
     throw new ValidationError('Validation failed', validationResult.errors);
   }
+};
+
+// Middleware para manejar rutas no encontradas
+export const notFoundHandler = (req: Request, res: Response, next: NextFunction): void => {
+  const error = new NotFoundError(`Route ${req.method} ${req.originalUrl} not found`);
+  next(error);
 };

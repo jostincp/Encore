@@ -2,10 +2,16 @@ import { Request, Response } from 'express';
 import { SongModel, CreateSongData, UpdateSongData, SongSearchFilters } from '../models/Song';
 import { YouTubeService } from '../services/youtubeService';
 import { SpotifyService } from '../services/spotifyService';
-import { handleControllerError } from '../../../shared/utils/errors';
-import { logger } from '../../../shared/utils/logger';
-import { validatePagination } from '../../../shared/utils/validation';
+import { asyncHandler } from '../../../shared/utils/errors';
+import logger from '../../../shared/utils/logger';
+import { validatePaginationParams } from '../../../shared/utils/validation';
 import { AuthenticatedRequest } from '../../../shared/types/auth';
+import { 
+  validateId, 
+  validateText, 
+  validateSongUrl, 
+  sanitizeInput 
+} from '../../../shared/security';
 
 export class SongController {
   // Create a new song
@@ -13,24 +19,69 @@ export class SongController {
     try {
       const songData: CreateSongData = req.body;
       
+      // Sanitizar y validar datos de entrada
+      if (songData.title) {
+        songData.title = sanitizeInput(songData.title);
+        if (!validateText(songData.title)) {
+          res.status(400).json({
+            success: false,
+            message: 'Título de canción inválido'
+          });
+          return;
+        }
+      }
+      
+      if (songData.artist) {
+        songData.artist = sanitizeInput(songData.artist);
+        if (!validateText(songData.artist)) {
+          res.status(400).json({
+            success: false,
+            message: 'Nombre de artista inválido'
+          });
+          return;
+        }
+      }
+      
+      if (songData.genre) {
+        songData.genre = sanitizeInput(songData.genre);
+      }
+      
       // Validate external IDs if provided
       if (songData.youtube_id) {
+        songData.youtube_id = sanitizeInput(songData.youtube_id);
+        if (!validateSongUrl(songData.youtube_id)) {
+          res.status(400).json({
+            success: false,
+            message: 'ID de YouTube inválido'
+          });
+          return;
+        }
+        
         const isValidYouTube = await YouTubeService.validateVideoId(songData.youtube_id);
         if (!isValidYouTube) {
           res.status(400).json({
             success: false,
-            message: 'Invalid YouTube video ID'
+            message: 'Video de YouTube no encontrado o inválido'
           });
           return;
         }
       }
       
       if (songData.spotify_id) {
+        songData.spotify_id = sanitizeInput(songData.spotify_id);
+        if (!validateSongUrl(songData.spotify_id)) {
+          res.status(400).json({
+            success: false,
+            message: 'ID de Spotify inválido'
+          });
+          return;
+        }
+        
         const isValidSpotify = await SpotifyService.validateTrackId(songData.spotify_id);
         if (!isValidSpotify) {
           res.status(400).json({
             success: false,
-            message: 'Invalid Spotify track ID'
+            message: 'Track de Spotify no encontrado o inválido'
           });
           return;
         }
@@ -41,7 +92,8 @@ export class SongController {
       logger.info('Song created via API', {
         songId: song.id,
         title: song.title,
-        userId: req.user?.id
+        userId: req.user?.userId,
+        ip: req.ip
       });
       
       res.status(201).json({
@@ -49,7 +101,11 @@ export class SongController {
         data: song
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to create song');
+      logger.error('Failed to create song', { error, userId: req.user?.userId, ip: req.ip });
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create song'
+      });
     }
   }
   
@@ -58,12 +114,23 @@ export class SongController {
     try {
       const { id } = req.params;
       
-      const song = await SongModel.findById(id);
+      // Validar y sanitizar ID
+      const sanitizedId = sanitizeInput(id);
+      if (!validateId(sanitizedId)) {
+        res.status(400).json({
+          success: false,
+          message: 'ID de canción inválido'
+        });
+        return;
+      }
+      
+      const song = await SongModel.findById(sanitizedId);
       
       if (!song) {
+        logger.warn('Song not found', { songId: sanitizedId, ip: req.ip });
         res.status(404).json({
           success: false,
-          message: 'Song not found'
+          message: 'Canción no encontrada'
         });
         return;
       }
@@ -73,7 +140,11 @@ export class SongController {
         data: song
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get song');
+      logger.error('Failed to get song', { error, songId: req.params.id, ip: req.ip });
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener la canción'
+      });
     }
   }
   
@@ -93,23 +164,82 @@ export class SongController {
         limit = 25
       } = req.query;
       
-      const { offset, validatedLimit } = validatePagination(
+      const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string)
       );
       
       const filters: SongSearchFilters = {};
       
-      if (query) filters.query = query as string;
-      if (source) filters.source = source as 'youtube' | 'spotify' | 'both';
-      if (genre) filters.genre = genre as string;
-      if (duration_min) filters.duration_min = parseInt(duration_min as string);
-      if (duration_max) filters.duration_max = parseInt(duration_max as string);
+      // Sanitizar y validar parámetros de búsqueda
+      if (query) {
+        const sanitizedQuery = sanitizeInput(query as string);
+        if (!validateText(sanitizedQuery)) {
+          res.status(400).json({
+            success: false,
+            message: 'Término de búsqueda inválido'
+          });
+          return;
+        }
+        filters.query = sanitizedQuery;
+      }
+      
+      if (source) {
+        const sanitizedSource = sanitizeInput(source as string);
+        if (!['youtube', 'spotify', 'both'].includes(sanitizedSource)) {
+          res.status(400).json({
+            success: false,
+            message: 'Fuente de búsqueda inválida'
+          });
+          return;
+        }
+        filters.source = sanitizedSource as 'youtube' | 'spotify' | 'both';
+      }
+      
+      if (genre) {
+        const sanitizedGenre = sanitizeInput(genre as string);
+        if (validateText(sanitizedGenre)) {
+          filters.genre = sanitizedGenre;
+        }
+      }
+      
+      if (duration_min) {
+        const durationMin = parseInt(duration_min as string);
+        if (!isNaN(durationMin) && durationMin >= 0) {
+          filters.duration_min = durationMin;
+        }
+      }
+      
+      if (duration_max) {
+        const durationMax = parseInt(duration_max as string);
+        if (!isNaN(durationMax) && durationMax > 0) {
+          filters.duration_max = durationMax;
+        }
+      }
+      
       if (available_only) filters.available_only = available_only === 'true';
-      if (sort_by) filters.sort_by = sort_by as 'popularity' | 'title' | 'artist' | 'duration' | 'created_at';
-      if (sort_order) filters.sort_order = sort_order as 'asc' | 'desc';
+      
+      if (sort_by) {
+        const validSortFields = ['popularity', 'title', 'artist', 'duration', 'created_at'];
+        if (validSortFields.includes(sort_by as string)) {
+          filters.sort_by = sort_by as 'popularity' | 'title' | 'artist' | 'duration' | 'created_at';
+        }
+      }
+      
+      if (sort_order) {
+        if (['asc', 'desc'].includes(sort_order as string)) {
+          filters.sort_order = sort_order as 'asc' | 'desc';
+        }
+      }
       
       const result = await SongModel.search(filters, validatedLimit, offset);
+      
+      logger.info('Song search performed', {
+        query: filters.query,
+        source: filters.source,
+        resultsCount: result.items.length,
+        ip: req.ip
+      });
       
       res.json({
         success: true,
@@ -122,7 +252,11 @@ export class SongController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to search songs');
+      logger.error('Failed to search songs', { error, ip: req.ip });
+      res.status(500).json({
+        success: false,
+        message: 'Error al buscar canciones'
+      });
     }
   }
   
@@ -168,15 +302,19 @@ export class SongController {
       logger.info('Song updated via API', {
         songId: id,
         updatedFields: Object.keys(updateData),
-        userId: req.user?.id
-      });
+        userId: req.user?.userId
+        });
       
       res.json({
         success: true,
         data: song
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to update song');
+      logger.error('Failed to update song', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update song'
+      });
     }
   }
   
@@ -197,7 +335,7 @@ export class SongController {
       
       logger.info('Song deleted via API', {
         songId: id,
-        userId: req.user?.id
+        userId: req.user?.userId
       });
       
       res.json({
@@ -205,7 +343,11 @@ export class SongController {
         message: 'Song deleted successfully'
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to delete song');
+      logger.error('Failed to delete song', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete song'
+      });
     }
   }
   
@@ -219,7 +361,7 @@ export class SongController {
         limit = 25
       } = req.query;
       
-      const { offset, validatedLimit } = validatePagination(
+      const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string)
       );
@@ -236,7 +378,11 @@ export class SongController {
         data: songs
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get popular songs');
+      logger.error('Failed to get popular songs', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get popular songs'
+      });
     }
   }
   
@@ -248,7 +394,7 @@ export class SongController {
         limit = 25
       } = req.query;
       
-      const { offset, validatedLimit } = validatePagination(
+      const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string)
       );
@@ -260,7 +406,11 @@ export class SongController {
         data: songs
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get recent songs');
+      logger.error('Failed to get recent songs', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get recent songs'
+      });
     }
   }
   
@@ -281,7 +431,7 @@ export class SongController {
         return;
       }
       
-      const { offset, validatedLimit } = validatePagination(
+      const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string)
       );
@@ -303,7 +453,11 @@ export class SongController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to search YouTube');
+      logger.error('Failed to search YouTube', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to search YouTube'
+      });
     }
   }
   
@@ -324,10 +478,10 @@ export class SongController {
         return;
       }
       
-      const { offset, validatedLimit } = validatePagination(
-        parseInt(page as string),
-        parseInt(limit as string)
-      );
+      const { offset, validatedLimit } = validatePaginationParams(
+          parseInt(page as string),
+          parseInt(limit as string)
+        );
       
       const results = await SpotifyService.searchTracks(
         query as string,
@@ -346,7 +500,11 @@ export class SongController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to search Spotify');
+      logger.error('Failed to search Spotify', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to search Spotify'
+      });
     }
   }
   
@@ -370,7 +528,11 @@ export class SongController {
         data: details
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get YouTube video details');
+      logger.error('Failed to get YouTube video details', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get YouTube video details'
+      });
     }
   }
   
@@ -394,7 +556,11 @@ export class SongController {
         data: details
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get Spotify track details');
+      logger.error('Failed to get Spotify track details', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get Spotify track details'
+      });
     }
   }
   
@@ -407,9 +573,10 @@ export class SongController {
         limit = 25
       } = req.query;
       
-      const { offset, validatedLimit } = validatePagination(
+      const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
-        parseInt(limit as string)
+        parseInt(limit as string),
+        50
       );
       
       const results = await YouTubeService.getTrendingMusic(
@@ -423,7 +590,11 @@ export class SongController {
         data: results
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get trending YouTube music');
+      logger.error('Failed to get trending YouTube music', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get trending YouTube music'
+      });
     }
   }
   
@@ -436,12 +607,13 @@ export class SongController {
         limit = 20
       } = req.query;
       
-      const { offset, validatedLimit } = validatePagination(
-        parseInt(page as string),
-        parseInt(limit as string)
-      );
-      
-      const results = await SpotifyService.getFeaturedPlaylists(
+      const { offset, validatedLimit } = validatePaginationParams(
+          parseInt(page as string),
+          parseInt(limit as string),
+          50
+        );
+        
+        const results = await SpotifyService.getFeaturedPlaylists(
         validatedLimit,
         offset,
         country as string
@@ -458,7 +630,11 @@ export class SongController {
         }
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get Spotify featured playlists');
+      logger.error('Failed to get Spotify featured playlists', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get Spotify featured playlists'
+      });
     }
   }
   
@@ -471,7 +647,7 @@ export class SongController {
         limit = 20
       } = req.query;
       
-      const { offset, validatedLimit } = validatePagination(
+      const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string)
       );
@@ -487,7 +663,11 @@ export class SongController {
         data: results
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to get Spotify new releases');
+      logger.error('Failed to get Spotify new releases', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get Spotify new releases'
+      });
     }
   }
   
@@ -574,7 +754,7 @@ export class SongController {
         source,
         external_id,
         title: song.title,
-        userId: req.user?.id
+        userId: req.user?.userId
       });
       
       res.status(201).json({
@@ -583,7 +763,11 @@ export class SongController {
         message: 'Song imported successfully'
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to import song');
+      logger.error('Failed to import song', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to import song'
+      });
     }
   }
   
@@ -606,7 +790,7 @@ export class SongController {
       logger.info('Song marked as unavailable via API', {
         songId: id,
         reason,
-        userId: req.user?.id
+        userId: req.user?.userId
       });
       
       res.json({
@@ -615,7 +799,11 @@ export class SongController {
         message: 'Song marked as unavailable'
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to mark song as unavailable');
+      logger.error('Failed to mark song as unavailable', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark song as unavailable'
+      });
     }
   }
   
@@ -636,7 +824,7 @@ export class SongController {
       
       logger.info('Song marked as available via API', {
         songId: id,
-        userId: req.user?.id
+        userId: req.user?.userId
       });
       
       res.json({
@@ -645,7 +833,11 @@ export class SongController {
         message: 'Song marked as available'
       });
     } catch (error) {
-      handleControllerError(error, res, 'Failed to mark song as available');
+      logger.error('Failed to mark song as available', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to mark song as available'
+      });
     }
   }
 }

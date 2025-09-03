@@ -1,26 +1,62 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
+import { User } from '../models/User';
+import { RefreshToken } from '../models/RefreshToken';
+import { Bar } from '../models/Bar';
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
+import { sendSuccess, sendError } from '../utils/response';
+import { ValidationError, UnauthorizedError, ConflictError, NotFoundError, BadRequestError } from '../utils/errors';
+import { RequestWithUser } from '../types';
+import { logger } from '../utils/logger';
+import { asyncHandler } from '../middleware/asyncHandler';
 import { 
-  asyncHandler, 
-  sendSuccess, 
-  sendError, 
-  ValidationError, 
-  UnauthorizedError, 
-  ConflictError,
-  BadRequestError
-} from '../../../shared/utils/errors';
-import { 
-  generateAccessToken, 
-  generateRefreshToken, 
-  verifyRefreshToken,
-  AuthenticatedRequest 
-} from '../../../shared/utils/jwt';
-import { validateUserRegistration, validateEmail } from '../../../shared/utils/validation';
-import { UserModel } from '../models/User';
-import { BarModel } from '../models/Bar';
-import { RefreshTokenModel } from '../models/RefreshToken';
-import { logger } from '../../../shared/utils/logger';
-import { User, Bar } from '../../../shared/types';
+  validateEmail, 
+  validatePassword, 
+  validateUsername, 
+  validateId,
+  sanitizeInput 
+} from '../../shared/security';
+import { config } from '../../shared/config';
+
+// Model aliases for cleaner code
+const UserModel = User;
+const RefreshTokenModel = RefreshToken;
+const BarModel = Bar;
+
+// Validation functions mejoradas
+const validateUserRegistration = (data: any) => {
+  const errors: string[] = [];
+  
+  // Sanitizar inputs
+  const sanitizedData = {
+    email: sanitizeInput(data.email),
+    firstName: sanitizeInput(data.firstName),
+    lastName: sanitizeInput(data.lastName),
+    password: data.password // No sanitizar password
+  };
+  
+  if (!sanitizedData.email || !validateEmail(sanitizedData.email)) {
+    errors.push('Email válido es requerido');
+  }
+  
+  if (!data.password || !validatePassword(data.password)) {
+    errors.push('Contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y símbolos');
+  }
+  
+  if (!sanitizedData.firstName || !validateUsername(sanitizedData.firstName)) {
+    errors.push('Nombre debe tener entre 2 y 50 caracteres y solo contener letras, números y espacios');
+  }
+  
+  if (!sanitizedData.lastName || !validateUsername(sanitizedData.lastName)) {
+    errors.push('Apellido debe tener entre 2 y 50 caracteres y solo contener letras, números y espacios');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors,
+    sanitizedData
+  };
+};
 
 /**
  * Register a new user
@@ -34,27 +70,30 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     throw new ValidationError('Datos de registro inválidos', validation.errors);
   }
 
+  // Usar datos sanitizados
+  const { sanitizedData } = validation;
+
   // Check if user already exists
   const existingUser = await UserModel.findByEmail(email);
   if (existingUser) {
     throw new ConflictError('El usuario ya existe con este email');
   }
 
-  // Create user
+  // Create user con datos sanitizados
   const user = await UserModel.create({
-    email,
+    email: sanitizedData.email,
     password,
-    firstName,
-    lastName,
+    firstName: sanitizedData.firstName,
+    lastName: sanitizedData.lastName,
     role: role as 'customer' | 'bar_owner' | 'admin'
   });
 
-  // Generate tokens
+  // Generate tokens con configuración segura
   const accessToken = generateAccessToken({ userId: user.id, role: user.role });
-  const refreshTokenData = await RefreshTokenModel.create(
-    user.id, 
-    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+  const refreshTokenExpiresAt = new Date(Date.now() + 
+    (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );
+  const refreshTokenData = await RefreshTokenModel.create(user.id, refreshTokenExpiresAt);
 
   logger.info('User registered successfully', { userId: user.id, email: user.email });
 
@@ -84,35 +123,42 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     throw new BadRequestError('Email y contraseña son requeridos');
   }
 
-  if (!validateEmail(email)) {
+  // Sanitizar email
+  const sanitizedEmail = sanitizeInput(email);
+  
+  if (!validateEmail(sanitizedEmail)) {
     throw new ValidationError('Email inválido');
   }
 
   // Find user with password
-  const user = await UserModel.findByEmailWithPassword(email);
+  const user = await UserModel.findByEmailWithPassword(sanitizedEmail);
   if (!user) {
+    // Log intento de login fallido para seguridad
+    logger.warn('Failed login attempt', { email: sanitizedEmail, ip: req.ip });
     throw new UnauthorizedError('Credenciales inválidas');
   }
 
   // Check if user is active
   if (!user.isActive) {
+    logger.warn('Login attempt on inactive account', { userId: user.id, email: sanitizedEmail });
     throw new UnauthorizedError('Cuenta desactivada');
   }
 
   // Verify password
   const isValidPassword = await UserModel.verifyPassword(user.id, password);
   if (!isValidPassword) {
+    logger.warn('Invalid password attempt', { userId: user.id, email: sanitizedEmail, ip: req.ip });
     throw new UnauthorizedError('Credenciales inválidas');
   }
 
-  // Generate tokens
+  // Generate tokens con configuración segura
   const accessToken = generateAccessToken({ userId: user.id, role: user.role });
-  const refreshTokenData = await RefreshTokenModel.create(
-    user.id, 
-    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+  const refreshTokenExpiresAt = new Date(Date.now() + 
+    (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );
+  const refreshTokenData = await RefreshTokenModel.create(user.id, refreshTokenExpiresAt);
 
-  logger.info('User logged in successfully', { userId: user.id, email: user.email });
+  logger.info('User logged in successfully', { userId: user.id, email: user.email, ip: req.ip });
 
   sendSuccess(res, {
     user: {
@@ -176,7 +222,7 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
 /**
  * Logout user
  */
-export const logout = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const logout = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { refreshToken: token } = req.body;
   const userId = req.user?.userId;
 
@@ -199,7 +245,7 @@ export const logout = asyncHandler(async (req: AuthenticatedRequest, res: Respon
 /**
  * Logout from all devices
  */
-export const logoutAll = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const logoutAll = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.userId;
 
   if (!userId) {
@@ -217,7 +263,7 @@ export const logoutAll = asyncHandler(async (req: AuthenticatedRequest, res: Res
 /**
  * Get current user profile
  */
-export const getProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getProfile = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.userId;
 
   if (!userId) {
@@ -285,7 +331,7 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
 /**
  * Change password
  */
-export const changePassword = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const changePassword = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { currentPassword, newPassword } = req.body;
   const userId = req.user?.userId;
 
@@ -297,9 +343,20 @@ export const changePassword = asyncHandler(async (req: AuthenticatedRequest, res
     throw new BadRequestError('Contraseña actual y nueva son requeridas');
   }
 
+  // Validar nueva contraseña con criterios de seguridad
+  if (!validatePassword(newPassword)) {
+    throw new ValidationError('La nueva contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y símbolos');
+  }
+
+  // Verificar que la nueva contraseña sea diferente a la actual
+  if (currentPassword === newPassword) {
+    throw new BadRequestError('La nueva contraseña debe ser diferente a la actual');
+  }
+
   // Verify current password
   const isValidPassword = await UserModel.verifyPassword(userId, currentPassword);
   if (!isValidPassword) {
+    logger.warn('Invalid current password attempt during password change', { userId, ip: req.ip });
     throw new UnauthorizedError('Contraseña actual incorrecta');
   }
 
@@ -312,15 +369,15 @@ export const changePassword = asyncHandler(async (req: AuthenticatedRequest, res
   // Revoke all refresh tokens to force re-login
   await RefreshTokenModel.revokeAllForUser(userId);
 
-  logger.info('Password changed successfully', { userId });
+  logger.info('Password changed successfully', { userId, ip: req.ip });
 
-  sendSuccess(res, null, 'Contraseña actualizada exitosamente');
+  sendSuccess(res, null, 'Contraseña actualizada exitosamente. Por favor, inicia sesión nuevamente.');
 });
 
 /**
  * Get active sessions
  */
-export const getActiveSessions = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getActiveSessions = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userId = req.user?.userId;
 
   if (!userId) {
@@ -341,7 +398,7 @@ export const getActiveSessions = asyncHandler(async (req: AuthenticatedRequest, 
 /**
  * Revoke session
  */
-export const revokeSession = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const revokeSession = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { sessionId } = req.params;
   const userId = req.user?.userId;
 
@@ -367,4 +424,141 @@ export const revokeSession = asyncHandler(async (req: AuthenticatedRequest, res:
   logger.info('Session revoked', { userId, sessionId });
 
   sendSuccess(res, null, 'Sesión revocada exitosamente');
+});
+
+/**
+ * Forgot password - send reset email
+ */
+export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  if (!email) {
+    throw new BadRequestError('Email es requerido');
+  }
+
+  // Sanitizar email
+  const sanitizedEmail = sanitizeInput(email);
+
+  if (!validateEmail(sanitizedEmail)) {
+    throw new ValidationError('Email inválido');
+  }
+
+  // Find user
+  const user = await UserModel.findByEmail(sanitizedEmail);
+  if (!user) {
+    // Log intento de reset en email inexistente para monitoreo de seguridad
+    logger.warn('Password reset attempt on non-existent email', { email: sanitizedEmail, ip: req.ip });
+    // Don't reveal if email exists or not for security
+    sendSuccess(res, null, 'Si el email existe, recibirás instrucciones para restablecer tu contraseña');
+    return;
+  }
+
+  // Verificar si la cuenta está activa
+  if (!user.isActive) {
+    logger.warn('Password reset attempt on inactive account', { userId: user.id, email: sanitizedEmail, ip: req.ip });
+    sendSuccess(res, null, 'Si el email existe, recibirás instrucciones para restablecer tu contraseña');
+    return;
+  }
+
+  // Generate reset token (implement this in your UserModel)
+  // const resetToken = await UserModel.generatePasswordResetToken(user.id);
+  
+  // Send email (implement email service)
+  // await EmailService.sendPasswordResetEmail(user.email, resetToken);
+
+  logger.info('Password reset requested', { userId: user.id, email: user.email, ip: req.ip });
+
+  sendSuccess(res, null, 'Si el email existe, recibirás instrucciones para restablecer tu contraseña');
+});
+
+/**
+ * Reset password with token
+ */
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    throw new BadRequestError('Token y nueva contraseña son requeridos');
+  }
+
+  if (newPassword.length < 6) {
+    throw new ValidationError('La contraseña debe tener al menos 6 caracteres');
+  }
+
+  try {
+    // In a real implementation, verify the password reset token
+    // For now, we'll use the refresh token verification as a placeholder
+    const decoded = verifyRefreshToken(token) as any;
+    const userId = decoded.userId;
+
+    const success = await UserModel.updatePassword(userId, newPassword);
+    if (!success) {
+      throw new BadRequestError('Error al actualizar contraseña');
+    }
+
+    // Revoke all refresh tokens to force re-login
+    await RefreshTokenModel.revokeAllForUser(userId);
+
+    logger.info('Password reset successfully', { userId });
+
+    sendSuccess(res, null, 'Contraseña restablecida exitosamente');
+  } catch (error) {
+    throw new BadRequestError('Token de restablecimiento inválido o expirado');
+  }
+});
+
+/**
+ * Resend email verification
+ */
+export const resendVerification = asyncHandler(async (req: Request, res: Response) => {
+  const { email } = req.body;
+
+  if (!email || !validateEmail(email)) {
+    throw new BadRequestError('Email válido es requerido');
+  }
+
+  const user = await UserModel.findByEmail(email);
+  if (!user) {
+    throw new NotFoundError('Usuario no encontrado');
+  }
+
+  if (user.isEmailVerified) {
+    throw new BadRequestError('El email ya está verificado');
+  }
+
+  // In a real implementation, send verification email
+  logger.info('Email verification resent', { userId: user.id, email });
+
+  sendSuccess(res, null, 'Email de verificación enviado');
+});
+
+/**
+ * Authenticate middleware function
+ */
+export const authenticate = asyncHandler(async (req: RequestWithUser, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    throw new UnauthorizedError('Token de acceso requerido');
+  }
+
+  try {
+    const decoded = verifyRefreshToken(token) as any;
+    const user = await UserModel.findById(decoded.userId);
+    
+    if (!user || !user.isActive) {
+      throw new UnauthorizedError('Usuario no encontrado o inactivo');
+    }
+
+    req.user = {
+      userId: user.id,
+      role: user.role,
+      email: user.email
+    };
+
+    next();
+  } catch (error) {
+    throw new UnauthorizedError('Token inválido');
+  }
 });

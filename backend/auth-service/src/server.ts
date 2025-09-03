@@ -1,44 +1,83 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import { config } from '../../shared/config';
-import { logger } from '../../shared/utils/logger';
-import { initializeDatabase, runMigrations } from '../../shared/database';
-import { initializeRedis } from '../../shared/utils/redis';
-import { errorHandler, notFoundHandler } from '../../shared/utils/errors';
-import { requestLogger, healthCheck } from '../../shared/middleware';
+import { securityMiddleware, corsOptions, helmetOptions, rateLimiters } from '../../shared/security';
+import { logger, requestLogger } from './utils/logger';
+import { initializeDatabase, runMigrations } from './utils/database';
+import { initRedis } from './utils/redis';
+import { AppError, NotFoundError } from './utils/errors';
 import routes from './routes';
 
 const app = express();
-const PORT = config.server.port || 3001;
+const PORT = config.services.auth.port;
 
-// Security middleware
-app.use(helmet());
-app.use(cors({
-  origin: config.cors.origin,
-  credentials: config.cors.credentials,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Bar-ID', 'X-Table-ID']
-}));
+// Security middleware mejorado
+app.use(helmet(helmetOptions));
+app.use(cors(corsOptions));
+
+// Rate limiting específico para auth
+app.use('/api/auth/login', rateLimiters.auth);
+app.use('/api/auth/register', rateLimiters.auth);
+app.use('/api/auth/forgot-password', rateLimiters.auth);
+app.use('/api', rateLimiters.general);
+
+// Middleware de seguridad centralizado
+app.use(securityMiddleware);
 
 // General middleware
-app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
 
 // Health check
-app.use('/health', healthCheck);
-
-import routes from './routes';
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    service: 'auth-service',
+    version: '1.0.0'
+  });
+});
 
 // Routes
 app.use('/api', routes);
 
-// Error handling
-app.use(notFoundHandler);
-app.use(errorHandler);
+// 404 handler for undefined routes
+app.use('*', (req, res, next) => {
+  const error = new NotFoundError(`Route ${req.method} ${req.originalUrl} not found`);
+  next(error);
+});
+
+// Global error handler (must be last)
+app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  let statusCode = 500;
+  let message = 'Internal server error';
+  let data: any = undefined;
+
+  logger.error('Error occurred', {
+    error: error.message,
+    stack: error.stack,
+    url: req.url,
+    method: req.method
+  });
+
+  if (error instanceof AppError) {
+    statusCode = error.statusCode;
+    message = error.message;
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    data = { stack: error.stack };
+  }
+
+  res.status(statusCode).json({
+    success: false,
+    error: message,
+    data
+  });
+});
 
 // Initialize services and start server
 const startServer = async () => {
@@ -52,7 +91,7 @@ const startServer = async () => {
     logger.info('Database migrations completed');
 
     // Initialize Redis
-    await initializeRedis();
+    await initRedis();
     logger.info('Redis initialized');
 
     // Start server

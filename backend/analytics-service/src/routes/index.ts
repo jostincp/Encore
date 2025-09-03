@@ -58,6 +58,9 @@ router.use((req, res, next) => {
 });
 
 // Apply general rate limiting
+router.use('/analytics', rateLimiter.analytics);
+router.use('/events', rateLimiter.events);
+router.use('/reports', rateLimiter.reports);
 router.use(rateLimiter.general);
 
 // Apply authentication to all routes except health checks

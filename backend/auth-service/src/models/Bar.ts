@@ -1,7 +1,10 @@
-import { query, dbOperations, transaction } from '../../../shared/database';
-import { Bar, BarSettings } from '../../../shared/types';
-import { validateBarCreation } from '../../../shared/utils/validation';
+import { query, dbOperations, transaction } from '../utils/database';
+import { Bar, BarSettings } from '../types/models';
+import { validateBarCreation } from '../utils/validation';
 import { v4 as uuidv4 } from 'uuid';
+
+// Re-export Bar interface for external use
+export { Bar, BarSettings } from '../types/models';
 
 export interface CreateBarData {
   name: string;
@@ -35,13 +38,17 @@ export interface UpdateBarData {
 
 export interface UpdateBarSettingsData {
   maxSongsPerUser?: number;
-  songRequestCost?: number;
+  songRequestCooldown?: number;
   priorityPlayCost?: number;
-  autoApproveSongs?: boolean;
+  autoApproveRequests?: boolean;
   allowExplicitContent?: boolean;
   maxQueueSize?: number;
-  pointsPerEuro?: number;
-  welcomeMessage?: string;
+  pointsPerVisit?: number;
+  pointsPerPurchase?: number;
+  enableLoyaltyProgram?: boolean;
+  openTime?: string;
+  closeTime?: string;
+  timezone?: string;
 }
 
 export class BarModel {
@@ -121,11 +128,14 @@ export class BarModel {
    * Find bar by ID with settings
    */
   static async findByIdWithSettings(id: string): Promise<(Bar & { settings: BarSettings }) | null> {
-    const result = await query<Bar & BarSettings>(
+    const result = await query<any>(
       `SELECT b.*, 
-              bs.max_songs_per_user, bs.song_request_cost, bs.priority_play_cost,
-              bs.auto_approve_songs, bs.allow_explicit_content, bs.max_queue_size,
-              bs.points_per_euro, bs.welcome_message
+              bs.id as settings_id, bs.bar_id as settings_bar_id,
+              bs.max_songs_per_user, bs.song_request_cooldown, bs.priority_play_cost,
+              bs.auto_approve_requests, bs.allow_explicit_content, bs.max_queue_size,
+              bs.points_per_visit, bs.points_per_purchase, bs.enable_loyalty_program,
+              bs.open_time, bs.close_time, bs.timezone as settings_timezone,
+              bs.created_at as settings_created_at, bs.updated_at as settings_updated_at
        FROM bars b
        LEFT JOIN bar_settings bs ON b.id = bs.bar_id
        WHERE b.id = $1`,
@@ -138,28 +148,44 @@ export class BarModel {
 
     const row = result.rows[0];
     const {
+      settings_id,
+      settings_bar_id,
       max_songs_per_user,
-      song_request_cost,
+      song_request_cooldown,
       priority_play_cost,
-      auto_approve_songs,
+      auto_approve_requests,
       allow_explicit_content,
       max_queue_size,
-      points_per_euro,
-      welcome_message,
+      points_per_visit,
+      points_per_purchase,
+      enable_loyalty_program,
+      open_time,
+      close_time,
+      settings_timezone,
+      settings_created_at,
+      settings_updated_at,
       ...bar
     } = row;
 
     return {
       ...bar,
       settings: {
+        id: settings_id,
+        barId: settings_bar_id,
         maxSongsPerUser: max_songs_per_user,
-        songRequestCost: song_request_cost,
+        songRequestCooldown: song_request_cooldown,
         priorityPlayCost: priority_play_cost,
-        autoApproveSongs: auto_approve_songs,
+        autoApproveRequests: auto_approve_requests,
         allowExplicitContent: allow_explicit_content,
         maxQueueSize: max_queue_size,
-        pointsPerEuro: points_per_euro,
-        welcomeMessage: welcome_message
+        pointsPerVisit: points_per_visit,
+        pointsPerPurchase: points_per_purchase,
+        enableLoyaltyProgram: enable_loyalty_program,
+        openTime: open_time,
+        closeTime: close_time,
+        timezone: settings_timezone,
+        createdAt: settings_created_at,
+        updatedAt: settings_updated_at
       }
     } as Bar & { settings: BarSettings };
   }
@@ -204,13 +230,17 @@ export class BarModel {
     const updateData: Record<string, any> = {};
     
     if (settingsData.maxSongsPerUser !== undefined) updateData.max_songs_per_user = settingsData.maxSongsPerUser;
-    if (settingsData.songRequestCost !== undefined) updateData.song_request_cost = settingsData.songRequestCost;
+    if (settingsData.songRequestCooldown !== undefined) updateData.song_request_cooldown = settingsData.songRequestCooldown;
     if (settingsData.priorityPlayCost !== undefined) updateData.priority_play_cost = settingsData.priorityPlayCost;
-    if (settingsData.autoApproveSongs !== undefined) updateData.auto_approve_songs = settingsData.autoApproveSongs;
+    if (settingsData.autoApproveRequests !== undefined) updateData.auto_approve_requests = settingsData.autoApproveRequests;
     if (settingsData.allowExplicitContent !== undefined) updateData.allow_explicit_content = settingsData.allowExplicitContent;
     if (settingsData.maxQueueSize !== undefined) updateData.max_queue_size = settingsData.maxQueueSize;
-    if (settingsData.pointsPerEuro !== undefined) updateData.points_per_euro = settingsData.pointsPerEuro;
-    if (settingsData.welcomeMessage !== undefined) updateData.welcome_message = settingsData.welcomeMessage;
+    if (settingsData.pointsPerVisit !== undefined) updateData.points_per_visit = settingsData.pointsPerVisit;
+    if (settingsData.pointsPerPurchase !== undefined) updateData.points_per_purchase = settingsData.pointsPerPurchase;
+    if (settingsData.enableLoyaltyProgram !== undefined) updateData.enable_loyalty_program = settingsData.enableLoyaltyProgram;
+    if (settingsData.openTime !== undefined) updateData.open_time = settingsData.openTime;
+    if (settingsData.closeTime !== undefined) updateData.close_time = settingsData.closeTime;
+    if (settingsData.timezone !== undefined) updateData.timezone = settingsData.timezone;
 
     if (Object.keys(updateData).length === 0) {
       return this.getSettings(barId);
@@ -229,14 +259,22 @@ export class BarModel {
 
     const row = result.rows[0] as any;
     return {
+      id: row.id,
+      barId: row.bar_id,
       maxSongsPerUser: row.max_songs_per_user,
-      songRequestCost: row.song_request_cost,
+      songRequestCooldown: row.song_request_cooldown,
       priorityPlayCost: row.priority_play_cost,
-      autoApproveSongs: row.auto_approve_songs,
+      autoApproveRequests: row.auto_approve_requests,
       allowExplicitContent: row.allow_explicit_content,
       maxQueueSize: row.max_queue_size,
-      pointsPerEuro: row.points_per_euro,
-      welcomeMessage: row.welcome_message
+      pointsPerVisit: row.points_per_visit,
+      pointsPerPurchase: row.points_per_purchase,
+      enableLoyaltyProgram: row.enable_loyalty_program,
+      openTime: row.open_time,
+      closeTime: row.close_time,
+      timezone: row.timezone,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
     };
   }
 
@@ -255,14 +293,22 @@ export class BarModel {
 
     const row = result.rows[0];
     return {
+      id: row.id,
+      barId: row.bar_id,
       maxSongsPerUser: row.max_songs_per_user,
-      songRequestCost: row.song_request_cost,
+      songRequestCooldown: row.song_request_cooldown,
       priorityPlayCost: row.priority_play_cost,
-      autoApproveSongs: row.auto_approve_songs,
+      autoApproveRequests: row.auto_approve_requests,
       allowExplicitContent: row.allow_explicit_content,
       maxQueueSize: row.max_queue_size,
-      pointsPerEuro: row.points_per_euro,
-      welcomeMessage: row.welcome_message
+      pointsPerVisit: row.points_per_visit,
+      pointsPerPurchase: row.points_per_purchase,
+      enableLoyaltyProgram: row.enable_loyalty_program,
+      openTime: row.open_time,
+      closeTime: row.close_time,
+      timezone: row.timezone,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
     };
   }
 
@@ -353,7 +399,7 @@ export class BarModel {
    * Delete bar (hard delete)
    */
   static async delete(id: string): Promise<boolean> {
-    return await dbOperations.deleteById('bars', id);
+    return await dbOperations.delete('bars', id);
   }
 
   /**

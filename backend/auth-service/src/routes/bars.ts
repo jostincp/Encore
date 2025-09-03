@@ -12,14 +12,10 @@ import {
   updateBarSettings,
   getBarStats
 } from '../controllers/barController';
-import { authenticateToken, requireRole } from '../../../shared/utils/jwt';
-import { 
-  rateLimitBasic,
-  rateLimitStrict,
-  validateContentType,
-  validateJSON,
-  validatePagination
-} from '../../../shared/middleware';
+import { authenticate } from '../middleware/auth';
+import { rateLimiter as rateLimitBasic, rateLimitStrict } from '../middleware/rateLimiter';
+import { requireRole } from '../middleware/auth';
+import { validateContentType } from '../middleware/validation';
 
 const router = Router();
 
@@ -29,7 +25,7 @@ const router = Router();
  * @access  Public
  */
 router.get('/', 
-  validatePagination,
+
   getBars
 );
 
@@ -39,7 +35,7 @@ router.get('/',
  * @access  Private (Bar Owner or Admin)
  */
 router.get('/stats', 
-  authenticateToken,
+  authenticate,
   requireRole(['bar_owner', 'admin']),
   getBarStats
 );
@@ -50,7 +46,7 @@ router.get('/stats',
  * @access  Private (Bar Owner or Admin)
  */
 router.get('/my', 
-  authenticateToken,
+  authenticate,
   requireRole(['bar_owner', 'admin']),
   getMyBars
 );
@@ -61,11 +57,10 @@ router.get('/my',
  * @access  Private (Bar Owner or Admin)
  */
 router.post('/', 
-  authenticateToken,
+  authenticate,
   requireRole(['bar_owner', 'admin']),
   rateLimitBasic,
-  validateContentType,
-  validateJSON,
+  validateContentType(['application/json']),
   createBar
 );
 
@@ -84,10 +79,9 @@ router.get('/:id',
  * @access  Private (Bar Owner or Admin)
  */
 router.put('/:id', 
-  authenticateToken,
+  authenticate,
   rateLimitBasic,
-  validateContentType,
-  validateJSON,
+  validateContentType(['application/json']),
   updateBar
 );
 
@@ -97,7 +91,7 @@ router.put('/:id',
  * @access  Private (Bar Owner or Admin)
  */
 router.put('/:id/deactivate', 
-  authenticateToken,
+  authenticate,
   rateLimitStrict,
   deactivateBar
 );
@@ -108,7 +102,7 @@ router.put('/:id/deactivate',
  * @access  Private (Admin)
  */
 router.put('/:id/activate', 
-  authenticateToken,
+  authenticate,
   requireRole(['admin']),
   rateLimitStrict,
   activateBar
@@ -120,7 +114,7 @@ router.put('/:id/activate',
  * @access  Private (Admin)
  */
 router.delete('/:id', 
-  authenticateToken,
+  authenticate,
   requireRole(['admin']),
   rateLimitStrict,
   deleteBar
@@ -132,7 +126,7 @@ router.delete('/:id',
  * @access  Private (Bar Owner or Admin)
  */
 router.get('/:id/settings', 
-  authenticateToken,
+  authenticate,
   getBarSettings
 );
 
@@ -142,10 +136,9 @@ router.get('/:id/settings',
  * @access  Private (Bar Owner or Admin)
  */
 router.put('/:id/settings', 
-  authenticateToken,
+  authenticate,
   rateLimitBasic,
-  validateContentType,
-  validateJSON,
+  validateContentType(['application/json']),
   updateBarSettings
 );
 

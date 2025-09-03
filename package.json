@@ -31,8 +31,26 @@
     "build:points": "cd backend/points-service && npm run build",
     "build:menu": "cd backend/menu-service && npm run build",
     "build:analytics": "cd backend/analytics-service && npm run build",
+    "test": "node test-runner.js",
+    "test:install": "node test-runner.js --install",
+    "test:auth": "node test-runner.js --service=auth-service",
+    "test:music": "node test-runner.js --service=music-service",
+    "test:points": "node test-runner.js --service=points-service",
+    "test:unit": "npm run test:auth:unit && npm run test:music:unit && npm run test:points:unit",
+    "test:integration": "npm run test:auth:integration && npm run test:music:integration && npm run test:points:integration",
+    "test:auth:unit": "cd backend/auth-service && npm run test:unit",
+    "test:auth:integration": "cd backend/auth-service && npm run test:integration",
+    "test:music:unit": "cd backend/music-service && npm run test:unit",
+    "test:music:integration": "cd backend/music-service && npm run test:integration",
+    "test:points:unit": "cd backend/points-service && npm run test:unit",
+    "test:points:integration": "cd backend/points-service && npm run test:integration",
+    "test:coverage": "npm run test:auth:coverage && npm run test:music:coverage && npm run test:points:coverage",
+    "test:auth:coverage": "cd backend/auth-service && npm run test:coverage",
+    "test:music:coverage": "cd backend/music-service && npm run test:coverage",
+    "test:points:coverage": "cd backend/points-service && npm run test:coverage",
     "install:all": "npm install && cd frontend && npm install && cd ../backend/auth-service && npm install && cd ../music-service && npm install && cd ../queue-service && npm install && cd ../points-service && npm install && cd ../menu-service && npm install && cd ../analytics-service && npm install",
     "clean": "rimraf frontend/dist frontend/.next backend/*/dist backend/*/build",
+    "clean:test": "rimraf backend/*/coverage backend/*/test-results",
     "lint": "cd frontend && npm run lint",
     "type-check": "cd frontend && npm run type-check"
   },
@@ -59,8 +77,8 @@
   "author": "Encore Team",
   "license": "MIT",
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^5.1.0",
-    "socket.io": "^4.8.1"
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.2.0",
+    "dotenv": "^17.2.2"
   }
 }
