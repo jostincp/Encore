@@ -1,27 +1,27 @@
 import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
-import { User } from '../models/User';
-import { RefreshToken } from '../models/RefreshToken';
-import { Bar } from '../models/Bar';
+import { UserModel, User } from '../models/User';
+import { RefreshTokenModel, RefreshToken } from '../models/RefreshToken';
+import { BarModel, Bar } from '../models/Bar';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSuccess, sendError } from '../utils/response';
 import { ValidationError, UnauthorizedError, ConflictError, NotFoundError, BadRequestError } from '../utils/errors';
 import { RequestWithUser } from '../types';
 import { logger } from '../utils/logger';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { 
-  validateEmail, 
-  validatePassword, 
-  validateUsername, 
-  validateId,
-  sanitizeInput 
-} from '../../shared/security';
-import { config } from '../../shared/config';
+import {
+  validateEmail,
+  validatePassword,
+  validateNonEmptyString as validateUsername
+} from '../utils/validation';
+import { config } from '../../../shared/config';
 
-// Model aliases for cleaner code
-const UserModel = User;
-const RefreshTokenModel = RefreshToken;
-const BarModel = Bar;
+// Simple sanitize function
+const sanitizeInput = (input: string): string => {
+  return input.trim().replace(/[<>]/g, '');
+};
+
+// Models are imported directly above
 
 // Validation functions mejoradas
 const validateUserRegistration = (data: any) => {
@@ -85,7 +85,7 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     password,
     firstName: sanitizedData.firstName,
     lastName: sanitizedData.lastName,
-    role: role as 'customer' | 'bar_owner' | 'admin'
+    role: (role === 'bar_owner' ? 'bar_admin' : role) as 'customer' | 'bar_admin' | 'super_admin'
   });
 
   // Generate tokens con configuración segura
@@ -275,9 +275,9 @@ export const getProfile = asyncHandler(async (req: RequestWithUser, res: Respons
     throw new UnauthorizedError('Usuario no encontrado');
   }
 
-  // If user is bar owner, get their bars
+  // If user is bar admin, get their bars
   let bars: Bar[] = [];
-  if (user.role === 'bar_owner') {
+  if (user.role === 'bar_admin') {
     bars = await BarModel.findByOwnerId(userId);
   }
 

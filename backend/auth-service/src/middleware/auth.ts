@@ -31,7 +31,7 @@ export const requireAdmin = (req: RequestWithUser, res: Response, next: NextFunc
     throw new UnauthorizedError('Authentication required');
   }
 
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'super_admin') {
     throw new ForbiddenError('Admin access required');
   }
 
@@ -47,7 +47,7 @@ export const requireOwnerOrAdmin = (req: RequestWithUser, res: Response, next: N
   }
 
   const userId = req.params.id || req.params.userId;
-  if (req.user.userId !== userId && req.user.role !== 'admin') {
+  if (req.user.userId !== userId && req.user.role !== 'super_admin') {
     throw new ForbiddenError('Access denied');
   }
 

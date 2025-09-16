@@ -7,9 +7,11 @@ export interface User {
   password: string;
   firstName: string;
   lastName: string;
-  role: 'customer' | 'bar_owner' | 'admin';
+  role: 'customer' | 'bar_admin' | 'super_admin';
   isActive: boolean;
   isEmailVerified: boolean;
+  phone?: string;
+  avatarUrl?: string;
   barId?: string;
   createdAt: Date;
   updatedAt: Date;

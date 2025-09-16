@@ -34,10 +34,11 @@ export const validateContentType = (allowedTypes: string[] = ['application/json'
     }
     
     if (!contentType || !allowedTypes.some(type => contentType.includes(type))) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: `Content-Type must be one of: ${allowedTypes.join(', ')}`
       });
+      return;
     }
     
     next();
@@ -45,13 +46,14 @@ export const validateContentType = (allowedTypes: string[] = ['application/json'
 };
 
 // Simple authentication middleware
-export const authenticateToken = (req: RequestWithUser, res: Response, next: NextFunction) => {
+export const authenticateToken = (req: RequestWithUser, res: Response, next: NextFunction): void => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-      return res.status(401).json({ error: 'Token de acceso requerido' });
+      res.status(401).json({ error: 'Token de acceso requerido' });
+      return;
     }
 
     const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
@@ -66,19 +68,22 @@ export const authenticateToken = (req: RequestWithUser, res: Response, next: Nex
 
     next();
   } catch (error) {
-    return res.status(403).json({ error: 'Token inválido' });
+    res.status(403).json({ error: 'Token inválido' });
+    return;
   }
 };
 
 // Role requirement middleware
 export const requireRole = (allowedRoles: string[]) => {
-  return (req: RequestWithUser, res: Response, next: NextFunction) => {
+  return (req: RequestWithUser, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Usuario no autenticado' });
+      res.status(401).json({ error: 'Usuario no autenticado' });
+      return;
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Acceso denegado' });
+      res.status(403).json({ error: 'Acceso denegado' });
+      return;
     }
 
     next();

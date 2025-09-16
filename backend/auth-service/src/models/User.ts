@@ -22,6 +22,7 @@ export interface UpdateUserData {
   phone?: string;
   avatarUrl?: string;
   isActive?: boolean;
+  role?: 'customer' | 'bar_admin' | 'super_admin';
 }
 
 export class UserModel {
@@ -120,6 +121,7 @@ export class UserModel {
     if (userData.phone !== undefined) updateData.phone = userData.phone;
     if (userData.avatarUrl !== undefined) updateData.avatar_url = userData.avatarUrl;
     if (userData.isActive !== undefined) updateData.is_active = userData.isActive;
+    if (userData.role) updateData.role = userData.role;
 
     if (Object.keys(updateData).length === 0) {
       return this.findById(id);

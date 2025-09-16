@@ -221,17 +221,24 @@ export class RedisService {
   }
 }
 
-// Export singleton instance
-export const redisService = new RedisService();
+// Export singleton instance - will be created after Redis initialization
+let redisServiceInstance: RedisService | null = null;
+
+export const getRedisService = (): RedisService => {
+  if (!redisServiceInstance) {
+    redisServiceInstance = new RedisService();
+  }
+  return redisServiceInstance;
+};
 
 // Session management utilities
 export const SessionManager = {
   /**
    * Store user session
    */
-  async storeSession(userId: string, sessionData: object, ttlSeconds: number = config.redis.ttl): Promise<void> {
+  async storeSession(userId: string, sessionData: object, ttlSeconds: number = 3600): Promise<void> {
     const key = `session:${userId}`;
-    await redisService.set(key, sessionData, ttlSeconds);
+    await getRedisService().set(key, sessionData, ttlSeconds);
   },
 
   /**
@@ -239,7 +246,7 @@ export const SessionManager = {
    */
   async getSession<T = any>(userId: string): Promise<T | null> {
     const key = `session:${userId}`;
-    return await redisService.getJSON<T>(key);
+    return await getRedisService().getJSON<T>(key);
   },
 
   /**
@@ -247,7 +254,7 @@ export const SessionManager = {
    */
   async deleteSession(userId: string): Promise<void> {
     const key = `session:${userId}`;
-    await redisService.del(key);
+    await getRedisService().del(key);
   },
 
   /**
@@ -255,7 +262,7 @@ export const SessionManager = {
    */
   async storeRefreshToken(userId: string, tokenId: string, ttlSeconds: number): Promise<void> {
     const key = `refresh_token:${userId}:${tokenId}`;
-    await redisService.set(key, 'valid', ttlSeconds);
+    await getRedisService().set(key, 'valid', ttlSeconds);
   },
 
   /**
@@ -263,7 +270,7 @@ export const SessionManager = {
    */
   async validateRefreshToken(userId: string, tokenId: string): Promise<boolean> {
     const key = `refresh_token:${userId}:${tokenId}`;
-    return await redisService.exists(key);
+    return await getRedisService().exists(key);
   },
 
   /**
@@ -271,7 +278,7 @@ export const SessionManager = {
    */
   async revokeRefreshToken(userId: string, tokenId: string): Promise<void> {
     const key = `refresh_token:${userId}:${tokenId}`;
-    await redisService.del(key);
+    await getRedisService().del(key);
   },
 
   /**
@@ -279,6 +286,6 @@ export const SessionManager = {
    */
   async revokeAllRefreshTokens(userId: string): Promise<void> {
     const pattern = `refresh_token:${userId}:*`;
-    await redisService.deletePattern(pattern);
+    await getRedisService().deletePattern(pattern);
   },
 };

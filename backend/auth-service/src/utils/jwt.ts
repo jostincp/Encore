@@ -143,12 +143,12 @@ export const authorizeBarAccess = (barId: string) => {
       }
 
       // Admin can access any bar
-      if (req.user.role === 'admin') {
+      if (req.user.role === 'super_admin') {
         return next();
       }
 
-      // Bar owner can only access their own bar
-      if (req.user.role === 'bar_owner' && req.user.barId !== barId) {
+      // Bar admin can only access their own bar
+      if (req.user.role === 'bar_admin' && req.user.barId !== barId) {
         throw new ForbiddenError('Acceso denegado a este bar');
       }
 
