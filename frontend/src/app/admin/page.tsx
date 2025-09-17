@@ -149,14 +149,34 @@ export default function AdminDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
-    // Verificar si es admin
+    // Verificar si es admin - temporalmente deshabilitado para desarrollo
+    // TODO: Implementar autenticación de admin
+    /*
     if (!user || user.role !== 'admin') {
       router.push('/');
       return;
     }
+    */
+
+    // Simular usuario admin para desarrollo
+    if (!user) {
+      const mockAdminUser = {
+        id: 'admin-1',
+        name: 'Administrador',
+        email: 'admin@encore.com',
+        role: 'admin' as const,
+        points: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      // TODO: Remover esta simulación cuando se implemente autenticación real
+      // setUser(mockAdminUser);
+    }
   }, [user, router]);
 
-  if (!user || user.role !== 'admin') return null;
+  // Temporalmente permitir acceso sin verificación de admin
+  // TODO: Revertir cuando se implemente autenticación
+  // if (!user || user.role !== 'admin') return null;
 
   const handleRefresh = async () => {
     setIsRefreshing(true);

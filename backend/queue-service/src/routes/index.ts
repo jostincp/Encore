@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import queueRoutes from './queue';
-import { logger } from '../../../shared/utils/logger';
+import logger from '../../../shared/utils/logger';
 
 const router = Router();
 
