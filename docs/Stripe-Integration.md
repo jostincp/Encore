@@ -5,26 +5,66 @@ Sistema de procesamiento de pagos PCI DSS compliant con manejo de webhooks, reem
 ## 🏗️ Arquitectura de la Integración
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │───▶│   Kong Gateway  │───▶│ Points Service  │
-│   (React)       │    │   (Rate Limit)  │    │   (Stripe)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       │                       │
-    ┌────▼──┐               ┌────▼──┐               ┌────▼──┐
-    │ Stripe │               │ Webhook│               │ Database │
-    │  SDK   │               │Handler │               │ (PG)     │
-    └───────┘               └───────┘               └───────┘
-                                                        │
-                                                    ┌───▼──┐
-                                                    │ Redis │
-                                                    │ Cache │
-                                                    └───────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │───▶│   Kong Gateway  │───▶│ Points Service  │───▶│ HashiCorp      │
+│   (React)       │    │   (Rate Limit)  │    │   (Stripe)      │    │ Vault OSS      │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │                       │
+         │                       │                       │                       │
+    ┌────▼──┐               ┌────▼──┐               ┌────▼──┐               ┌────▼──┐
+    │ Stripe │               │ Webhook│               │ Database │               │ Secrets │
+    │  SDK   │               │Handler │               │ (PG)     │               │ Storage │
+    └───────┘               └───────┘               └───────┘               └───────┘
+                                                        │                       │
+                                                    ┌───▼──┐               ┌───▼──┐
+                                                    │ Redis │               │ Auto  │
+                                                    │ Cache │               │Rotation│
+                                                    └───────┘               └───────┘
 ```
 
 ## 📋 Componentes del Sistema
 
-### 1. **Stripe Service** (`backend/points-service/src/services/stripeService.ts`)
+### 1. **HashiCorp Vault Service** (`backend/points-service/src/services/vaultService.ts`)
+Servicio de gestión de secretos auto-hospedado con las siguientes características:
+
+#### **Características de Seguridad**
+- ✅ **Auto-hosting**: Vault OSS ejecutándose en contenedores Docker
+- ✅ **AppRole Authentication**: Autenticación segura sin credenciales hardcoded
+- ✅ **Rotación Automática**: Secrets rotados automáticamente cada 30 días
+- ✅ **Auditoría Completa**: Todos los accesos registrados y auditados
+- ✅ **Versionado**: Control de versiones de secrets con rollback
+- ✅ **Policies**: Control de acceso granular por servicio
+
+#### **Secrets Gestionados**
+```typescript
+// Stripe secrets
+const stripeSecrets = await vaultService.getSecret('encore/stripe');
+// { secretKey, webhookSecret, publishableKey, rotatedAt }
+
+// Database credentials
+const dbSecrets = await vaultService.getSecret('encore/database');
+// { url, password, rotatedAt }
+
+// JWT secrets
+const jwtSecrets = await vaultService.getSecret('encore/jwt');
+// { secret, algorithm, expiresIn, rotatedAt }
+```
+
+#### **Rotación Automática**
+```typescript
+// Rotar secret automáticamente
+await vaultService.rotateSecret('encore/stripe', 'stripe');
+
+// Generar nuevos valores seguros
+const newWebhookSecret = crypto.randomBytes(32).toString('hex');
+await vaultService.updateSecret('encore/stripe', {
+  ...currentSecrets,
+  webhookSecret: newWebhookSecret,
+  rotatedAt: new Date().toISOString()
+});
+```
+
+### 2. **Stripe Service** (`backend/points-service/src/services/stripeService.ts`)
 Servicio central que maneja todas las operaciones con Stripe:
 
 #### Características Principales
@@ -449,6 +489,276 @@ stripe payment_intents retrieve pi_123
 - [Stripe Dashboard](https://dashboard.stripe.com/)
 - [Stripe Testing](https://stripe.com/docs/testing)
 
+## 🔐 Configuración de HashiCorp Vault
+
+### Despliegue Auto-hospedado
+
+#### **1. Iniciar Vault con Docker**
+```bash
+# Levantar Vault y configuración inicial
+docker-compose -f docker-compose.vault.yml up -d
+
+# Verificar que Vault esté ejecutándose
+docker-compose -f docker-compose.vault.yml logs vault
+```
+
+#### **2. Inicializar Vault**
+```bash
+# Acceder al contenedor de Vault
+docker exec -it encore-vault /bin/sh
+
+# Verificar estado
+vault status
+
+# Si no está inicializado, inicializar
+vault operator init
+
+# Guardar las claves de unseal y el token root de forma segura
+```
+
+#### **3. Configurar AppRole Authentication**
+```bash
+# Habilitar AppRole
+vault auth enable approle
+
+# Crear política para points-service
+vault policy write points-service-policy /vault/config/policies/points-service-policy.hcl
+
+# Crear rol para points-service
+vault write auth/approle/role/points-service \
+  secret_id_ttl=24h \
+  token_ttl=1h \
+  token_max_ttl=24h \
+  policies=points-service-policy
+```
+
+#### **4. Crear Secrets Iniciales**
+```bash
+# Crear secrets para Stripe
+vault kv put secret/encore/stripe \
+  secretKey="sk_test_..." \
+  webhookSecret="whsec_..." \
+  publishableKey="pk_test_..." \
+  rotatedAt="$(date -Iseconds)"
+
+# Crear secrets para base de datos
+vault kv put secret/encore/database \
+  url="postgresql://user:pass@host:5432/db" \
+  password="secure_password" \
+  rotatedAt="$(date -Iseconds)"
+
+# Crear secrets para JWT
+vault kv put secret/encore/jwt \
+  secret="your_256_bit_secret_here" \
+  algorithm="HS256" \
+  expiresIn="24h" \
+  rotatedAt="$(date -Iseconds)"
+```
+
+#### **5. Obtener Credenciales de AppRole**
+```bash
+# Obtener Role ID
+vault read auth/approle/role/points-service/role-id
+
+# Generar Secret ID
+vault write -f auth/approle/role/points-service/secret-id
+```
+
+### Configuración de la Aplicación
+
+#### **Variables de Entorno para Vault**
+```bash
+# Archivo .env para points-service
+VAULT_ENDPOINT=http://localhost:8200
+VAULT_ROLE_ID=your_role_id_here
+VAULT_SECRET_ID=your_secret_id_here
+VAULT_NAMESPACE=encore
+
+# Configuración de aplicación
+NODE_ENV=development
+PORT=3004
+```
+
+#### **Configuración de Producción**
+```bash
+# En producción, usar HTTPS y certificados
+VAULT_ENDPOINT=https://vault.encore-platform.com:8200
+VAULT_CACERT=/path/to/ca.crt
+
+# Variables de entorno seguras
+VAULT_ROLE_ID=${VAULT_ROLE_ID}
+VAULT_SECRET_ID=${VAULT_SECRET_ID}
+```
+
+### Rotación Automática de Secrets
+
+#### **Script de Rotación**
+```bash
+# Ejecutar rotación manual
+docker exec encore-vault /vault/scripts/rotate-secrets.sh
+
+# Programar rotación automática (cron)
+0 2 * * * docker exec encore-vault /vault/scripts/rotate-secrets.sh
+```
+
+#### **Monitoreo de Rotación**
+```bash
+# Ver logs de rotación
+docker exec encore-vault tail -f /vault/logs/rotation.log
+
+# Ver versiones de secrets
+vault kv get -versions secret/encore/stripe
+
+# Ver metadata de secret
+vault kv metadata get secret/encore/stripe
+```
+
+### Políticas de Seguridad
+
+#### **Política de Points Service**
+```hcl
+# vault/policies/points-service-policy.hcl
+path "secret/data/encore/stripe" {
+  capabilities = ["read"]
+}
+
+path "secret/data/encore/database" {
+  capabilities = ["read"]
+}
+
+path "secret/data/encore/jwt" {
+  capabilities = ["read"]
+}
+
+path "secret/data/encore/stripe" {
+  capabilities = ["update", "create"]
+}
+
+path "auth/token/renew-self" {
+  capabilities = ["update"]
+}
+```
+
+### Backup y Recuperación
+
+#### **Backup de Vault**
+```bash
+# Crear snapshot
+vault operator raft snapshot save /vault/backups/vault-snapshot.snap
+
+# Backup programado
+0 3 * * * vault operator raft snapshot save /vault/backups/vault-$(date +\%Y\%m\%d).snap
+```
+
+#### **Restauración**
+```bash
+# Detener Vault
+docker-compose -f docker-compose.vault.yml down
+
+# Restaurar desde snapshot
+vault operator raft snapshot restore /vault/backups/vault-snapshot.snap
+
+# Reiniciar Vault
+docker-compose -f docker-compose.vault.yml up -d
+```
+
+### Monitoreo y Alertas
+
+#### **Métricas de Vault**
+```bash
+# Ver estado de salud
+curl http://localhost:8200/v1/sys/health
+
+# Métricas de rendimiento
+vault read sys/metrics
+
+# Logs de auditoría
+vault audit list
+```
+
+#### **Alertas Recomendadas**
+- 🚨 **Vault Sealed**: Vault requiere unseal
+- 🚨 **Token Expirado**: Tokens de aplicación expirados
+- 🚨 **Rotación Fallida**: Error en rotación automática
+- 🚨 **Acceso Denegado**: Intentos de acceso no autorizados
+
+### Troubleshooting
+
+#### **Problemas Comunes**
+
+##### Vault no inicia
+```bash
+# Verificar configuración
+docker-compose -f docker-compose.vault.yml config
+
+# Ver logs detallados
+docker-compose -f docker-compose.vault.yml logs vault
+
+# Verificar permisos de archivos
+ls -la vault/
+```
+
+##### Error de autenticación AppRole
+```bash
+# Verificar credenciales
+vault read auth/approle/role/points-service/role-id
+vault write -f auth/approle/role/points-service/secret-id
+
+# Verificar política
+vault policy read points-service-policy
+```
+
+##### Secrets no se actualizan
+```bash
+# Verificar conectividad
+curl -H "X-Vault-Token: $VAULT_TOKEN" http://localhost:8200/v1/sys/health
+
+# Verificar permisos
+vault token lookup
+
+# Ver logs de aplicación
+docker-compose -f docker-compose.points.yml logs points-service
+```
+
+### Costos y Escalabilidad
+
+#### **Recursos Recomendados**
+- **CPU**: 1-2 cores
+- **RAM**: 512MB - 1GB
+- **Storage**: 10GB SSD
+- **Red**: Baja latencia requerida
+
+#### **Escalabilidad**
+- **Horizontal**: Múltiples instancias con Raft
+- **Vertical**: Aumentar recursos según carga
+- **Backup**: Snapshots automáticos
+- **Disaster Recovery**: Replicación geográfica
+
 ---
 
-**Nota**: Esta integración completa con Stripe proporciona un sistema de pagos robusto, seguro y escalable que cumple con los estándares PCI DSS y ofrece una experiencia de usuario excepcional.
+## 🎯 Beneficios de la Migración a Vault
+
+### **Ventajas sobre AWS Secrets Manager**
+- ✅ **Costo**: Gratis (OSS) vs $0.40/secret/mes
+- ✅ **Control Total**: Auto-hospedado, sin dependencia de AWS
+- ✅ **Flexibilidad**: Políticas personalizadas, versionado avanzado
+- ✅ **Auditoría**: Logs detallados de todos los accesos
+- ✅ **Escalabilidad**: Arquitectura distribuida con Raft
+- ✅ **Seguridad**: Encriptación end-to-end, rotación automática
+
+### **Cumplimiento PCI DSS Mejorado**
+- ✅ **Auto-hosting**: Control total sobre infraestructura
+- ✅ **Auditoría Completa**: Trazabilidad de todos los accesos
+- ✅ **Rotación Automática**: Secrets frescos regularmente
+- ✅ **Versionado**: Rollback en caso de problemas
+- ✅ **Monitoreo 24/7**: Alertas proactivas de seguridad
+
+### **Mantenimiento Simplificado**
+- ✅ **Backups Automáticos**: Snapshots programados
+- ✅ **Recuperación Rápida**: Restauración desde snapshots
+- ✅ **Monitoreo Integrado**: Métricas y health checks
+- ✅ **Documentación Completa**: Guías para troubleshooting
+
+---
+
+**Nota**: Esta integración completa con Stripe y HashiCorp Vault proporciona un sistema de pagos enterprise-grade con seguridad de nivel bancario, cumplimiento PCI DSS completo y gestión de secrets auto-hospedada con rotación automática.

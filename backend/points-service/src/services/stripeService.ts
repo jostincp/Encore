@@ -6,7 +6,7 @@
 import Stripe from 'stripe';
 import crypto from 'crypto';
 import logger from '../../../shared/utils/logger';
-import { getSecretsManager } from '../../../shared/utils/secrets';
+import vaultService from './vaultService';
 import { getPool } from '../../../shared/database';
 import { getRedisClient } from '../../../shared/utils/redis';
 
@@ -58,9 +58,9 @@ class StripeService {
     try {
       const secretsManager = getSecretsManager();
 
-      // Get Stripe secrets from AWS Secrets Manager in production
-      if (process.env.NODE_ENV === 'production') {
-        const stripeSecrets = await secretsManager.getSecret('encore/stripe-api');
+      // Get Stripe secrets from HashiCorp Vault
+      try {
+        const stripeSecrets = await vaultService.getSecret('encore/stripe');
 
         this.config = {
           secretKey: stripeSecrets.secretKey,
@@ -68,8 +68,20 @@ class StripeService {
           publishableKey: stripeSecrets.publishableKey,
           apiVersion: '2025-08-27.basil'
         };
-      } else {
-        // Use environment variables in development
+
+        logger.info('Stripe secrets loaded from Vault', {
+          service: 'stripe-service',
+          hasSecretKey: !!this.config.secretKey,
+          hasWebhookSecret: !!this.config.webhookSecret,
+          hasPublishableKey: !!this.config.publishableKey
+        });
+      } catch (error) {
+        logger.error('Failed to load Stripe secrets from Vault, falling back to environment variables', {
+          service: 'stripe-service',
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+
+        // Fallback to environment variables
         this.config = {
           secretKey: process.env.STRIPE_SECRET_KEY!,
           webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
