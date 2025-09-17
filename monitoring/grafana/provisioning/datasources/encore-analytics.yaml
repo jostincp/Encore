@@ -1,0 +1,32 @@
+apiVersion: 1
+
+datasources:
+  - name: Encore Analytics
+    type: grafana-simple-json-datasource
+    access: proxy
+    url: http://analytics-service:3005
+    jsonData:
+      query: /api/v1/grafana/query
+      search: /api/v1/grafana/search
+      annotations: /api/v1/grafana/annotations
+      tagKeys: /api/v1/grafana/tag-keys
+      tagValues: /api/v1/grafana/tag-values
+    editable: true
+    isDefault: true
+
+  - name: Encore Analytics (Direct)
+    type: json
+    access: proxy
+    url: http://analytics-service:3005/api/v1/grafana
+    jsonData:
+      keepCookies: []
+      queryTimeout: 60s
+      timeInterval: 15s
+    editable: true
+
+  - name: Prometheus (Optional)
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    editable: true
+    isDefault: false

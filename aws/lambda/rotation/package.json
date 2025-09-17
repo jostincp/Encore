@@ -1,0 +1,22 @@
+{
+  "name": "encore-secret-rotation",
+  "version": "1.0.0",
+  "description": "AWS Lambda function for automatic secret rotation in Encore platform",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.713.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "secrets-manager",
+    "rotation",
+    "encore"
+  ],
+  "author": "Encore Team",
+  "license": "MIT"
+}

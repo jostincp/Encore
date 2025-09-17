@@ -14,6 +14,17 @@ import {
 import { authenticate } from '../middleware/auth';
 import { validateContentType } from '../middleware/validation';
 import { rateLimiter as rateLimitAuth, rateLimitStrict } from '../middleware/rateLimiter';
+import {
+  registerSchema,
+  loginSchema,
+  refreshTokenSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+  validateRequest,
+  validateParams
+} from '../../../shared/utils/validation';
 
 const router = Router();
 
@@ -22,9 +33,10 @@ const router = Router();
  * @desc    Register a new user
  * @access  Public
  */
-router.post('/register', 
+router.post('/register',
   rateLimitAuth,
   validateContentType(['application/json']),
+  validateRequest(registerSchema),
   register
 );
 
@@ -33,9 +45,10 @@ router.post('/register',
  * @desc    Login user
  * @access  Public
  */
-router.post('/login', 
+router.post('/login',
   rateLimitAuth,
   validateContentType(['application/json']),
+  validateRequest(loginSchema),
   login
 );
 
@@ -44,9 +57,10 @@ router.post('/login',
  * @desc    Refresh access token
  * @access  Public
  */
-router.post('/refresh', 
+router.post('/refresh',
   rateLimitAuth,
   validateContentType(['application/json']),
+  validateRequest(refreshTokenSchema),
   refreshToken
 );
 

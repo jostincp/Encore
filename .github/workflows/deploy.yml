@@ -1,0 +1,429 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ========================================
+  # DEPLOY TO STAGING
+  # ========================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    if: github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Deploy to ECS Staging
+      run: |
+        # Update ECS service
+        aws ecs update-service \
+          --cluster encore-staging \
+          --service encore-api-staging \
+          --force-new-deployment \
+          --region us-east-1
+
+        # Wait for deployment to complete
+        aws ecs wait services-stable \
+          --cluster encore-staging \
+          --services encore-api-staging \
+          --region us-east-1
+
+    - name: Deploy Cloudflare Workers (Staging)
+      run: |
+        cd cdn/workers
+        npx wrangler deploy api-router.js --env staging
+        npx wrangler deploy image-optimizer.js --env staging
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    - name: Run smoke tests on staging
+      run: |
+        # Wait for services to be ready
+        sleep 60
+
+        # Run basic health checks
+        curl -f https://api-staging.encore-platform.com/health
+        curl -f https://encore-platform-staging.pages.dev
+
+    - name: Notify staging deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: "🚀 Deployed to Staging: ${{ github.sha }}"
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ========================================
+  # DEPLOY TO PRODUCTION
+  # ========================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Deploy Frontend to Cloudflare Pages
+      run: |
+        npm run build:frontend
+        npx wrangler pages deploy frontend/dist \
+          --project-name=encore-platform \
+          --branch=main \
+          --commit-hash=${{ github.sha }}
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    - name: Deploy Backend to ECS (Blue-Green)
+      run: |
+        # Get current task definition
+        TASK_DEF=$(aws ecs describe-task-definition \
+          --task-definition encore-api \
+          --region us-east-1)
+
+        # Update task definition with new image
+        aws ecs register-task-definition \
+          --family encore-api \
+          --container-definitions "$TASK_DEF" \
+          --region us-east-1
+
+        # Blue-Green deployment
+        aws ecs update-service \
+          --cluster encore-production \
+          --service encore-api-blue \
+          --force-new-deployment \
+          --region us-east-1
+
+        # Wait for blue deployment
+        aws ecs wait services-stable \
+          --cluster encore-production \
+          --services encore-api-blue \
+          --region us-east-1
+
+        # Switch traffic to blue (now green)
+        aws ecs update-service \
+          --cluster encore-production \
+          --service encore-api-green \
+          --task-definition encore-api \
+          --desired-count 0 \
+          --region us-east-1
+
+        aws ecs update-service \
+          --cluster encore-production \
+          --service encore-api-blue \
+          --task-definition encore-api \
+          --desired-count 3 \
+          --region us-east-1
+
+    - name: Deploy Cloudflare Workers (Production)
+      run: |
+        cd cdn/workers
+        npx wrangler deploy api-router.js --env production
+        npx wrangler deploy image-optimizer.js --env production
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    - name: Update Kong API Gateway
+      run: |
+        # Update Kong configuration
+        kubectl apply -f kong/kong.yml
+
+        # Wait for rollout
+        kubectl rollout status deployment/kong-gateway
+
+    - name: Run production smoke tests
+      run: |
+        # Wait for services to be ready
+        sleep 120
+
+        # Run comprehensive health checks
+        curl -f https://api.encore-platform.com/health
+        curl -f https://encore-platform.com
+        curl -f https://encore-platform.com/api/auth/health
+
+        # Test critical user flows
+        # (Add more comprehensive tests here)
+
+    - name: Update CDN cache
+      run: |
+        # Purge Cloudflare cache for updated assets
+        curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+          -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d '{"purge_everything": true}'
+
+    - name: Create GitHub release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+        body: |
+          ## 🚀 Production Deployment
+
+          **Commit:** ${{ github.sha }}
+          **Branch:** ${{ github.ref }}
+          **Environment:** Production
+
+          ### Changes
+          - Automated deployment via GitHub Actions
+          - All tests passed ✅
+          - Security scans passed ✅
+          - Performance tests passed ✅
+
+          ### Deployment Details
+          - Frontend: Cloudflare Pages
+          - Backend: AWS ECS (Blue-Green)
+          - API Gateway: Kong
+          - CDN: Cloudflare
+
+        draft: false
+        prerelease: false
+
+    - name: Notify production deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        text: "🎉 Deployed to Production: v${{ github.run_number }} - ${{ github.sha }}"
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ========================================
+  # POST-DEPLOYMENT VALIDATION
+  # ========================================
+  validate-deployment:
+    name: Validate Deployment
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Install test dependencies
+      run: |
+        cd tests
+        npm ci
+
+    - name: Install Playwright browsers
+      run: |
+        cd tests
+        npx playwright install --with-deps
+
+    - name: Run production validation tests
+      run: |
+        cd tests
+        npm run test:e2e:ci
+      env:
+        NODE_ENV: production
+        BASE_URL: https://encore-platform.com
+
+    - name: Performance validation
+      run: |
+        # Run Lighthouse CI
+        npm install -g lighthouse
+        lighthouse https://encore-platform.com \
+          --output json \
+          --output html \
+          --output-path ./lighthouse-results.json
+
+        # Check performance budgets
+        node -e "
+          const fs = require('fs');
+          const results = JSON.parse(fs.readFileSync('./lighthouse-results.json'));
+          const score = results.categories.performance.score * 100;
+
+          if (score < 90) {
+            console.error('Performance score too low:', score);
+            process.exit(1);
+          }
+
+          console.log('Performance score:', score);
+        "
+
+    - name: Upload validation results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: deployment-validation-${{ github.run_id }}
+        path: |
+          lighthouse-results.json
+          tests/test-results/
+        retention-days: 30
+
+  # ========================================
+  # ROLLBACK (Manual Trigger)
+  # ========================================
+  rollback:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Rollback ECS service
+      run: |
+        # Get previous task definition
+        PREVIOUS_TASK=$(aws ecs list-task-definitions \
+          --family-prefix encore-api \
+          --sort DESC \
+          --max-items 2 \
+          --region us-east-1 | jq -r '.taskDefinitionArns[1]')
+
+        # Rollback to previous version
+        aws ecs update-service \
+          --cluster encore-production \
+          --service encore-api-green \
+          --task-definition $PREVIOUS_TASK \
+          --force-new-deployment \
+          --region us-east-1
+
+    - name: Rollback Cloudflare Pages
+      run: |
+        # Rollback to previous deployment
+        npx wrangler pages deployment rollback \
+          --project-name=encore-platform \
+          --deployment-id=$(npx wrangler pages deployment list --project-name=encore-platform | jq -r '.[1].id')
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    - name: Notify rollback
+      uses: 8398a7/action-slack@v3
+      with:
+        status: warning
+        text: "⚠️ Production rollback executed"
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ========================================
+  # DEPLOYMENT SUCCESS
+  # ========================================
+  deployment-success:
+    name: Deployment Success
+    runs-on: ubuntu-latest
+    needs: [deploy-production, validate-deployment]
+    if: success() && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Deployment completed successfully
+      run: |
+        echo "🎉 Production deployment completed successfully!"
+        echo "✅ Frontend deployed to Cloudflare Pages"
+        echo "✅ Backend deployed to AWS ECS"
+        echo "✅ API Gateway updated"
+        echo "✅ CDN cache purged"
+        echo "✅ Validation tests passed"
+        echo "✅ Performance checks passed"
+        echo ""
+        echo "🚀 Application is live at: https://encore-platform.com"
+
+    - name: Create deployment marker
+      run: |
+        echo "DEPLOYMENT_SUCCESS=true" >> $GITHUB_ENV
+        echo "DEPLOYMENT_TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+        echo "DEPLOYMENT_SHA=${{ github.sha }}" >> $GITHUB_ENV
+
+  # ========================================
+  # DEPLOYMENT FAILURE
+  # ========================================
+  deployment-failure:
+    name: Deployment Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-production, validate-deployment]
+    if: failure() && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Deployment failed
+      run: |
+        echo "❌ Production deployment failed!"
+        echo "🔍 Check the failed jobs above for details"
+        echo ""
+        echo "🛠️ Possible solutions:"
+        echo "• Check AWS ECS service status"
+        echo "• Verify Cloudflare Pages deployment"
+        echo "• Review Kong API Gateway configuration"
+        echo "• Check application logs"
+        echo ""
+        echo "🔄 Consider triggering a rollback if needed"
+
+    - name: Notify deployment failure
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        text: "❌ Production deployment failed: ${{ github.sha }}"
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

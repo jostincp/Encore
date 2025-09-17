@@ -1,192 +1,400 @@
-import { ValidationResult, ValidationError } from '../types';
+import { z } from 'zod';
+import { Request, Response, NextFunction } from 'express';
+import { ValidationError } from './errors';
 
-// Función base para validación
-export const createValidationResult = (isValid: boolean, errors: ValidationError[] = []): ValidationResult => {
-  return { isValid, errors };
-};
+// ==============================================
+// ESQUEMAS DE VALIDACIÓN CON ZOD
+// ==============================================
 
-// Validadores básicos
-export const isEmail = (email: string): boolean => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
+// Esquema base para sanitización de strings
+const sanitizedString = (min: number = 1, max: number = 255) =>
+  z.string()
+    .min(min, `Debe tener al menos ${min} caracteres`)
+    .max(max, `No puede exceder ${max} caracteres`)
+    .transform((val) => val.trim().replace(/[<>]/g, ''));
 
-export const isStrongPassword = (password: string): boolean => {
-  // Al menos 8 caracteres, una mayúscula, una minúscula, un número
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d@$!%*?&]{8,}$/;
-  return passwordRegex.test(password);
-};
+// Esquema para email
+export const emailSchema = z.string()
+  .email('Email inválido')
+  .transform((val) => val.toLowerCase().trim())
+  .refine((val) => val.length <= 254, 'Email demasiado largo');
 
-export const isValidUUID = (uuid: string): boolean => {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(uuid);
-};
+// Esquema para contraseña segura
+export const passwordSchema = z.string()
+  .min(8, 'La contraseña debe tener al menos 8 caracteres')
+  .max(128, 'La contraseña no puede exceder 128 caracteres')
+  .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
+    'La contraseña debe incluir mayúsculas, minúsculas, números y símbolos');
 
-export const isPositiveNumber = (value: number): boolean => {
-  return typeof value === 'number' && value > 0;
-};
+// Esquema para nombre/apellido
+export const nameSchema = z.string()
+  .min(2, 'Debe tener al menos 2 caracteres')
+  .max(50, 'No puede exceder 50 caracteres')
+  .regex(/^[a-zA-ZÀ-ÿ\s'-]+$/, 'Solo se permiten letras, espacios, guiones y apóstrofes')
+  .transform((val) => val.trim().replace(/[<>]/g, ''));
 
-export const isNonEmptyString = (value: string): boolean => {
-  return typeof value === 'string' && value.trim().length > 0;
-};
+// Esquema para nombre de usuario
+export const usernameSchema = z.string()
+  .min(3, 'Debe tener al menos 3 caracteres')
+  .max(30, 'No puede exceder 30 caracteres')
+  .regex(/^[a-zA-Z0-9_-]+$/, 'Solo se permiten letras, números, guiones y guiones bajos')
+  .transform((val) => val.trim().replace(/[<>]/g, ''));
 
-// Validation functions that throw errors
-export const validateUUID = (uuid: string, fieldName: string = 'ID'): void => {
-  if (!uuid || typeof uuid !== 'string') {
-    throw new Error(`${fieldName} is required and must be a string`);
-  }
-  if (!isValidUUID(uuid)) {
-    throw new Error(`${fieldName} must be a valid UUID`);
-  }
-};
+// Esquema para texto general
+export const textSchema = (maxLength: number = 500) =>
+  sanitizedString(1, maxLength);
 
-export const validateRequired = (value: any, fieldName: string): void => {
-  if (value === undefined || value === null || value === '') {
-    throw new Error(`${fieldName} is required`);
-  }
-};
+// Esquema para ID (UUID o MongoDB ObjectId)
+export const idSchema = z.string()
+  .regex(/^[a-fA-F0-9]{24}$|^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    'ID inválido');
 
-export const validatePositiveInteger = (value: number, fieldName: string): void => {
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`${fieldName} must be a positive integer`);
-  }
-};
+// Esquema para token JWT
+export const tokenSchema = z.string()
+  .min(10, 'Token inválido')
+  .max(1000, 'Token demasiado largo');
 
-// Validadores específicos del dominio
-export const validateUserRegistration = (userData: any): ValidationResult => {
-  const errors: ValidationError[] = [];
+// Esquema para URL
+export const urlSchema = z.string()
+  .url('URL inválida')
+  .refine((val) => val.startsWith('https://'), 'Solo se permiten URLs HTTPS');
 
-  if (!isNonEmptyString(userData.email)) {
-    errors.push({ name: 'ValidationError', field: 'email', message: 'Email es requerido' });
-  } else if (!isEmail(userData.email)) {
-    errors.push({ name: 'ValidationError', field: 'email', message: 'Email no es válido' });
-  }
+// ==============================================
+// ESQUEMAS DE AUTENTICACIÓN
+// ==============================================
 
-  if (!isNonEmptyString(userData.password)) {
-    errors.push({ name: 'ValidationError', field: 'password', message: 'Password es requerido' });
-  } else if (!isStrongPassword(userData.password)) {
-    errors.push({ name: 'ValidationError', field: 'password', message: 'Password debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número' });
-  }
+export const registerSchema = z.object({
+  body: z.object({
+    email: emailSchema,
+    password: passwordSchema,
+    firstName: nameSchema,
+    lastName: nameSchema,
+    role: z.enum(['customer', 'bar_owner']).optional().default('customer')
+  })
+});
 
-  if (!['admin', 'customer'].includes(userData.role)) {
-    errors.push({ name: 'ValidationError', field: 'role', message: 'Role debe ser admin o customer' });
-  }
+export const loginSchema = z.object({
+  body: z.object({
+    email: emailSchema,
+    password: z.string().min(1, 'Contraseña requerida')
+  })
+});
 
-  return createValidationResult(errors.length === 0, errors);
-};
+export const refreshTokenSchema = z.object({
+  body: z.object({
+    refreshToken: tokenSchema
+  })
+});
 
-export const validateBarCreation = (barData: any): ValidationResult => {
-  const errors: ValidationError[] = [];
+export const changePasswordSchema = z.object({
+  body: z.object({
+    currentPassword: z.string().min(1, 'Contraseña actual requerida'),
+    newPassword: passwordSchema
+  })
+});
 
-  if (!isNonEmptyString(barData.name)) {
-    errors.push({ name: 'ValidationError', field: 'name', message: 'Nombre del bar es requerido' });
-  }
+export const forgotPasswordSchema = z.object({
+  body: z.object({
+    email: emailSchema
+  })
+});
 
-  if (!isNonEmptyString(barData.address)) {
-    errors.push({ name: 'ValidationError', field: 'address', message: 'Dirección es requerida' });
-  }
+export const resetPasswordSchema = z.object({
+  body: z.object({
+    token: tokenSchema,
+    newPassword: passwordSchema
+  })
+});
 
-  if (!isValidUUID(barData.ownerId)) {
-    errors.push({ name: 'ValidationError', field: 'ownerId', message: 'ID del propietario no es válido' });
-  }
+export const verifyEmailSchema = z.object({
+  params: z.object({
+    token: tokenSchema
+  })
+});
 
-  if (barData.settings) {
-    if (!isPositiveNumber(barData.settings.pointsPerEuro)) {
-      errors.push({ name: 'ValidationError', field: 'settings.pointsPerEuro', message: 'Puntos por euro debe ser un número positivo' });
+export const logoutSchema = z.object({
+  body: z.object({
+    refreshToken: tokenSchema.optional()
+  })
+});
+
+// ==============================================
+// ESQUEMAS DE MÚSICA
+// ==============================================
+
+export const searchSongsSchema = z.object({
+  query: z.object({
+    q: sanitizedString(1, 100),
+    limit: z.string().optional().transform((val) => val ? parseInt(val) : 25).refine((val) => val >= 1 && val <= 100, 'Límite debe estar entre 1 y 100'),
+    offset: z.string().optional().transform((val) => val ? parseInt(val) : 0).refine((val) => val >= 0, 'Offset debe ser positivo')
+  })
+});
+
+export const createSongSchema = z.object({
+  body: z.object({
+    title: sanitizedString(1, 200),
+    artist: sanitizedString(1, 200),
+    album: sanitizedString(1, 200).optional(),
+    duration: z.number().int().min(10).max(1800), // 10 segundos a 30 minutos
+    genre: sanitizedString(1, 50).optional(),
+    url: urlSchema,
+    thumbnailUrl: urlSchema.optional(),
+    externalId: sanitizedString(1, 100).optional()
+  })
+});
+
+export const updateSongSchema = z.object({
+  params: z.object({
+    id: idSchema
+  }),
+  body: z.object({
+    title: sanitizedString(1, 200).optional(),
+    artist: sanitizedString(1, 200).optional(),
+    album: sanitizedString(1, 200).optional(),
+    duration: z.number().int().min(10).max(1800).optional(),
+    genre: sanitizedString(1, 50).optional(),
+    url: urlSchema.optional(),
+    thumbnailUrl: urlSchema.optional(),
+    externalId: sanitizedString(1, 100).optional()
+  })
+});
+
+// ==============================================
+// ESQUEMAS DE COLA
+// ==============================================
+
+export const addToQueueSchema = z.object({
+  body: z.object({
+    songId: idSchema,
+    priority: z.number().int().min(1).max(10).optional().default(5)
+  })
+});
+
+export const updateQueueItemSchema = z.object({
+  params: z.object({
+    id: idSchema
+  }),
+  body: z.object({
+    priority: z.number().int().min(1).max(10).optional(),
+    status: z.enum(['pending', 'approved', 'rejected', 'playing', 'played']).optional()
+  })
+});
+
+export const queueFiltersSchema = z.object({
+  query: z.object({
+    status: z.enum(['pending', 'approved', 'rejected', 'playing', 'played']).optional(),
+    limit: z.string().optional().transform((val) => val ? parseInt(val) : 50).refine((val) => val >= 1 && val <= 200, 'Límite debe estar entre 1 y 200'),
+    offset: z.string().optional().transform((val) => val ? parseInt(val) : 0).refine((val) => val >= 0, 'Offset debe ser positivo')
+  })
+});
+
+// ==============================================
+// ESQUEMAS DE PUNTOS
+// ==============================================
+
+export const earnPointsSchema = z.object({
+  body: z.object({
+    amount: z.number().positive().max(10000),
+    description: textSchema(200),
+    transactionType: z.enum(['earned', 'spent', 'bonus', 'refund']).default('earned')
+  })
+});
+
+export const redeemPointsSchema = z.object({
+  body: z.object({
+    points: z.number().int().positive().max(10000),
+    description: textSchema(200)
+  })
+});
+
+export const pointsTransactionSchema = z.object({
+  query: z.object({
+    type: z.enum(['earned', 'spent', 'bonus', 'refund']).optional(),
+    limit: z.string().optional().transform((val) => val ? parseInt(val) : 20).refine((val) => val >= 1 && val <= 100, 'Límite debe estar entre 1 y 100'),
+    offset: z.string().optional().transform((val) => val ? parseInt(val) : 0).refine((val) => val >= 0, 'Offset debe ser positivo')
+  })
+});
+
+// ==============================================
+// ESQUEMAS DE MENÚ
+// ==============================================
+
+export const createMenuItemSchema = z.object({
+  body: z.object({
+    name: sanitizedString(1, 100),
+    description: textSchema(500).optional(),
+    price: z.number().positive().max(9999.99),
+    categoryId: idSchema,
+    imageUrl: urlSchema.optional(),
+    isAvailable: z.boolean().optional().default(true),
+    allergens: z.array(sanitizedString(1, 50)).max(10).optional(),
+    preparationTime: z.number().int().min(1).max(120).optional() // minutos
+  })
+});
+
+export const updateMenuItemSchema = z.object({
+  params: z.object({
+    id: idSchema
+  }),
+  body: z.object({
+    name: sanitizedString(1, 100).optional(),
+    description: textSchema(500).optional(),
+    price: z.number().positive().max(9999.99).optional(),
+    categoryId: idSchema.optional(),
+    imageUrl: urlSchema.optional(),
+    isAvailable: z.boolean().optional(),
+    allergens: z.array(sanitizedString(1, 50)).max(10).optional(),
+    preparationTime: z.number().int().min(1).max(120).optional()
+  })
+});
+
+export const createCategorySchema = z.object({
+  body: z.object({
+    name: sanitizedString(1, 50),
+    description: textSchema(200).optional(),
+    imageUrl: urlSchema.optional(),
+    displayOrder: z.number().int().min(0).max(100).optional().default(0)
+  })
+});
+
+// ==============================================
+// MIDDLEWARE DE VALIDACIÓN
+// ==============================================
+
+export const validateRequest = (schema: z.ZodSchema<any>) =>
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      // Validar el cuerpo de la petición
+      const validatedData = await schema.parseAsync(req.body);
+
+      // Asignar datos validados y sanitizados de vuelta a req
+      req.body = validatedData;
+
+      next();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const validationErrors = error.issues.map((err: z.ZodIssue) => ({
+          name: 'ValidationError',
+          field: err.path.join('.'),
+          message: err.message
+        }));
+
+        next(new ValidationError('Errores de validación', validationErrors));
+      } else {
+        next(error);
+      }
     }
+  };
 
-    if (!isPositiveNumber(barData.settings.songCostPoints)) {
-      errors.push({ name: 'ValidationError', field: 'settings.songCostPoints', message: 'Costo de canción en puntos debe ser un número positivo' });
+// Middleware específico para query parameters
+export const validateQuery = (schema: z.ZodSchema<any>) =>
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const validatedData = await schema.parseAsync(req.query);
+      req.query = validatedData;
+      next();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const validationErrors = error.issues.map((err: z.ZodIssue) => ({
+          name: 'ValidationError',
+          field: err.path.join('.'),
+          message: err.message
+        }));
+
+        next(new ValidationError('Errores de validación en query', validationErrors));
+      } else {
+        next(error);
+      }
     }
+  };
 
-    if (!['youtube', 'spotify'].includes(barData.settings.musicProvider)) {
-      errors.push({ name: 'ValidationError', field: 'settings.musicProvider', message: 'Proveedor de música debe ser youtube o spotify' });
+// Middleware específico para route parameters
+export const validateParams = (schema: z.ZodSchema<any>) =>
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const validatedData = await schema.parseAsync(req.params);
+      req.params = validatedData;
+      next();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const validationErrors = error.issues.map((err: z.ZodIssue) => ({
+          name: 'ValidationError',
+          field: err.path.join('.'),
+          message: err.message
+        }));
+
+        next(new ValidationError('Errores de validación en parámetros', validationErrors));
+      } else {
+        next(error);
+      }
     }
-  }
+  };
 
-  return createValidationResult(errors.length === 0, errors);
+// ==============================================
+// UTILIDADES DE VALIDACIÓN
+// ==============================================
+
+export const sanitizeInput = (input: string): string => {
+  return input.trim().replace(/[<>]/g, '');
 };
 
-export const validateSongRequest = (requestData: any): ValidationResult => {
-  const errors: ValidationError[] = [];
-
-  if (!isValidUUID(requestData.barId)) {
-    errors.push({ name: 'ValidationError', field: 'barId', message: 'ID del bar no es válido' });
-  }
-
-  if (!isValidUUID(requestData.tableId)) {
-    errors.push({ name: 'ValidationError', field: 'tableId', message: 'ID de la mesa no es válido' });
-  }
-
-  if (!isValidUUID(requestData.songId)) {
-    errors.push({ name: 'ValidationError', field: 'songId', message: 'ID de la canción no es válido' });
-  }
-
-  if (!isPositiveNumber(requestData.pointsSpent)) {
-    errors.push({ name: 'ValidationError', field: 'pointsSpent', message: 'Puntos gastados debe ser un número positivo' });
-  }
-
-  return createValidationResult(errors.length === 0, errors);
+export const validateEmail = (email: string): boolean => {
+  return emailSchema.safeParse(email).success;
 };
 
-export const validateMenuItem = (itemData: any): ValidationResult => {
-  const errors: ValidationError[] = [];
-
-  if (!isNonEmptyString(itemData.name)) {
-    errors.push({ name: 'ValidationError', field: 'name', message: 'Nombre del producto es requerido' });
-  }
-
-  if (!isPositiveNumber(itemData.price)) {
-    errors.push({ name: 'ValidationError', field: 'price', message: 'Precio debe ser un número positivo' });
-  }
-
-  if (!isPositiveNumber(itemData.pointsReward)) {
-    errors.push({ name: 'ValidationError', field: 'pointsReward', message: 'Recompensa en puntos debe ser un número positivo' });
-  }
-
-  if (!isNonEmptyString(itemData.category)) {
-    errors.push({ name: 'ValidationError', field: 'category', message: 'Categoría es requerida' });
-  }
-
-  if (!isValidUUID(itemData.barId)) {
-    errors.push({ name: 'ValidationError', field: 'barId', message: 'ID del bar no es válido' });
-  }
-
-  return createValidationResult(errors.length === 0, errors);
+export const validatePassword = (password: string): boolean => {
+  return passwordSchema.safeParse(password).success;
 };
 
-// Sanitización de datos
-export const sanitizeString = (str: string): string => {
-  return str.trim().replace(/[<>"'&]/g, '');
+export const validateId = (id: string): boolean => {
+  return idSchema.safeParse(id).success;
 };
 
-export const sanitizeEmail = (email: string): string => {
-  return email.toLowerCase().trim();
+// Función para validar archivos (para futuras implementaciones)
+export const validateFile = (file: any, allowedTypes: string[], maxSize: number): boolean => {
+  if (!file) return false;
+
+  // Validar tipo de archivo
+  if (!allowedTypes.includes(file.mimetype)) {
+    return false;
+  }
+
+  // Validar tamaño
+  if (file.size > maxSize) {
+    return false;
+  }
+
+  return true;
 };
 
-// Validación de parámetros de consulta
-export const validatePaginationParams = (query: any): { page: number; limit: number; errors: ValidationError[] } => {
-  const errors: ValidationError[] = [];
-  let page = 1;
-  let limit = 10;
+export default {
+  // Esquemas
+  registerSchema,
+  loginSchema,
+  refreshTokenSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+  logoutSchema,
+  searchSongsSchema,
+  createSongSchema,
+  updateSongSchema,
+  addToQueueSchema,
+  updateQueueItemSchema,
+  queueFiltersSchema,
+  earnPointsSchema,
+  redeemPointsSchema,
+  pointsTransactionSchema,
+  createMenuItemSchema,
+  updateMenuItemSchema,
+  createCategorySchema,
 
-  if (query.page) {
-    const parsedPage = parseInt(query.page);
-    if (isNaN(parsedPage) || parsedPage < 1) {
-      errors.push({ name: 'ValidationError', field: 'page', message: 'Page debe ser un número positivo' });
-    } else {
-      page = parsedPage;
-    }
-  }
-
-  if (query.limit) {
-    const parsedLimit = parseInt(query.limit);
-    if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
-      errors.push({ name: 'ValidationError', field: 'limit', message: 'Limit debe ser un número entre 1 y 100' });
-    } else {
-      limit = parsedLimit;
-    }
-  }
-
-  return { page, limit, errors };
+  // Utilidades
+  validateRequest,
+  sanitizeInput,
+  validateEmail,
+  validatePassword,
+  validateId,
+  validateFile
 };

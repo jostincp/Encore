@@ -7,6 +7,7 @@ export * from './config';
 // Exportar utilidades
 export * from './utils/logger';
 export * from './utils/validation';
+export * from './utils/secrets';
 export {
   AppError,
   ValidationError,

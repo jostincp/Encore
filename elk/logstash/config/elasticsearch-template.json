@@ -1,0 +1,195 @@
+{
+  "index_patterns": ["encore-logs-*", "encore-errors-*", "encore-security-*", "encore-audit-*", "encore-performance-*"],
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "5s",
+    "index.lifecycle.name": "encore-logs-policy",
+    "index.lifecycle.rollover_alias": "encore-logs"
+  },
+  "mappings": {
+    "properties": {
+      "@timestamp": {
+        "type": "date"
+      },
+      "level": {
+        "type": "keyword"
+      },
+      "log.level": {
+        "type": "keyword"
+      },
+      "message": {
+        "type": "text",
+        "analyzer": "standard"
+      },
+      "service": {
+        "type": "keyword"
+      },
+      "service.name": {
+        "type": "keyword"
+      },
+      "service.environment": {
+        "type": "keyword"
+      },
+      "hostname": {
+        "type": "keyword"
+      },
+      "pid": {
+        "type": "integer"
+      },
+      "userId": {
+        "type": "keyword"
+      },
+      "sessionId": {
+        "type": "keyword"
+      },
+      "requestId": {
+        "type": "keyword"
+      },
+      "ip": {
+        "type": "ip"
+      },
+      "geoip": {
+        "properties": {
+          "country_name": { "type": "keyword" },
+          "city_name": { "type": "keyword" },
+          "region_name": { "type": "keyword" },
+          "location": { "type": "geo_point" }
+        }
+      },
+      "userAgent": {
+        "type": "text",
+        "analyzer": "standard"
+      },
+      "user_agent": {
+        "properties": {
+          "name": { "type": "keyword" },
+          "version": { "type": "keyword" },
+          "os": { "type": "keyword" },
+          "device": { "type": "keyword" }
+        }
+      },
+      "method": {
+        "type": "keyword"
+      },
+      "url": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" }
+        }
+      },
+      "statusCode": {
+        "type": "integer"
+      },
+      "responseTime": {
+        "type": "integer"
+      },
+      "http.method": {
+        "type": "keyword"
+      },
+      "http.url": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" }
+        }
+      },
+      "http.status_code": {
+        "type": "integer"
+      },
+      "http.response_time": {
+        "type": "integer"
+      },
+      "http.user_id": {
+        "type": "keyword"
+      },
+      "http.session_id": {
+        "type": "keyword"
+      },
+      "http.request_id": {
+        "type": "keyword"
+      },
+      "error": {
+        "properties": {
+          "name": { "type": "keyword" },
+          "message": { "type": "text", "analyzer": "standard" },
+          "stack": { "type": "text", "analyzer": "standard" },
+          "code": { "type": "keyword" },
+          "stack_method": { "type": "keyword" },
+          "stack_file": { "type": "keyword" },
+          "stack_line": { "type": "integer" }
+        }
+      },
+      "error.name": {
+        "type": "keyword"
+      },
+      "error.message": {
+        "type": "text",
+        "analyzer": "standard"
+      },
+      "error.stack": {
+        "type": "text",
+        "analyzer": "standard"
+      },
+      "error.code": {
+        "type": "keyword"
+      },
+      "error.stack_method": {
+        "type": "keyword"
+      },
+      "error.stack_file": {
+        "type": "keyword"
+      },
+      "error.stack_line": {
+        "type": "integer"
+      },
+      "type": {
+        "type": "keyword"
+      },
+      "event": {
+        "type": "keyword"
+      },
+      "business.event": {
+        "type": "keyword"
+      },
+      "security.event": {
+        "type": "boolean"
+      },
+      "security.ip": {
+        "type": "ip"
+      },
+      "security.user_id": {
+        "type": "keyword"
+      },
+      "security.user_agent": {
+        "type": "text"
+      },
+      "audit.event": {
+        "type": "boolean"
+      },
+      "audit.user_id": {
+        "type": "keyword"
+      },
+      "audit.action": {
+        "type": "keyword"
+      },
+      "audit.resource": {
+        "type": "keyword"
+      },
+      "audit.timestamp": {
+        "type": "date"
+      },
+      "encore.version": {
+        "type": "keyword"
+      },
+      "encore.cluster": {
+        "type": "keyword"
+      },
+      "processed_at": {
+        "type": "date"
+      },
+      "processed_by": {
+        "type": "keyword"
+      }
+    }
+  }
+}

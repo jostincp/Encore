@@ -1,12 +1,17 @@
 import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import { logger, requestLogger } from './utils/logger';
 import { initializeDatabase, runMigrations } from './utils/database';
 import { initRedis } from './utils/redis';
 import { AppError, NotFoundError } from './utils/errors';
 import routes from './routes';
+import {
+  corsOptions,
+  helmetOptions,
+  rateLimiters,
+  securityMiddleware
+} from '../../shared/security';
+import cors from 'cors';
+import helmet from 'helmet';
 
 // Configuración básica sin shared
 const config = {
@@ -16,19 +21,13 @@ const config = {
 const app: express.Application = express();
 const PORT = config.services.auth.port;
 
-// Security middleware básico
-app.use(helmet());
-app.use(cors());
+// Security middleware avanzado
+app.use(helmet(helmetOptions));
+app.use(cors(corsOptions));
 
-// Rate limiting básico
-const authRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 requests per window
-  message: 'Too many auth attempts'
-});
-
-app.use('/api/auth/login', authRateLimit);
-app.use('/api/auth/register', authRateLimit);
+// Rate limiting específico para autenticación
+app.use('/api/auth/login', rateLimiters.auth);
+app.use('/api/auth/register', rateLimiters.auth);
 
 // General middleware
 app.use(express.json({ limit: '10mb' }));

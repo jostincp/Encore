@@ -1,0 +1,258 @@
+# Encore Platform - Kong API Gateway Configuration (Simplified)
+# Configuración básica para desarrollo y testing
+
+_format_version: "3.0"
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+
+services:
+  - name: encore-auth-service
+    url: http://auth-service:3001
+    routes:
+      - name: auth-routes
+        paths:
+          - /api/auth
+        methods: [GET, POST, PUT, DELETE, PATCH]
+        strip_path: false
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - https://encore-platform.com
+          methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+          headers: [Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Auth-Token, Authorization]
+          exposed_headers: [X-Auth-Token]
+          credentials: true
+          max_age: 3600
+      - name: rate-limiting
+        config:
+          minute: 60
+          hour: 1000
+          policy: local
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 128000
+
+  - name: encore-music-service
+    url: http://music-service:3002
+    routes:
+      - name: music-api-routes
+        paths:
+          - /api/music
+        methods: [GET, POST, PUT, DELETE, PATCH]
+        strip_path: false
+      - name: spotify-api-routes
+        paths:
+          - /api/spotify
+        methods: [GET, POST]
+        strip_path: false
+      - name: youtube-api-routes
+        paths:
+          - /api/youtube
+        methods: [GET]
+        strip_path: false
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - https://encore-platform.com
+          methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+          headers: [Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Auth-Token, Authorization]
+          exposed_headers: [X-Auth-Token]
+          credentials: true
+          max_age: 3600
+      - name: rate-limiting
+        config:
+          minute: 120
+          hour: 2000
+          policy: local
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 128000
+
+  - name: encore-queue-service
+    url: http://queue-service:3003
+    routes:
+      - name: queue-api-routes
+        paths:
+          - /api/queue
+        methods: [GET, POST, PUT, DELETE, PATCH]
+        strip_path: false
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - https://encore-platform.com
+          methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+          headers: [Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Auth-Token, Authorization]
+          exposed_headers: [X-Auth-Token]
+          credentials: true
+          max_age: 3600
+      - name: rate-limiting
+        config:
+          minute: 300
+          hour: 5000
+          policy: local
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 64000
+
+  - name: encore-points-service
+    url: http://points-service:3004
+    routes:
+      - name: points-api-routes
+        paths:
+          - /api/points
+        methods: [GET, POST, PUT, DELETE, PATCH]
+        strip_path: false
+      - name: stripe-webhook-routes
+        paths:
+          - /api/webhooks/stripe
+        methods: [POST]
+        strip_path: false
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - https://encore-platform.com
+          methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+          headers: [Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Auth-Token, Authorization]
+          exposed_headers: [X-Auth-Token]
+          credentials: true
+          max_age: 3600
+      - name: rate-limiting
+        config:
+          minute: 60
+          hour: 1000
+          policy: local
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 128000
+
+  - name: encore-analytics-service
+    url: http://analytics-service:3005
+    routes:
+      - name: analytics-api-routes
+        paths:
+          - /api/analytics
+        methods: [GET, POST, PUT, DELETE, PATCH]
+        strip_path: false
+      - name: grafana-api-routes
+        paths:
+          - /api/grafana
+        methods: [GET, POST]
+        strip_path: false
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - https://encore-platform.com
+          methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+          headers: [Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Auth-Token, Authorization]
+          exposed_headers: [X-Auth-Token]
+          credentials: true
+          max_age: 3600
+      - name: rate-limiting
+        config:
+          minute: 120
+          hour: 2000
+          policy: local
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 128000
+
+  - name: encore-menu-service
+    url: http://menu-service:3006
+    routes:
+      - name: menu-api-routes
+        paths:
+          - /api/menu
+        methods: [GET, POST, PUT, DELETE, PATCH]
+        strip_path: false
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - https://encore-platform.com
+          methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+          headers: [Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Auth-Token, Authorization]
+          exposed_headers: [X-Auth-Token]
+          credentials: true
+          max_age: 3600
+      - name: rate-limiting
+        config:
+          minute: 300
+          hour: 5000
+          policy: local
+      - name: request-size-limiting
+        config:
+          allowed_payload_size: 128000
+
+# =============================================================================
+# GLOBAL PLUGINS
+# =============================================================================
+
+plugins:
+  - name: cors
+    config:
+      origins:
+        - http://localhost:3000
+        - https://encore-platform.com
+      methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+      headers: [Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Auth-Token, Authorization, X-Requested-With]
+      exposed_headers: [X-Auth-Token, X-RateLimit-Remaining, X-RateLimit-Reset]
+      credentials: true
+      max_age: 3600
+
+  - name: rate-limiting
+    config:
+      minute: 100
+      hour: 1000
+      policy: local
+      limit_by: credential
+      header_name: X-RateLimit-Remaining
+
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 128000
+
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-API-Version:1.0"
+          - "X-Powered-By:Encore Platform"
+          - "X-Frame-Options:DENY"
+          - "X-Content-Type-Options:nosniff"
+          - "Referrer-Policy:strict-origin-when-cross-origin"
+          - "Permissions-Policy:geolocation=(), microphone=(), camera=()"
+
+  - name: bot-detection
+    config:
+      allow:
+        - googlebot
+        - bingbot
+        - slurp
+      deny:
+        - badbot1
+        - badbot2
+
+# =============================================================================
+# CONSUMERS (for authentication)
+# =============================================================================
+
+consumers:
+  - username: encore-admin
+    custom_id: admin-user
+  - username: encore-user
+    custom_id: regular-user
+  - username: encore-service
+    custom_id: service-account

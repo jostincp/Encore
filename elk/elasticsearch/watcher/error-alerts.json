@@ -1,0 +1,127 @@
+{
+  "trigger": {
+    "schedule": {
+      "interval": "5m"
+    }
+  },
+  "input": {
+    "search": {
+      "request": {
+        "search_type": "query_then_fetch",
+        "indices": ["encore-errors-*", "encore-logs-*"],
+        "body": {
+          "query": {
+            "bool": {
+              "must": [
+                {
+                  "range": {
+                    "@timestamp": {
+                      "gte": "now-5m",
+                      "lte": "now"
+                    }
+                  }
+                },
+                {
+                  "bool": {
+                    "should": [
+                      {
+                        "term": {
+                          "level": "CRITICAL"
+                        }
+                      },
+                      {
+                        "term": {
+                          "level": "ERROR"
+                        }
+                      },
+                      {
+                        "exists": {
+                          "field": "error"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "size": 0,
+          "aggs": {
+            "errors_by_service": {
+              "terms": {
+                "field": "service.name",
+                "size": 10
+              },
+              "aggs": {
+                "error_count": {
+                  "value_count": {
+                    "field": "level"
+                  }
+                },
+                "latest_error": {
+                  "top_hits": {
+                    "size": 1,
+                    "sort": [
+                      {
+                        "@timestamp": {
+                          "order": "desc"
+                        }
+                      }
+                    ],
+                    "_source": ["message", "error.message", "@timestamp", "service.name"]
+                  }
+                }
+              }
+            },
+            "total_errors": {
+              "value_count": {
+                "field": "level"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "condition": {
+    "compare": {
+      "ctx.payload.aggregations.total_errors.value": {
+        "gt": 10
+      }
+    }
+  },
+  "actions": {
+    "slack_notification": {
+      "slack": {
+        "account": "encore-alerts",
+        "message": {
+          "to": ["#alerts", "@devops"],
+          "text": "🚨 *CRÍTICO*: Se detectaron {{ctx.payload.aggregations.total_errors.value}} errores en los últimos 5 minutos",
+          "dynamic_attachments": {
+            "list_path": "ctx.payload.aggregations.errors_by_service.buckets",
+            "attachment_template": {
+              "title": "Errores en {{key}}",
+              "text": "{{error_count.value}} errores\nÚltimo: {{latest_error.hits.hits.0._source.error.message}}",
+              "color": "danger"
+            }
+          }
+        }
+      }
+    },
+    "email_notification": {
+      "email": {
+        "to": ["devops@encore-platform.com", "alerts@encore-platform.com"],
+        "subject": "🚨 Encore Platform - Alerta de Errores Críticos",
+        "body": {
+          "text": "🚨 CRÍTICO: Se detectaron {{ctx.payload.aggregations.total_errors.value}} errores en los últimos 5 minutos. Ver: https://kibana.encore-platform.com"
+        }
+      }
+    }
+  },
+  "metadata": {
+    "name": "Encore Error Alerts",
+    "description": "Alerta cuando hay más de 10 errores en 5 minutos",
+    "severity": "critical",
+    "tags": ["encore", "errors", "alerts"]
+  }
+}

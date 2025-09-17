@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { getSecretsManager } from '../utils/secrets';
 
 // Cargar variables de entorno desde el directorio raíz
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
@@ -108,16 +109,21 @@ export interface Config {
 }
 
 const getConfig = (): Config => {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // Variables de entorno requeridas (para desarrollo)
   const requiredEnvVars = [
     'DATABASE_URL',
     'JWT_SECRET',
     'REDIS_URL'
   ];
 
-  // Verificar variables de entorno requeridas
-  for (const envVar of requiredEnvVars) {
-    if (!process.env[envVar]) {
-      throw new Error(`Variable de entorno requerida faltante: ${envVar}`);
+  // Verificar variables de entorno requeridas en desarrollo
+  if (!isProduction) {
+    for (const envVar of requiredEnvVars) {
+      if (!process.env[envVar]) {
+        throw new Error(`Variable de entorno requerida faltante: ${envVar}`);
+      }
     }
   }
 
@@ -253,6 +259,70 @@ const getConfig = (): Config => {
 };
 
 export const config = getConfig();
+
+// Función para cargar secretos de AWS Secrets Manager en producción
+export const loadSecretsFromAWS = async (): Promise<void> => {
+  if (process.env.NODE_ENV !== 'production') {
+    return; // Solo cargar en producción
+  }
+
+  const secretsManager = getSecretsManager();
+
+  try {
+    // Cargar secretos críticos
+    const [dbSecret, jwtSecret, redisSecret] = await Promise.all([
+      secretsManager.getSecret('encore/database'),
+      secretsManager.getSecret('encore/jwt'),
+      secretsManager.getSecret('encore/redis')
+    ]);
+
+    // Actualizar configuración con secretos
+    if (dbSecret) {
+      config.database.url = dbSecret.url || config.database.url;
+    }
+
+    if (jwtSecret) {
+      config.jwt.secret = jwtSecret.secret || config.jwt.secret;
+      config.jwt.refreshExpiresIn = jwtSecret.refreshExpiresIn || config.jwt.refreshExpiresIn;
+    }
+
+    if (redisSecret) {
+      config.redis.url = redisSecret.url || config.redis.url;
+      config.redis.password = redisSecret.password || config.redis.password;
+    }
+
+    // Cargar secretos opcionales de APIs externas
+    try {
+      const [youtubeSecret, spotifySecret, stripeSecret] = await Promise.all([
+        secretsManager.getSecret('encore/youtube-api').catch(() => null),
+        secretsManager.getSecret('encore/spotify-api').catch(() => null),
+        secretsManager.getSecret('encore/stripe-api').catch(() => null)
+      ]);
+
+      if (youtubeSecret) {
+        config.external.youtube.apiKey = youtubeSecret.apiKey;
+      }
+
+      if (spotifySecret) {
+        config.external.spotify.clientId = spotifySecret.clientId;
+        config.external.spotify.clientSecret = spotifySecret.clientSecret;
+      }
+
+      if (stripeSecret) {
+        config.external.stripe.publishableKey = stripeSecret.publishableKey;
+        config.external.stripe.secretKey = stripeSecret.secretKey;
+        config.external.stripe.webhookSecret = stripeSecret.webhookSecret;
+      }
+    } catch (apiSecretsError) {
+      console.warn('Algunos secretos de APIs externas no pudieron cargarse:', apiSecretsError);
+    }
+
+    console.log('Secretos cargados exitosamente desde AWS Secrets Manager');
+  } catch (error) {
+    console.error('Error cargando secretos desde AWS Secrets Manager:', error);
+    throw new Error('No se pudieron cargar los secretos requeridos');
+  }
+};
 
 // Validar configuración específica por servicio
 export const validateServiceConfig = (serviceName: string): void => {

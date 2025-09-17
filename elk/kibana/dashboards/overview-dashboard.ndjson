@@ -1,0 +1,59 @@
+[
+  {
+    "_id": "encore-overview-dashboard",
+    "_type": "dashboard",
+    "_source": {
+      "title": "Encore Platform - Overview Dashboard",
+      "hits": 0,
+      "description": "Dashboard principal de Encore Platform con métricas generales",
+      "panelsJSON": "[{\"version\":\"7.17.0\",\"gridData\":{\"x\":0,\"y\":0,\"w\":24,\"h\":8,\"i\":\"1\"},\"panelIndex\":\"1\",\"embeddableConfig\":{},\"panelRefName\":\"panel_0\"},{\"version\":\"7.17.0\",\"gridData\":{\"x\":0,\"y\":8,\"w\":12,\"h\":8,\"i\":\"2\"},\"panelIndex\":\"2\",\"embeddableConfig\":{},\"panelRefName\":\"panel_1\"},{\"version\":\"7.17.0\",\"gridData\":{\"x\":12,\"y\":8,\"w\":12,\"h\":8,\"i\":\"3\"},\"panelIndex\":\"3\",\"embeddableConfig\":{},\"panelRefName\":\"panel_2\"},{\"version\":\"7.17.0\",\"gridData\":{\"x\":0,\"y\":16,\"w\":8,\"h\":8,\"i\":\"4\"},\"panelIndex\":\"4\",\"embeddableConfig\":{},\"panelRefName\":\"panel_3\"},{\"version\":\"7.17.0\",\"gridData\":{\"x\":8,\"y\":16,\"w\":8,\"h\":8,\"i\":\"5\"},\"panelIndex\":\"5\",\"embeddableConfig\":{},\"panelRefName\":\"panel_4\"},{\"version\":\"7.17.0\",\"gridData\":{\"x\":16,\"y\":16,\"w\":8,\"h\":8,\"i\":\"6\"},\"panelIndex\":\"6\",\"embeddableConfig\":{},\"panelRefName\":\"panel_5\"}]",
+      "optionsJSON": "{\"useMargins\":true,\"hidePanelTitles\":false}",
+      "version": 1,
+      "timeRestore": true,
+      "timeTo": "now",
+      "timeFrom": "now-24h",
+      "refreshInterval": {
+        "pause": false,
+        "value": 30000
+      },
+      "kibanaSavedObjectMeta": {
+        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"kuery\"},\"filter\":[]}"
+      }
+    },
+    "_migrationVersion": {
+      "dashboard": "7.17.0"
+    },
+    "_references": [
+      {
+        "name": "panel_0",
+        "type": "visualization",
+        "id": "encore-logs-overview"
+      },
+      {
+        "name": "panel_1",
+        "type": "visualization",
+        "id": "encore-errors-by-service"
+      },
+      {
+        "name": "panel_2",
+        "type": "visualization",
+        "id": "encore-http-status-codes"
+      },
+      {
+        "name": "panel_3",
+        "type": "visualization",
+        "id": "encore-response-times"
+      },
+      {
+        "name": "panel_4",
+        "type": "visualization",
+        "id": "encore-top-endpoints"
+      },
+      {
+        "name": "panel_5",
+        "type": "visualization",
+        "id": "encore-geo-locations"
+      }
+    ]
+  }
+]

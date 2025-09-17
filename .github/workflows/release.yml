@@ -1,0 +1,333 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ========================================
+  # RELEASE VALIDATION
+  # ========================================
+  validate-release:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      is_prerelease: ${{ steps.get_version.outputs.is_prerelease }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get version from tag
+      id: get_version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+        # Check if it's a prerelease (contains alpha, beta, rc)
+        if [[ $VERSION =~ (alpha|beta|rc) ]]; then
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Validate version format
+      run: |
+        VERSION=${{ steps.get_version.outputs.version }}
+        if [[ ! $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+          echo "Invalid version format: $VERSION"
+          echo "Expected format: v1.2.3 or v1.2.3-alpha"
+          exit 1
+        fi
+
+    - name: Check changelog exists
+      run: |
+        VERSION=${{ steps.get_version.outputs.version }}
+        if [ ! -f "CHANGELOG.md" ]; then
+          echo "CHANGELOG.md not found"
+          exit 1
+        fi
+
+        # Check if version is documented in changelog
+        if ! grep -q "$VERSION" CHANGELOG.md; then
+          echo "Version $VERSION not found in CHANGELOG.md"
+          exit 1
+        fi
+
+  # ========================================
+  # BUILD RELEASE ARTIFACTS
+  # ========================================
+  build-artifacts:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    needs: [validate-release]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build frontend
+      run: npm run build:frontend
+
+    - name: Build backend services
+      run: npm run build:backend
+
+    - name: Create distribution archives
+      run: |
+        # Create frontend dist archive
+        cd frontend/dist
+        tar -czf ../../artifacts/frontend-${{ needs.validate-release.outputs.version }}.tar.gz .
+
+        # Create backend dist archives
+        cd ../../backend
+        for service in auth-service music-service points-service menu-service analytics-service queue-service; do
+          if [ -d "$service/dist" ]; then
+            cd $service/dist
+            tar -czf ../../../artifacts/$service-${{ needs.validate-release.outputs.version }}.tar.gz .
+            cd ../..
+          fi
+        done
+
+        # Create source code archive
+        cd ..
+        tar -czf artifacts/source-${{ needs.validate-release.outputs.version }}.tar.gz \
+          --exclude='.git' \
+          --exclude='node_modules' \
+          --exclude='artifacts' \
+          --exclude='.github/workflows' \
+          .
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-artifacts-${{ needs.validate-release.outputs.version }}
+        path: artifacts/
+        retention-days: 30
+
+  # ========================================
+  # CREATE GITHUB RELEASE
+  # ========================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate-release, build-artifacts]
+    if: needs.validate-release.outputs.is_prerelease == 'false'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: release-artifacts-${{ needs.validate-release.outputs.version }}
+        path: artifacts/
+
+    - name: Generate release notes
+      run: |
+        VERSION=${{ needs.validate-release.outputs.version }}
+
+        # Extract changelog entry for this version
+        awk -v version="$VERSION" '
+          BEGIN { in_version = 0 }
+          /^## / {
+            if (in_version) exit
+            if ($2 == version || $2 == "v"version) in_version = 1
+            next
+          }
+          in_version && /^## / { exit }
+          in_version { print }
+        ' CHANGELOG.md > release_notes.md
+
+        # If no changelog entry found, create basic notes
+        if [ ! -s release_notes.md ]; then
+          echo "## Release v$VERSION" > release_notes.md
+          echo "" >> release_notes.md
+          echo "Automated release of version $VERSION" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Changes" >> release_notes.md
+          echo "- See commit history for detailed changes" >> release_notes.md
+        fi
+
+    - name: Create GitHub release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ needs.validate-release.outputs.version }}
+        release_name: Release v${{ needs.validate-release.outputs.version }}
+        body_path: release_notes.md
+        draft: false
+        prerelease: ${{ needs.validate-release.outputs.is_prerelease }}
+
+    - name: Upload release assets
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/*
+        token: ${{ secrets.GITHUB_TOKEN }}
+      env:
+        GITHUB_REPOSITORY: ${{ github.repository }}
+
+  # ========================================
+  # PUBLISH TO NPM (if applicable)
+  # ========================================
+  publish-npm:
+    name: Publish to NPM
+    runs-on: ubuntu-latest
+    needs: [validate-release]
+    if: needs.validate-release.outputs.is_prerelease == 'false'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        registry-url: 'https://registry.npmjs.org'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build shared library
+      run: |
+        cd backend/shared
+        npm run build
+
+    - name: Publish shared library
+      run: |
+        cd backend/shared
+        npm version ${{ needs.validate-release.outputs.version }} --no-git-tag-version
+        npm publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ========================================
+  # UPDATE DEPLOYMENT MANIFESTS
+  # ========================================
+  update-manifests:
+    name: Update Deployment Manifests
+    runs-on: ubuntu-latest
+    needs: [validate-release]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Update Docker Compose
+      run: |
+        VERSION=${{ needs.validate-release.outputs.version }}
+
+        # Update docker-compose.yml with new version
+        sed -i "s|encore/.*:latest|encore/\\1:$VERSION|g" docker-compose.yml
+
+        # Update docker-compose.prod.yml
+        if [ -f docker-compose.prod.yml ]; then
+          sed -i "s|encore/.*:latest|encore/\\1:$VERSION|g" docker-compose.prod.yml
+        fi
+
+    - name: Update Kubernetes manifests
+      run: |
+        VERSION=${{ needs.validate-release.outputs.version }}
+
+        # Update deployment YAML files
+        find k8s/ -name "*.yml" -o -name "*.yaml" | xargs sed -i "s|encore/.*:latest|encore/\\1:$VERSION|g"
+
+    - name: Update Helm chart
+      run: |
+        VERSION=${{ needs.validate-release.outputs.version }}
+
+        # Update Chart.yaml
+        if [ -f helm/Chart.yaml ]; then
+          sed -i "s|^version:.*|version: $VERSION|" helm/Chart.yaml
+          sed -i "s|^appVersion:.*|appVersion: $VERSION|" helm/Chart.yaml
+        fi
+
+        # Update values.yaml with new image tags
+        if [ -f helm/values.yaml ]; then
+          sed -i "s|tag:.*latest|tag: $VERSION|g" helm/values.yaml
+        fi
+
+    - name: Commit manifest updates
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+        git add .
+        git commit -m "chore: update manifests for v${{ needs.validate-release.outputs.version }}" || true
+
+        # Push changes back to repository
+        git push origin main
+
+  # ========================================
+  # NOTIFY RELEASE
+  # ========================================
+  notify-release:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-release]
+    if: always()
+
+    steps:
+    - name: Notify Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: "${{ job.status == 'success' && '🎉 New release published' || '❌ Release failed' }}: v${{ needs.validate-release.outputs.version }}"
+        fields: repo,message,commit,author,action,eventName,ref,workflow
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    - name: Notify Discord
+      if: env.DISCORD_WEBHOOK_URL
+      uses: Ilshidur/action-discord@master
+      with:
+        args: "${{ job.status == 'success' && '🎉 New release published' || '❌ Release failed' }}: v${{ needs.validate-release.outputs.version }} - ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ needs.validate-release.outputs.version }}"
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  # ========================================
+  # CLEANUP OLD RELEASES
+  # ========================================
+  cleanup:
+    name: Cleanup Old Releases
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: needs.validate-release.outputs.is_prerelease == 'false'
+
+    steps:
+    - name: Delete old releases
+      uses: actions/delete-release@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        delete_tag: true
+        keep_count: 10  # Keep last 10 releases
+      continue-on-error: true
+
+    - name: Clean up old artifacts
+      run: |
+        # Delete old workflow artifacts (keep last 30 days)
+        gh api repos/${{ github.repository }}/actions/artifacts \
+          --jq '.artifacts[] | select(.created_at < (now - 30*24*60*60 | strftime("%Y-%m-%dT%H:%M:%SZ"))) | .id' \
+          | xargs -I {} gh api repos/${{ github.repository }}/actions/artifacts/{} -X DELETE
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

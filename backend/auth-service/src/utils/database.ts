@@ -1,6 +1,8 @@
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { config } from '../config';
 import { logger } from './logger';
+import { auditQuery } from '../../../shared/utils/database-audit';
+import { Request } from 'express';
 
 let pool: Pool | null = null;
 
@@ -44,12 +46,69 @@ const getPool = () => {
   return pool;
 };
 
-export const query = async <T extends QueryResultRow = any>(text: string, params?: any[]) => {
+export const query = async <T extends QueryResultRow = any>(
+  text: string,
+  params?: any[],
+  auditOptions?: {
+    userId?: string;
+    req?: Request;
+    sensitive?: boolean;
+  }
+) => {
   const pool = getPool();
   const client = await pool.connect();
+  const startTime = Date.now();
+
   try {
     const result = await client.query<T>(text, params);
+    const duration = Date.now() - startTime;
+
+    // Auditoría para consultas sensibles
+    if (auditOptions?.sensitive || isSensitiveQuery(text)) {
+      const action = getQueryAction(text);
+      const table = extractTableName(text);
+
+      auditQuery(
+        'auth-service',
+        action,
+        table,
+        text,
+        params || [],
+        {
+          userId: auditOptions?.userId,
+          req: auditOptions?.req,
+          success: true,
+          duration
+        }
+      );
+    }
+
     return result;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+
+    // Registrar errores de base de datos
+    if (auditOptions?.sensitive || isSensitiveQuery(text)) {
+      const action = getQueryAction(text);
+      const table = extractTableName(text);
+
+      auditQuery(
+        'auth-service',
+        action,
+        table,
+        text,
+        params || [],
+        {
+          userId: auditOptions?.userId,
+          req: auditOptions?.req,
+          success: false,
+          duration,
+          error: error instanceof Error ? error.message : 'Database error'
+        }
+      );
+    }
+
+    throw error;
   } finally {
     client.release();
   }
@@ -112,3 +171,61 @@ export const dbOperations = {
     return (result.rowCount || 0) > 0;
   }
 };
+
+// ==============================================
+// FUNCIONES AUXILIARES PARA AUDITORÍA
+// ==============================================
+
+/**
+ * Determina si una consulta es sensible y debe ser auditada
+ */
+function isSensitiveQuery(query: string): boolean {
+  const sensitivePatterns = [
+    /password/i,
+    /token/i,
+    /secret/i,
+    /session/i,
+    /auth/i,
+    /login/i,
+    /users/i,
+    /admin/i
+  ];
+
+  return sensitivePatterns.some(pattern => pattern.test(query));
+}
+
+/**
+ * Extrae la acción de la consulta SQL
+ */
+function getQueryAction(query: string): string {
+  const upperQuery = query.toUpperCase().trim();
+
+  if (upperQuery.startsWith('SELECT')) return 'SELECT';
+  if (upperQuery.startsWith('INSERT')) return 'INSERT';
+  if (upperQuery.startsWith('UPDATE')) return 'UPDATE';
+  if (upperQuery.startsWith('DELETE')) return 'DELETE';
+
+  return 'QUERY';
+}
+
+/**
+ * Extrae el nombre de la tabla de la consulta SQL
+ */
+function extractTableName(query: string): string {
+  // Patrones para extraer nombres de tabla de diferentes tipos de consultas
+  const patterns = [
+    /FROM\s+(\w+)/i,
+    /INTO\s+(\w+)/i,
+    /UPDATE\s+(\w+)/i,
+    /DELETE\s+FROM\s+(\w+)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+
+  return 'unknown';
+}

@@ -11,6 +11,7 @@ import { connectRedis } from '../../shared/cache';
 import { errorHandler } from '../../shared/middleware/errorHandler';
 import { requestLogger } from '../../shared/middleware/requestLogger';
 import { rateLimitMiddleware } from '../../shared/middleware/rateLimit';
+import { corsOptions, helmetOptions } from '../../shared/security';
 import routes from './routes';
 import { initializeSocketHandler } from './websocket/socketHandler';
 import { QueueEventEmitter } from './events/queueEvents';

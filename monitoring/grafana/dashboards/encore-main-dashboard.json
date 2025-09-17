@@ -1,0 +1,263 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Encore Platform - Main Dashboard",
+    "tags": ["encore", "analytics", "realtime"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Revenue Overview",
+        "type": "graph",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "revenue",
+            "type": "timeserie"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        },
+        "yaxes": [
+          {
+            "format": "currencyUSD",
+            "label": "Revenue"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Active Users",
+        "type": "graph",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "active_users",
+            "type": "timeserie"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Song Plays",
+        "type": "graph",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "song_plays",
+            "type": "timeserie"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "id": 4,
+        "title": "Queue Length",
+        "type": "graph",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "queue_length",
+            "type": "timeserie"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        }
+      },
+      {
+        "id": 5,
+        "title": "Top Songs",
+        "type": "table",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "top_songs",
+            "type": "table"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 16
+        }
+      },
+      {
+        "id": 6,
+        "title": "Top Products",
+        "type": "table",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "top_products",
+            "type": "table"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 16
+        }
+      },
+      {
+        "id": 7,
+        "title": "System Health",
+        "type": "stat",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "system_health",
+            "type": "timeserie"
+          }
+        ],
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 0,
+          "y": 24
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "options": {
+                  "1": {
+                    "text": "Healthy",
+                    "color": "green"
+                  },
+                  "0": {
+                    "text": "Unhealthy",
+                    "color": "red"
+                  }
+                },
+                "type": "value"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "API Response Time",
+        "type": "graph",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "api_response_time",
+            "type": "timeserie"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 6,
+          "y": 24
+        },
+        "yaxes": [
+          {
+            "format": "ms",
+            "label": "Response Time"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "refId": "A",
+            "target": "error_rate",
+            "type": "timeserie"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 6,
+          "x": 18,
+          "y": 24
+        },
+        "yaxes": [
+          {
+            "format": "percent",
+            "label": "Error Rate"
+          }
+        ]
+      }
+    ],
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": [
+        "5s",
+        "10s",
+        "30s",
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "2h",
+        "1d"
+      ]
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "bar_id",
+          "type": "query",
+          "datasource": "Encore Analytics",
+          "query": "bar_id",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": false,
+          "label": "Bar"
+        },
+        {
+          "name": "timeRange",
+          "type": "interval",
+          "auto": true,
+          "query": "1h,6h,12h,24h,7d,30d",
+          "refresh": 2,
+          "label": "Time Range"
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "System Events",
+          "datasource": "Encore Analytics",
+          "enable": true,
+          "query": "system_events"
+        }
+      ]
+    },
+    "refresh": "30s",
+    "schemaVersion": 27,
+    "version": 0,
+    "links": []
+  }
+}
