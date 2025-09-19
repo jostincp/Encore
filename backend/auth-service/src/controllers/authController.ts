@@ -59,6 +59,125 @@ const validateUserRegistration = (data: any) => {
 };
 
 /**
+ * Register a new guest user (temporary access)
+ */
+export const registerGuest = asyncHandler(async (req: Request, res: Response) => {
+  // Create guest user with temporary ID
+  const guestUser = await UserModel.create({
+    email: `guest_${Date.now()}@encore.local`, // Temporary email
+    password: 'guest_temp_password', // Not used for auth
+    firstName: 'Guest',
+    lastName: 'User',
+    role: 'guest'
+  });
+
+  // Generate access token for guest (no refresh token for guests)
+  const accessToken = generateAccessToken({
+    userId: guestUser.id,
+    role: guestUser.role
+  });
+
+  logger.info('Guest user registered', { userId: guestUser.id });
+
+  sendSuccess(res, {
+    user: {
+      id: guestUser.id,
+      role: guestUser.role,
+      isGuest: true
+    },
+    accessToken
+  }, 'Usuario invitado registrado exitosamente', 201);
+});
+
+/**
+ * Register a member from guest (migration)
+ */
+export const registerMember = asyncHandler(async (req: RequestWithUser, res: Response) => {
+  const { email, password, firstName, lastName } = req.body;
+  const guestUserId = req.user?.userId;
+  const guestRole = req.user?.role;
+
+  // Validate that user is authenticated as guest
+  if (!guestUserId || guestRole !== 'guest') {
+    throw new UnauthorizedError('Solo usuarios invitados pueden registrarse como miembros');
+  }
+
+  // Validate input
+  if (!email || !password || !firstName || !lastName) {
+    throw new ValidationError('Email, contraseña, nombre y apellido son requeridos');
+  }
+
+  // Sanitize inputs
+  const sanitizedEmail = sanitizeInput(email);
+  const sanitizedFirstName = sanitizeInput(firstName);
+  const sanitizedLastName = sanitizeInput(lastName);
+
+  if (!validateEmail(sanitizedEmail)) {
+    throw new ValidationError('Email válido es requerido');
+  }
+
+  if (!validatePassword(password)) {
+    throw new ValidationError('Contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y símbolos');
+  }
+
+  if (!validateUsername(sanitizedFirstName) || !validateUsername(sanitizedLastName)) {
+    throw new ValidationError('Nombre y apellido deben tener entre 2 y 50 caracteres');
+  }
+
+  // Check if email is already taken by another user
+  const existingUser = await UserModel.findByEmail(sanitizedEmail);
+  if (existingUser && existingUser.id !== guestUserId) {
+    throw new ConflictError('El email ya está registrado');
+  }
+
+  // Update guest user to member (without password)
+  const updatedUser = await UserModel.update(guestUserId, {
+    email: sanitizedEmail,
+    firstName: sanitizedFirstName,
+    lastName: sanitizedLastName,
+    role: 'member',
+    isEmailVerified: false // Reset email verification for new email
+  });
+
+  if (!updatedUser) {
+    throw new BadRequestError('Error al actualizar usuario');
+  }
+
+  // Update password separately
+  const passwordUpdated = await UserModel.updatePassword(guestUserId, password);
+  if (!passwordUpdated) {
+    throw new BadRequestError('Error al actualizar contraseña');
+  }
+
+  if (!updatedUser) {
+    throw new BadRequestError('Error al actualizar usuario');
+  }
+
+  // Generate new tokens for member
+  const accessToken = generateAccessToken({ userId: updatedUser.id, role: updatedUser.role });
+  const refreshTokenExpiresAt = new Date(Date.now() +
+    (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
+  );
+  const refreshTokenData = await RefreshTokenModel.create(updatedUser.id, refreshTokenExpiresAt);
+
+  logger.info('Guest migrated to member', { userId: updatedUser.id, email: updatedUser.email });
+
+  sendSuccess(res, {
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      firstName: updatedUser.firstName,
+      lastName: updatedUser.lastName,
+      role: updatedUser.role,
+      isEmailVerified: updatedUser.isEmailVerified,
+      isActive: updatedUser.isActive
+    },
+    accessToken,
+    refreshToken: refreshTokenData.token
+  }, 'Usuario registrado como miembro exitosamente', 201);
+});
+
+/**
  * Register a new bar owner with basic bar creation
  */
 export const registerBarOwner = asyncHandler(async (req: Request, res: Response) => {
@@ -97,7 +216,7 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
     password,
     firstName: 'Bar Owner', // Default first name
     lastName: 'Default', // Default last name
-    role: 'bar_admin' // Internal mapping
+    role: 'bar_owner' // Internal mapping
   });
 
   // Create basic bar entry
@@ -167,7 +286,7 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     password,
     firstName: sanitizedData.firstName,
     lastName: sanitizedData.lastName,
-    role: (role === 'bar_owner' ? 'bar_admin' : role) as 'customer' | 'bar_admin' | 'super_admin'
+    role: (role === 'bar_owner' ? 'bar_owner' : role === 'member' ? 'member' : role === 'guest' ? 'guest' : 'super_admin') as 'guest' | 'member' | 'bar_owner' | 'super_admin'
   });
 
   // Generate tokens con configuración segura
@@ -233,8 +352,8 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     throw new UnauthorizedError('Credenciales inválidas');
   }
 
-  // Check if user has bar_owner role (bar_admin internally)
-  if (user.role !== 'bar_admin') {
+  // Check if user has bar_owner role
+  if (user.role !== 'bar_owner') {
     logger.warn('Login attempt by non-bar-owner user', { userId: user.id, email: sanitizedEmail, role: user.role });
     throw new UnauthorizedError('Acceso denegado. Solo propietarios de bares pueden acceder.');
   }
@@ -363,9 +482,9 @@ export const getProfile = asyncHandler(async (req: RequestWithUser, res: Respons
     throw new UnauthorizedError('Usuario no encontrado');
   }
 
-  // If user is bar admin, get their bars
+  // If user is bar owner, get their bars
   let bars: Bar[] = [];
-  if (user.role === 'bar_admin') {
+  if (user.role === 'bar_owner') {
     bars = await BarModel.findByOwnerId(userId);
   }
 

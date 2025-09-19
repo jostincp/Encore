@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import {
   register,
+  registerGuest,
+  registerMember,
   registerBarOwner,
   login,
   refreshToken,
@@ -39,6 +41,29 @@ router.post('/register',
   validateContentType(['application/json']),
   validateRequest(registerSchema),
   register
+);
+
+/**
+ * @route   POST /api/auth/register-guest
+ * @desc    Register a new guest user
+ * @access  Public
+ */
+router.post('/register-guest',
+  rateLimitAuth,
+  validateContentType(['application/json']),
+  registerGuest
+);
+
+/**
+ * @route   POST /api/auth/register-member
+ * @desc    Register a member from guest
+ * @access  Private (Guest only)
+ */
+router.post('/register-member',
+  authenticate,
+  rateLimitAuth,
+  validateContentType(['application/json']),
+  registerMember
 );
 
 /**

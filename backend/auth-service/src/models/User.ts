@@ -12,17 +12,19 @@ export interface CreateUserData {
   password: string;
   firstName: string;
   lastName: string;
-  role?: 'customer' | 'bar_admin' | 'super_admin';
+  role?: 'guest' | 'member' | 'bar_owner' | 'super_admin';
   phone?: string;
 }
 
 export interface UpdateUserData {
   firstName?: string;
   lastName?: string;
+  email?: string;
   phone?: string;
   avatarUrl?: string;
   isActive?: boolean;
-  role?: 'customer' | 'bar_admin' | 'super_admin';
+  isEmailVerified?: boolean;
+  role?: 'guest' | 'member' | 'bar_owner' | 'super_admin';
 }
 
 export class UserModel {
@@ -118,9 +120,11 @@ export class UserModel {
     
     if (userData.firstName) updateData.first_name = userData.firstName;
     if (userData.lastName) updateData.last_name = userData.lastName;
+    if (userData.email) updateData.email = userData.email;
     if (userData.phone !== undefined) updateData.phone = userData.phone;
     if (userData.avatarUrl !== undefined) updateData.avatar_url = userData.avatarUrl;
     if (userData.isActive !== undefined) updateData.is_active = userData.isActive;
+    if (userData.isEmailVerified !== undefined) updateData.email_verified = userData.isEmailVerified;
     if (userData.role) updateData.role = userData.role;
 
     if (Object.keys(updateData).length === 0) {

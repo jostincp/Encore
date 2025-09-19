@@ -36,11 +36,11 @@ export const createBar = asyncHandler(async (req: RequestWithUser, res: Response
     if (!owner) {
       throw new NotFoundError('Propietario no encontrado');
     }
-    if (owner.role !== 'bar_admin') {
+    if (owner.role !== 'bar_owner') {
       throw new ValidationError('El propietario debe tener rol de bar_owner');
     }
     actualOwnerId = ownerId;
-  } else if (userRole !== 'bar_admin' && userRole !== 'super_admin') {
+  } else if (userRole !== 'bar_owner' && userRole !== 'super_admin') {
     throw new ForbiddenError('Solo los propietarios de bares y administradores pueden crear bares');
   }
 
@@ -234,7 +234,7 @@ export const getMyBars = asyncHandler(async (req: RequestWithUser, res: Response
     throw new BadRequestError('Usuario no autenticado');
   }
 
-  if (userRole !== 'bar_admin' && userRole !== 'super_admin') {
+  if (userRole !== 'bar_owner' && userRole !== 'super_admin') {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -430,7 +430,7 @@ export const getBarStats = asyncHandler(async (req: RequestWithUser, res: Respon
   
   // If not admin, only show stats for owned bars
   if (userRole !== 'super_admin') {
-    if (userRole !== 'bar_admin') {
+    if (userRole !== 'bar_owner') {
       throw new ForbiddenError('Acceso denegado');
     }
     ownerId = userId;

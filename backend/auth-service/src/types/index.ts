@@ -6,7 +6,7 @@ import { Request } from 'express';
 export interface JWTPayload {
   userId: string;
   email?: string;
-  role: 'customer' | 'bar_admin' | 'super_admin';
+  role: 'guest' | 'member' | 'bar_owner' | 'super_admin';
   barId?: string;
   iat?: number;
   exp?: number;
@@ -23,8 +23,9 @@ export interface RequestWithUser extends Request {
  * User roles enum
  */
 export enum UserRole {
-  CUSTOMER = 'customer',
-  BAR_ADMIN = 'bar_admin',
+  GUEST = 'guest',
+  MEMBER = 'member',
+  BAR_OWNER = 'bar_owner',
   SUPER_ADMIN = 'super_admin'
 }
 
