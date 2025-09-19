@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🎵 Encore - Plataforma de Gestión Musical
 
 <div align="center">
@@ -277,6 +276,3 @@ MIT License - ver [LICENSE](LICENSE) para más detalles.
 ---
 
 **Encore Platform** - Transformando la experiencia gastronómica con tecnología 🎵🍺
-=======
-# Encore
->>>>>>> 4d05167cbc4f13e6999b048f163ea2b20e73ea6f
