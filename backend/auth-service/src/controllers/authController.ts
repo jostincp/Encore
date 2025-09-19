@@ -59,6 +59,88 @@ const validateUserRegistration = (data: any) => {
 };
 
 /**
+ * Register a new bar owner with basic bar creation
+ */
+export const registerBarOwner = asyncHandler(async (req: Request, res: Response) => {
+  const { email, password, nombre_del_bar } = req.body;
+
+  // Validate input
+  if (!email || !password || !nombre_del_bar) {
+    throw new ValidationError('Email, contraseña y nombre del bar son requeridos');
+  }
+
+  // Sanitizar inputs
+  const sanitizedEmail = sanitizeInput(email);
+  const sanitizedBarName = sanitizeInput(nombre_del_bar);
+
+  if (!validateEmail(sanitizedEmail)) {
+    throw new ValidationError('Email válido es requerido');
+  }
+
+  if (!validatePassword(password)) {
+    throw new ValidationError('Contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y símbolos');
+  }
+
+  if (!validateUsername(sanitizedBarName)) {
+    throw new ValidationError('Nombre del bar debe tener entre 2 y 50 caracteres');
+  }
+
+  // Check if user already exists
+  const existingUser = await UserModel.findByEmail(sanitizedEmail);
+  if (existingUser) {
+    throw new ConflictError('El usuario ya existe con este email');
+  }
+
+  // Create user with bar_owner role (mapped to bar_admin internally)
+  const user = await UserModel.create({
+    email: sanitizedEmail,
+    password,
+    firstName: 'Bar Owner', // Default first name
+    lastName: 'Default', // Default last name
+    role: 'bar_admin' // Internal mapping
+  });
+
+  // Create basic bar entry
+  const bar = await BarModel.create({
+    name: sanitizedBarName,
+    address: 'Dirección por completar', // Placeholder
+    city: 'Ciudad por completar', // Placeholder
+    country: 'País por completar', // Placeholder
+    ownerId: user.id
+  });
+
+  // Generate tokens
+  const accessToken = generateAccessToken({ userId: user.id, role: user.role });
+  const refreshTokenExpiresAt = new Date(Date.now() +
+    (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
+  );
+  const refreshTokenData = await RefreshTokenModel.create(user.id, refreshTokenExpiresAt);
+
+  logger.info('Bar owner registered successfully', { userId: user.id, email: user.email, barId: bar.id });
+
+  sendSuccess(res, {
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: 'bar_owner', // Return as bar_owner for API consistency
+      isEmailVerified: user.isEmailVerified,
+      isActive: user.isActive
+    },
+    bar: {
+      id: bar.id,
+      name: bar.name,
+      address: bar.address,
+      city: bar.city,
+      country: bar.country
+    },
+    accessToken,
+    refreshToken: refreshTokenData.token
+  }, 'Propietario del bar registrado exitosamente', 201);
+});
+
+/**
  * Register a new user
  */
 export const register = asyncHandler(async (req: Request, res: Response) => {
@@ -149,6 +231,12 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   if (!isValidPassword) {
     logger.warn('Invalid password attempt', { userId: user.id, email: sanitizedEmail, ip: req.ip });
     throw new UnauthorizedError('Credenciales inválidas');
+  }
+
+  // Check if user has bar_owner role (bar_admin internally)
+  if (user.role !== 'bar_admin') {
+    logger.warn('Login attempt by non-bar-owner user', { userId: user.id, email: sanitizedEmail, role: user.role });
+    throw new UnauthorizedError('Acceso denegado. Solo propietarios de bares pueden acceder.');
   }
 
   // Generate tokens con configuración segura

@@ -2,9 +2,9 @@
   "name": "encore-auth-service",
   "version": "1.0.0",
   "description": "Encore Authentication Service - Handles user authentication, registration, and bar management",
-  "main": "dist/server.js",
+  "main": "dist/auth-service/src/server.js",
   "scripts": {
-    "start": "node dist/server.js",
+    "start": "node dist/auth-service/src/server.js",
     "dev": "nodemon src/server.ts",
     "build": "tsc",
     "build:watch": "tsc --watch",

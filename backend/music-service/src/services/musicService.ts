@@ -466,9 +466,176 @@ export class MusicService {
   }
 
   /**
+   * Get queue for a specific bar
+   */
+  public static async getQueue(
+    barId: string,
+    options: { limit?: number; status?: string } = {}
+  ): Promise<any[]> {
+    const { limit = 50, status = 'pending' } = options;
+
+    try {
+      const result = await QueueModel.findByBarId(barId, { status: [status] }, limit, 0, true);
+      return result.items;
+    } catch (error) {
+      logger.error('Get queue error:', { barId, options, error });
+      throw new Error('Failed to get queue');
+    }
+  }
+
+  /**
+   * Add song to queue
+   */
+  public static async addToQueue(
+    barId: string,
+    userId: string,
+    songData: SongData
+  ): Promise<any> {
+    try {
+      // First, ensure song exists in database
+      const existingSong = await Song.findById(songData.id);
+      if (!existingSong) {
+        await Song.create({
+          id: songData.id,
+          title: songData.title,
+          artist: songData.artist,
+          album: songData.album,
+          duration: songData.duration,
+          source: songData.source,
+          external_url: songData.external_url,
+          preview_url: songData.preview_url,
+          thumbnail_url: songData.thumbnail_url
+        });
+      }
+
+      // Add to queue
+      const queueEntry = await QueueModel.create({
+        bar_id: barId,
+        song_id: songData.id,
+        user_id: userId
+      });
+
+      return queueEntry;
+    } catch (error) {
+      logger.error('Add to queue error:', { barId, userId, songData, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Remove song from queue
+   */
+  public static async removeFromQueue(
+    queueId: string,
+    userId: string,
+    barId: string
+  ): Promise<boolean> {
+    try {
+      const queueEntry = await QueueModel.findById(queueId, true);
+
+      if (!queueEntry) {
+        throw Object.assign(new Error('Queue entry not found'), { statusCode: 404 });
+      }
+
+      if (queueEntry.user_id !== userId) {
+        throw Object.assign(new Error('You can only remove your own songs'), { statusCode: 403 });
+      }
+
+      if (queueEntry.status === 'playing') {
+        throw Object.assign(new Error('Cannot remove currently playing song'), { statusCode: 400 });
+      }
+
+      const deleted = await QueueModel.delete(queueId);
+      return deleted;
+    } catch (error) {
+      logger.error('Remove from queue error:', { queueId, userId, barId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update queue status
+   */
+  public static async updateQueueStatus(
+    queueId: string,
+    status: string,
+    barId: string
+  ): Promise<any> {
+    try {
+      const validStatuses = ['pending', 'playing', 'played', 'skipped', 'rejected'];
+      if (!validStatuses.includes(status)) {
+        throw Object.assign(new Error('Invalid queue status'), { statusCode: 400 });
+      }
+
+      const updatedEntry = await QueueModel.update(queueId, { status });
+      if (!updatedEntry) {
+        throw Object.assign(new Error('Queue entry not found'), { statusCode: 404 });
+      }
+
+      return updatedEntry;
+    } catch (error) {
+      logger.error('Update queue status error:', { queueId, status, barId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get currently playing song
+   */
+  public static async getCurrentSong(barId: string): Promise<any> {
+    try {
+      const currentSong = await QueueModel.getCurrentlyPlaying(barId);
+      return currentSong;
+    } catch (error) {
+      logger.error('Get current song error:', { barId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get user queue history
+   */
+  public static async getUserHistory(
+    userId: string,
+    barId: string,
+    options: { limit?: number } = {}
+  ): Promise<any[]> {
+    const { limit = 50 } = options;
+
+    try {
+      const result = await QueueModel.findByBarId(
+        barId,
+        { user_id: userId, status: ['played', 'skipped'] },
+        limit,
+        0,
+        true
+      );
+      return result.items;
+    } catch (error) {
+      logger.error('Get user history error:', { userId, barId, options, error });
+      throw new Error('Failed to get user history');
+    }
+  }
+
+  /**
+   * Clear cache for a bar
+   */
+  public static async clearCache(barId: string): Promise<void> {
+    try {
+      await CacheService.invalidateByTags([
+        CacheTags.bar(barId),
+        CacheTags.queue(barId)
+      ]);
+    } catch (error) {
+      logger.error('Clear cache error:', { barId, error });
+      throw error;
+    }
+  }
+
+  /**
    * Remove duplicate songs based on title and artist similarity
    */
-  private static deduplicateSongs(songs: SongData[]): SongData[] {
+   private static deduplicateSongs(songs: SongData[]): SongData[] {
     const seen = new Set<string>();
     const unique: SongData[] = [];
 

@@ -132,7 +132,7 @@ export const updateBar = asyncHandler(async (req: RequestWithUser, res: Response
   const { id } = req.params;
   const userId = req.user?.userId;
   const userRole = req.user?.role;
-  const { name, address, phone, description } = req.body;
+  const { name, address, city, country, phone, email, description, websiteUrl, logoUrl, coverImageUrl, timezone } = req.body;
 
   if (!id) {
     throw new BadRequestError('ID del bar requerido');
@@ -152,7 +152,7 @@ export const updateBar = asyncHandler(async (req: RequestWithUser, res: Response
 
   // Validate input
   const updateData: any = {};
-  
+
   if (name !== undefined) {
     if (!validateNonEmptyString(name)) {
       throw new ValidationError('Nombre del bar inválido');
@@ -167,15 +167,46 @@ export const updateBar = asyncHandler(async (req: RequestWithUser, res: Response
     updateData.address = address;
   }
 
-  if (phone !== undefined) {
-    if (!validateNonEmptyString(phone)) {
-      throw new ValidationError('Teléfono inválido');
+  if (city !== undefined) {
+    if (!validateNonEmptyString(city)) {
+      throw new ValidationError('Ciudad inválida');
     }
-    updateData.phone = phone;
+    updateData.city = city;
+  }
+
+  if (country !== undefined) {
+    if (!validateNonEmptyString(country)) {
+      throw new ValidationError('País inválido');
+    }
+    updateData.country = country;
+  }
+
+  if (phone !== undefined) {
+    updateData.phone = phone; // Allow empty string to clear
+  }
+
+  if (email !== undefined) {
+    updateData.email = email; // Allow empty string to clear
   }
 
   if (description !== undefined) {
-    updateData.description = description;
+    updateData.description = description; // Allow empty string to clear
+  }
+
+  if (websiteUrl !== undefined) {
+    updateData.websiteUrl = websiteUrl; // Allow empty string to clear
+  }
+
+  if (logoUrl !== undefined) {
+    updateData.logoUrl = logoUrl; // Allow empty string to clear
+  }
+
+  if (coverImageUrl !== undefined) {
+    updateData.coverImageUrl = coverImageUrl; // Allow empty string to clear
+  }
+
+  if (timezone !== undefined) {
+    updateData.timezone = timezone; // Allow empty string to clear
   }
 
   if (Object.keys(updateData).length === 0) {

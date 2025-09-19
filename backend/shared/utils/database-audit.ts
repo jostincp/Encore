@@ -265,6 +265,8 @@ export const auditQuery = (
     success?: boolean;
     duration?: number;
     error?: string;
+    ip?: string;
+    userAgent?: string;
   } = {}
 ) => {
   databaseAuditor.logQuery(service, action, table, query, parameters, options);

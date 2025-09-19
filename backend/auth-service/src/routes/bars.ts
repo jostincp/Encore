@@ -17,7 +17,7 @@ import { rateLimiter as rateLimitBasic, rateLimitStrict } from '../middleware/ra
 import { requireRole } from '../middleware/auth';
 import { validateContentType } from '../middleware/validation';
 
-const router = Router();
+const router: Router = Router();
 
 /**
  * @route   GET /api/bars
@@ -34,9 +34,9 @@ router.get('/',
  * @desc    Get bar statistics
  * @access  Private (Bar Owner or Admin)
  */
-router.get('/stats', 
+router.get('/stats',
   authenticate,
-  requireRole(['bar_owner', 'admin']),
+  requireRole(['bar_admin', 'super_admin']),
   getBarStats
 );
 
@@ -45,9 +45,9 @@ router.get('/stats',
  * @desc    Get bars owned by current user
  * @access  Private (Bar Owner or Admin)
  */
-router.get('/my', 
+router.get('/my',
   authenticate,
-  requireRole(['bar_owner', 'admin']),
+  requireRole(['bar_admin', 'super_admin']),
   getMyBars
 );
 
@@ -56,9 +56,9 @@ router.get('/my',
  * @desc    Create a new bar
  * @access  Private (Bar Owner or Admin)
  */
-router.post('/', 
+router.post('/',
   authenticate,
-  requireRole(['bar_owner', 'admin']),
+  requireRole(['bar_admin', 'super_admin']),
   rateLimitBasic,
   validateContentType(['application/json']),
   createBar
@@ -78,7 +78,19 @@ router.get('/:id',
  * @desc    Update bar
  * @access  Private (Bar Owner or Admin)
  */
-router.put('/:id', 
+router.put('/:id',
+  authenticate,
+  rateLimitBasic,
+  validateContentType(['application/json']),
+  updateBar
+);
+
+/**
+ * @route   PATCH /api/bars/:id
+ * @desc    Complete bar profile (progressive registration)
+ * @access  Private (Bar Owner or Admin)
+ */
+router.patch('/:id',
   authenticate,
   rateLimitBasic,
   validateContentType(['application/json']),

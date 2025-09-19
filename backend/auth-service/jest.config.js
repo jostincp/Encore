@@ -9,6 +9,13 @@ module.exports = {
   transform: {
     '^.+\.ts$': 'ts-jest'
   },
+  globals: {
+    'ts-jest': {
+      tsconfig: {
+        types: ['jest', 'node']
+      }
+    }
+  },
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',

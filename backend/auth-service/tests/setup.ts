@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { config } from '../src/config';

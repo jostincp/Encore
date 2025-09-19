@@ -4,7 +4,7 @@ import userRoutes from './users';
 import barRoutes from './bars';
 import { healthCheck } from '../middleware/healthCheck';
 
-const router = Router();
+const router: Router = Router();
 
 // Health check endpoint
 router.get('/health', healthCheck);

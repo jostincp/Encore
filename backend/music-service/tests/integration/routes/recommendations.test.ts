@@ -1,8 +1,8 @@
 import request from 'supertest';
 import express from 'express';
 import { RecommendationService } from '../../../src/services/recommendationService';
-import { authMiddleware } from '../../../src/middleware/auth';
-import { validateRequest } from '../../../src/middleware/validation';
+import { authenticateToken } from '../../../src/middleware/auth';
+import { handleValidationErrors } from '../../../src/middleware/validation';
 import recommendationRoutes from '../../../src/routes/recommendations';
 import {
   mockRequest,
@@ -27,12 +27,12 @@ describe('Recommendation Routes Integration', () => {
     app.use(express.json());
     
     // Mock middleware
-    (authMiddleware as jest.Mock).mockImplementation((req, res, next) => {
+    (authenticateToken as jest.Mock).mockImplementation((req: any, res: any, next: any) => {
       req.user = mockUser;
       next();
     });
-    
-    (validateRequest as jest.Mock).mockImplementation((schema) => (req, res, next) => {
+
+    (handleValidationErrors as jest.Mock).mockImplementation((req: any, res: any, next: any) => {
       next();
     });
     
@@ -452,7 +452,7 @@ describe('Recommendation Routes Integration', () => {
   describe('Authentication and Authorization', () => {
     it('should require authentication for all recommendation routes', async () => {
       // Mock auth middleware to simulate unauthenticated request
-      (authMiddleware as jest.Mock).mockImplementationOnce((req, res, next) => {
+      (authenticateToken as jest.Mock).mockImplementationOnce((req: any, res: any, next: any) => {
         res.status(401).json({ success: false, error: 'Authentication required' });
       });
 
@@ -468,7 +468,7 @@ describe('Recommendation Routes Integration', () => {
     });
 
     it('should handle invalid authentication tokens', async () => {
-      (authMiddleware as jest.Mock).mockImplementationOnce((req, res, next) => {
+      (authenticateToken as jest.Mock).mockImplementationOnce((req: any, res: any, next: any) => {
         res.status(401).json({ success: false, error: 'Invalid token' });
       });
 
@@ -510,7 +510,7 @@ describe('Recommendation Routes Integration', () => {
     });
 
     it('should handle validation middleware errors', async () => {
-      (validateRequest as jest.Mock).mockImplementationOnce((schema) => (req, res, next) => {
+      (handleValidationErrors as jest.Mock).mockImplementationOnce((req: any, res: any, next: any) => {
         res.status(400).json({
           success: false,
           error: 'Validation failed',

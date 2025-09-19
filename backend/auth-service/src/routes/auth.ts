@@ -1,6 +1,7 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import {
   register,
+  registerBarOwner,
   login,
   refreshToken,
   logout,
@@ -26,7 +27,7 @@ import {
   validateParams
 } from '../../../shared/utils/validation';
 
-const router = Router();
+const router: Router = Router();
 
 /**
  * @route   POST /api/auth/register
@@ -38,6 +39,17 @@ router.post('/register',
   validateContentType(['application/json']),
   validateRequest(registerSchema),
   register
+);
+
+/**
+ * @route   POST /api/auth/register-bar-owner
+ * @desc    Register a new bar owner with basic bar creation
+ * @access  Public
+ */
+router.post('/register-bar-owner',
+  rateLimitAuth,
+  validateContentType(['application/json']),
+  registerBarOwner
 );
 
 /**

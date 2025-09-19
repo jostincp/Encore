@@ -8,13 +8,13 @@ import logger from '../../shared/utils/logger';
 import { initializeDatabase, closeDatabase, runMigrations } from '../../shared/database';
 import { initRedis, getRedisClient, closeRedis } from '../../shared/utils/redis';
 import { errorHandler, notFoundHandler } from '../../shared/utils/errors';
-import { requestLogger, healthCheck } from '../../shared/middleware';
-import { 
-  securityMiddleware, 
-  corsOptions, 
-  helmetOptions, 
-  rateLimiters 
-} from '../../shared/security';
+import {
+  requestLoggingMiddleware,
+  healthCheckMiddleware,
+  corsMiddleware,
+  basicRateLimit,
+  securityMiddleware
+} from '../../shared/middleware';
 import routes from './routes';
 import { setupSwagger } from './swagger/swagger.config';
 import { 
@@ -27,43 +27,18 @@ import {
 const app = express();
 const PORT = config.services.music.port;
 
-// Enhanced security middleware
-app.use(helmet(helmetOptions));
-app.use(cors(corsOptions));
-
-// Rate limiting específico para APIs externas
-app.use('/api/music/search', rateLimiters.externalApi);
-app.use('/api/music/stream', rateLimiters.externalApi);
-app.use('/api', rateLimiters.general);
-
-// Performance monitoring
-app.use(performanceMonitoring);
-
-// Compression and parsing middleware
-app.use(compression());
+// Basic middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging middleware
-app.use(requestLogger);
-
-// Health checks and monitoring
-app.get('/health', detailedHealthCheck);
-app.get('/metrics', getMetrics);
-
-// Swagger documentation
-setupSwagger(app);
-
 // Routes
-app.use('/api', routes);
+app.use('/api/music', routes);
 
-// Centralized security middleware
-app.use(securityMiddleware);
-
-// Error handling middleware
-app.use(notFoundHandler);
-app.use(errorTracking);
-app.use(errorHandler);
+// Error handling middleware (simplified)
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error(err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {

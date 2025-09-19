@@ -10,7 +10,7 @@ import { rateLimiter, rateLimitStrict } from '../middleware/rateLimiter';
 import { requireRole } from '../middleware/auth';
 import { validateContentType } from '../middleware/validation';
 
-const router = Router();
+const router: Router = Router();
 
 // All routes require authentication
 router.use(authenticate);
