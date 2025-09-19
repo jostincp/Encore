@@ -27,11 +27,13 @@ app.use(cors(corsOptions));
 
 // Rate limiting específico para autenticación
 app.use('/api/auth/login', rateLimiters.auth);
-app.use('/api/auth/register', rateLimiters.auth);
+app.use('/api/auth/register-guest', rateLimiters.auth);
+app.use('/api/auth/register-member', rateLimiters.auth);
+app.use('/api/auth/register-bar-owner', rateLimiters.auth);
 
-// General middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// General middleware with stricter limits for security
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(requestLogger);
 
 // Health check
@@ -59,12 +61,30 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
   let message = 'Internal server error';
   let data: any = undefined;
 
-  logger.error('Error occurred', {
+  // Enhanced logging for security events
+  const logData: any = {
     error: error.message,
-    stack: error.stack,
     url: req.url,
-    method: req.method
-  });
+    method: req.method,
+    ip: req.ip,
+    userAgent: req.get('User-Agent'),
+    timestamp: new Date().toISOString()
+  };
+
+  // Add user info if available
+  if ((req as any).user) {
+    logData.userId = (req as any).user.userId;
+    logData.userRole = (req as any).user.role;
+  }
+
+  // Log security-related errors with higher priority
+  if (error instanceof AppError && (error.statusCode === 401 || error.statusCode === 403)) {
+    logger.warn('Security event: Authentication/Authorization failure', logData);
+  } else if (statusCode >= 500) {
+    logger.error('Server error', { ...logData, stack: error.stack });
+  } else {
+    logger.error('Application error', logData);
+  }
 
   if (error instanceof AppError) {
     statusCode = error.statusCode;

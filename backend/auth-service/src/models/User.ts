@@ -1,6 +1,7 @@
 import { query, dbOperations } from '../utils/database';
 import { User } from '../types/models';
 import { validateUserRegistration, ValidationResult } from '../utils/validation';
+import { UserRole, VALID_USER_ROLES, assertValidUserRole, isValidUserRole } from '../constants/roles';
 
 // Re-export User interface for external use
 export { User } from '../types/models';
@@ -12,7 +13,7 @@ export interface CreateUserData {
   password: string;
   firstName: string;
   lastName: string;
-  role?: 'guest' | 'member' | 'bar_owner' | 'super_admin';
+  role?: UserRole;
   phone?: string;
 }
 
@@ -24,7 +25,7 @@ export interface UpdateUserData {
   avatarUrl?: string;
   isActive?: boolean;
   isEmailVerified?: boolean;
-  role?: 'guest' | 'member' | 'bar_owner' | 'super_admin';
+  role?: UserRole;
 }
 
 export class UserModel {
@@ -42,6 +43,11 @@ export class UserModel {
 
     if (!validation.isValid) {
       throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+    }
+
+    // Validate role if provided
+    if (userData.role && !isValidUserRole(userData.role)) {
+      throw new Error(`Invalid user role: ${userData.role}`);
     }
 
     // Check if user already exists
@@ -116,8 +122,13 @@ export class UserModel {
    * Update user
    */
   static async update(id: string, userData: UpdateUserData): Promise<User | null> {
+    // Validate role if provided
+    if (userData.role && !isValidUserRole(userData.role)) {
+      throw new Error(`Invalid user role: ${userData.role}`);
+    }
+
     const updateData: Record<string, any> = {};
-    
+
     if (userData.firstName) updateData.first_name = userData.firstName;
     if (userData.lastName) updateData.last_name = userData.lastName;
     if (userData.email) updateData.email = userData.email;

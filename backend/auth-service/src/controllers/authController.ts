@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import { UserModel, User } from '../models/User';
 import { RefreshTokenModel, RefreshToken } from '../models/RefreshToken';
 import { BarModel, Bar } from '../models/Bar';
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
+import { generateAccessToken, generateRefreshToken, verifyToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSuccess, sendError } from '../utils/response';
 import { ValidationError, UnauthorizedError, ConflictError, NotFoundError, BadRequestError } from '../utils/errors';
 import { RequestWithUser } from '../types';
@@ -15,6 +15,7 @@ import {
   validateNonEmptyString as validateUsername
 } from '../utils/validation';
 import { config } from '../../../shared/config';
+import { UserRole } from '../constants/roles';
 
 // Simple sanitize function
 const sanitizeInput = (input: string): string => {
@@ -68,7 +69,7 @@ export const registerGuest = asyncHandler(async (req: Request, res: Response) =>
     password: 'guest_temp_password', // Not used for auth
     firstName: 'Guest',
     lastName: 'User',
-    role: 'guest'
+    role: UserRole.GUEST
   });
 
   // Generate access token for guest (no refresh token for guests)
@@ -135,7 +136,7 @@ export const registerMember = asyncHandler(async (req: RequestWithUser, res: Res
     email: sanitizedEmail,
     firstName: sanitizedFirstName,
     lastName: sanitizedLastName,
-    role: 'member',
+    role: UserRole.MEMBER,
     isEmailVerified: false // Reset email verification for new email
   });
 
@@ -216,7 +217,7 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
     password,
     firstName: 'Bar Owner', // Default first name
     lastName: 'Default', // Default last name
-    role: 'bar_owner' // Internal mapping
+    role: UserRole.BAR_OWNER // Internal mapping
   });
 
   // Create basic bar entry
@@ -281,12 +282,17 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Create user con datos sanitizados
+  const userRole = role === 'bar_owner' ? UserRole.BAR_OWNER :
+                   role === 'member' ? UserRole.MEMBER :
+                   role === 'guest' ? UserRole.GUEST :
+                   UserRole.SUPER_ADMIN;
+
   const user = await UserModel.create({
     email: sanitizedData.email,
     password,
     firstName: sanitizedData.firstName,
     lastName: sanitizedData.lastName,
-    role: (role === 'bar_owner' ? 'bar_owner' : role === 'member' ? 'member' : role === 'guest' ? 'guest' : 'super_admin') as 'guest' | 'member' | 'bar_owner' | 'super_admin'
+    role: userRole
   });
 
   // Generate tokens con configuración segura
@@ -739,33 +745,4 @@ export const resendVerification = asyncHandler(async (req: Request, res: Respons
   sendSuccess(res, null, 'Email de verificación enviado');
 });
 
-/**
- * Authenticate middleware function
- */
-export const authenticate = asyncHandler(async (req: RequestWithUser, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    throw new UnauthorizedError('Token de acceso requerido');
-  }
-
-  try {
-    const decoded = verifyRefreshToken(token) as any;
-    const user = await UserModel.findById(decoded.userId);
-    
-    if (!user || !user.isActive) {
-      throw new UnauthorizedError('Usuario no encontrado o inactivo');
-    }
-
-    req.user = {
-      userId: user.id,
-      role: user.role,
-      email: user.email
-    };
-
-    next();
-  } catch (error) {
-    throw new UnauthorizedError('Token inválido');
-  }
-});
+// Middleware authenticate is now imported from ../utils/jwt

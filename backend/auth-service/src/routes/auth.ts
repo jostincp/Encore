@@ -31,17 +31,7 @@ import {
 
 const router: Router = Router();
 
-/**
- * @route   POST /api/auth/register
- * @desc    Register a new user
- * @access  Public
- */
-router.post('/register',
-  rateLimitAuth,
-  validateContentType(['application/json']),
-  validateRequest(registerSchema),
-  register
-);
+// Removed generic register route for security - use specific routes instead
 
 /**
  * @route   POST /api/auth/register-guest
