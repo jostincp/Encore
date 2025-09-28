@@ -9,6 +9,7 @@ import { authenticate } from '../utils/jwt';
 import { rateLimiter, rateLimitStrict } from '../middleware/rateLimiter';
 import { requireRole } from '../middleware/auth';
 import { validateContentType } from '../middleware/validation';
+import { UserRole } from '../constants/roles';
 
 const router: Router = Router();
 
@@ -24,7 +25,7 @@ const rateLimitBasic = rateLimiter;
  * @access  Private (Admin)
  */
 router.get('/', 
-  requireRole(['admin']),
+  requireRole([UserRole.SUPER_ADMIN]),
 
   getUsers
 );
@@ -55,7 +56,7 @@ router.put('/:id',
  * @access  Private (Admin)
  */
 router.put('/:id/deactivate', 
-  requireRole(['admin']),
+  requireRole([UserRole.SUPER_ADMIN]),
   rateLimitStrict,
   deactivateUser
 );

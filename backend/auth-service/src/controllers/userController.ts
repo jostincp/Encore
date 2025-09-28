@@ -6,6 +6,7 @@ import { ValidationError, UnauthorizedError, NotFoundError, ConflictError, Forbi
 import { RequestWithUser } from '../types';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { logger } from '../utils/logger';
+import { UserRole } from '../constants/roles';
 
 // Validation functions
 const validateNonEmptyString = (str: string): boolean => {
@@ -23,7 +24,7 @@ const validateEmail = (email: string): boolean => {
 export const getUsers = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userRole = req.user?.role;
   
-  if (userRole !== 'super_admin') {
+  if (userRole !== UserRole.SUPER_ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -81,7 +82,7 @@ export const getUserById = asyncHandler(async (req: RequestWithUser, res: Respon
   }
 
   // Users can only view their own profile unless they are admin
-  if (currentUserRole !== 'super_admin' && currentUserId !== id) {
+  if (currentUserRole !== UserRole.SUPER_ADMIN && currentUserId !== id) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -119,7 +120,7 @@ export const updateUser = asyncHandler(async (req: RequestWithUser, res: Respons
   }
 
   // Users can only update their own profile unless they are admin
-  if (currentUserRole !== 'super_admin' && currentUserId !== id) {
+  if (currentUserRole !== UserRole.SUPER_ADMIN && currentUserId !== id) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -193,7 +194,7 @@ export const deactivateUser = asyncHandler(async (req: RequestWithUser, res: Res
     throw new BadRequestError('ID de usuario requerido');
   }
 
-  if (currentUserRole !== 'super_admin') {
+  if (currentUserRole !== UserRole.SUPER_ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -224,7 +225,7 @@ export const activateUser = asyncHandler(async (req: RequestWithUser, res: Respo
     throw new BadRequestError('ID de usuario requerido');
   }
 
-  if (currentUserRole !== 'super_admin') {
+  if (currentUserRole !== UserRole.SUPER_ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -262,7 +263,7 @@ export const deleteUser = asyncHandler(async (req: RequestWithUser, res: Respons
     throw new BadRequestError('ID de usuario requerido');
   }
 
-  if (currentUserRole !== 'super_admin') {
+  if (currentUserRole !== UserRole.SUPER_ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -294,11 +295,11 @@ export const updateUserRole = asyncHandler(async (req: RequestWithUser, res: Res
     throw new BadRequestError('ID de usuario requerido');
   }
 
-  if (currentUserRole !== 'super_admin') {
+  if (currentUserRole !== UserRole.SUPER_ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
-  if (!role || !['customer', 'bar_owner', 'super_admin'].includes(role)) {
+  if (!role || ![UserRole.MEMBER, UserRole.BAR_OWNER, UserRole.SUPER_ADMIN].includes(role)) {
     throw new ValidationError('Rol inválido');
   }
 
@@ -335,7 +336,7 @@ export const updateUserRole = asyncHandler(async (req: RequestWithUser, res: Res
 export const getUserStats = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const currentUserRole = req.user?.role;
 
-  if (currentUserRole !== 'super_admin') {
+  if (currentUserRole !== UserRole.SUPER_ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -343,19 +344,19 @@ export const getUserStats = asyncHandler(async (req: RequestWithUser, res: Respo
   const customerResult = await UserModel.findMany({ 
     limit: 1, 
     offset: 0,
-    role: 'customer'
+    role: UserRole.MEMBER
   });
   
   const barOwnerResult = await UserModel.findMany({ 
     limit: 1, 
     offset: 0,
-    role: 'bar_owner'
+    role: UserRole.BAR_OWNER
   });
   
   const adminResult = await UserModel.findMany({ 
     limit: 1, 
     offset: 0,
-    role: 'super_admin'
+    role: UserRole.SUPER_ADMIN
   });
 
   const activeResult = await UserModel.findMany({ 
