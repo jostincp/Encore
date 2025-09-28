@@ -99,7 +99,7 @@ export const registerMember = asyncHandler(async (req: RequestWithUser, res: Res
   const guestRole = req.user?.role;
 
   // Validate that user is authenticated as guest
-  if (!guestUserId || guestRole !== 'guest') {
+  if (!guestUserId || guestRole !== UserRole.GUEST) {
     throw new UnauthorizedError('Solo usuarios invitados pueden registrarse como miembros');
   }
 
@@ -239,15 +239,15 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
   logger.info('Bar owner registered successfully', { userId: user.id, email: user.email, barId: bar.id });
 
   sendSuccess(res, {
-    user: {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: 'bar_owner', // Return as bar_owner for API consistency
-      isEmailVerified: user.isEmailVerified,
-      isActive: user.isActive
-    },
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: UserRole.BAR_OWNER, // Return as bar_owner for API consistency
+        isEmailVerified: user.isEmailVerified,
+        isActive: user.isActive
+      },
     bar: {
       id: bar.id,
       name: bar.name,
@@ -260,64 +260,7 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
   }, 'Propietario del bar registrado exitosamente', 201);
 });
 
-/**
- * Register a new user
- */
-export const register = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password, firstName, lastName, role = 'customer' } = req.body;
 
-  // Validate input
-  const validation = validateUserRegistration({ email, password, firstName, lastName, role });
-  if (!validation.isValid) {
-    throw new ValidationError('Datos de registro inválidos', validation.errors);
-  }
-
-  // Usar datos sanitizados
-  const { sanitizedData } = validation;
-
-  // Check if user already exists
-  const existingUser = await UserModel.findByEmail(email);
-  if (existingUser) {
-    throw new ConflictError('El usuario ya existe con este email');
-  }
-
-  // Create user con datos sanitizados
-  const userRole = role === 'bar_owner' ? UserRole.BAR_OWNER :
-                   role === 'member' ? UserRole.MEMBER :
-                   role === 'guest' ? UserRole.GUEST :
-                   UserRole.SUPER_ADMIN;
-
-  const user = await UserModel.create({
-    email: sanitizedData.email,
-    password,
-    firstName: sanitizedData.firstName,
-    lastName: sanitizedData.lastName,
-    role: userRole
-  });
-
-  // Generate tokens con configuración segura
-  const accessToken = generateAccessToken({ userId: user.id, role: user.role });
-  const refreshTokenExpiresAt = new Date(Date.now() + 
-    (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
-  );
-  const refreshTokenData = await RefreshTokenModel.create(user.id, refreshTokenExpiresAt);
-
-  logger.info('User registered successfully', { userId: user.id, email: user.email });
-
-  sendSuccess(res, {
-    user: {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-      isEmailVerified: user.isEmailVerified,
-      isActive: user.isActive
-    },
-    accessToken,
-    refreshToken: refreshTokenData.token
-  }, 'Usuario registrado exitosamente', 201);
-});
 
 /**
  * Login user
@@ -359,7 +302,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Check if user has bar_owner role
-  if (user.role !== 'bar_owner') {
+  if (user.role !== UserRole.BAR_OWNER) {
     logger.warn('Login attempt by non-bar-owner user', { userId: user.id, email: sanitizedEmail, role: user.role });
     throw new UnauthorizedError('Acceso denegado. Solo propietarios de bares pueden acceder.');
   }
@@ -490,7 +433,7 @@ export const getProfile = asyncHandler(async (req: RequestWithUser, res: Respons
 
   // If user is bar owner, get their bars
   let bars: Bar[] = [];
-  if (user.role === 'bar_owner') {
+  if (user.role === UserRole.BAR_OWNER) {
     bars = await BarModel.findByOwnerId(userId);
   }
 
@@ -525,7 +468,7 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
   // This is a simplified version - in production, use proper email verification tokens
   
   try {
-    const decoded = verifyRefreshToken(token) as any;
+    const decoded = verifyToken(token) as any;
     const userId = decoded.userId;
 
     const success = await UserModel.verifyEmail(userId);
@@ -700,8 +643,8 @@ export const resetPassword = asyncHandler(async (req: Request, res: Response) =>
 
   try {
     // In a real implementation, verify the password reset token
-    // For now, we'll use the refresh token verification as a placeholder
-    const decoded = verifyRefreshToken(token) as any;
+    // For now, we'll use the access token verification as a placeholder
+    const decoded = verifyToken(token) as any;
     const userId = decoded.userId;
 
     const success = await UserModel.updatePassword(userId, newPassword);
