@@ -13,16 +13,14 @@
 - [Descripción](#-descripción)
 - [Características Principales](#-características-principales)
 - [Arquitectura](#️-arquitectura)
-- [Requisitos Previos](#-requisitos-previos)
-- [Instalación](#-instalación)
-- [Configuración](#️-configuración)
-- [Uso](#-uso)
-- [API Endpoints](#-api-endpoints)
-- [Testing](#-testing)
+- [Instalación y Desarrollo](#-instalación-y-desarrollo)
+- [Funcionalidades](#-funcionalidades)
+- [Tecnologías](#️-tecnologías)
+- [Estructura del Proyecto](#-estructura-del-proyecto)
+- [Flujo de Trabajo](#-flujo-de-trabajo)
 - [Despliegue](#-despliegue)
-- [Troubleshooting](#-troubleshooting)
-- [Contribuciones](#-contribuciones)
-- [Roadmap](#️-roadmap)
+- [📚 Documentación Completa](#-documentación-completa)
+- [Contribución](#-contribución)
 - [Licencia](#-licencia)
 
 ## 🎯 Descripción
@@ -272,6 +270,28 @@ MIT License - ver [LICENSE](LICENSE) para más detalles.
 3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abre un Pull Request
+
+## 📚 Documentación Completa
+
+Para información detallada sobre el proyecto, consulta nuestra documentación organizada:
+
+### 🎯 Visión y Producto
+- **[Visión del Producto](docs/VISION.md)** - Objetivos, características principales y roadmap
+- **[Índice de Documentación](docs/master_documentation_index.md)** - Guía completa de toda la documentación
+
+### 🏗️ Arquitectura y Diseño
+- **[Arquitectura Técnica](docs/ARCHITECTURE/technical_architecture.md)** - Diseño del sistema, microservicios y APIs
+- **[Plan de Unificación](docs/ARCHITECTURE/unification_cleanup_plan.md)** - Estrategia de migración y limpieza
+
+### ⚙️ Configuración y Despliegue
+- **[Guías de Configuración](docs/SETUP/)** - Instrucciones detalladas de instalación
+- **[Documentación de Servicios](docs/SERVICES/)** - Guías específicas por microservicio
+
+### 🔌 Integraciones
+- **[APIs Externas](docs/INTEGRATIONS/)** - Spotify, YouTube, Stripe y otras integraciones
+
+### 📖 Guías de Desarrollo
+- **[Guías para Desarrolladores](docs/GUIDES/)** - Best practices y patrones de desarrollo
 
 ---
 

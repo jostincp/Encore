@@ -12,11 +12,24 @@ El objetivo es crear una nueva categoría de entretenimiento social que incremen
 
 ### 2.1 Roles de Usuario
 
-| Rol | Método de Registro | Permisos Principales |
-|-----|-------------------|---------------------|
-| Cliente | Registro por email o acceso rápido via QR | Puede buscar música, agregar canciones a la cola, gastar puntos, ver menú |
-| Propietario de Bar | Registro por email con verificación | Puede gestionar su bar, controlar la cola, ver analytics, gestionar menú, configurar sistema de puntos |
-| Administrador | Invitación del sistema | Acceso completo a todos los bares, usuarios, configuraciones globales y métricas |
+El sistema Encore implementa un sistema de roles unificado basado en constantes `UserRole` para garantizar consistencia y seguridad:
+
+| Rol | Constante | Método de Registro | Permisos Principales |
+|-----|-----------|-------------------|---------------------|
+| **Invitado** | `UserRole.GUEST` | Acceso directo via QR sin registro | Puede ver la cola actual, información del bar, acceso limitado sin interacción |
+| **Miembro** | `UserRole.MEMBER` | Registro por email o conversión desde invitado | Puede buscar música, agregar canciones a la cola, gastar puntos, ver menú, participar en gamificación |
+| **Propietario de Bar** | `UserRole.BAR_OWNER` | Registro por email con verificación de negocio | Puede gestionar su bar, controlar la cola, ver analytics, gestionar menú, configurar sistema de puntos, generar códigos QR |
+| **Super Administrador** | `UserRole.SUPER_ADMIN` | Invitación del sistema con permisos especiales | Acceso completo a todos los bares, usuarios, configuraciones globales, métricas del sistema, gestión de roles |
+
+#### Jerarquía de Roles
+```
+SUPER_ADMIN > BAR_OWNER > MEMBER > GUEST
+```
+
+#### Flujos de Migración de Roles
+- **GUEST → MEMBER**: Registro con email durante la sesión
+- **MEMBER → BAR_OWNER**: Solicitud de verificación de negocio
+- **BAR_OWNER → SUPER_ADMIN**: Solo por invitación del sistema
 
 ### 2.2 Módulos de Funcionalidades
 

@@ -79,8 +79,10 @@ graph TD
 - **Cache:** Redis 7.x
 - **WebSockets:** Socket.IO
 - **Contenedores:** Docker + Docker Compose
-- **Autenticación:** JWT + bcrypt
+- **Autenticación:** JWT + bcrypt + Sistema de Roles Unificado
 - **APIs Externas:** Spotify Web API, YouTube Data API, Stripe
+- **Gestión de Roles:** Constantes TypeScript `UserRole` enum
+- **Middleware:** Autorización basada en roles con validación tipada
 
 ## 3. Definiciones de Rutas
 
@@ -109,9 +111,61 @@ graph TD
 | /api/points/* | points-service | Sistema de puntos |
 | /api/menu/* | menu-service | Gestión de menús |
 
-## 4. Definiciones de API
+## 4. Sistema de Roles Unificado
 
-### 4.1 Auth Service API
+### 4.1 Definición de Roles
+
+```typescript
+enum UserRole {
+  GUEST = 'guest',
+  MEMBER = 'member', 
+  BAR_OWNER = 'bar_owner',
+  SUPER_ADMIN = 'super_admin'
+}
+```
+
+### 4.2 Implementación en Código
+
+#### Controladores de Autenticación
+- **Archivo:** `authController.ts`
+- **Cambios:** Eliminación de cadenas literales, uso exclusivo de `UserRole` constantes
+- **Funciones afectadas:** `registerMember`, `registerBarOwner`, validaciones de rol
+
+#### Middleware de Autorización
+- **Archivo:** `middleware/auth.ts`
+- **Funciones:** `requireRole`, `requireAnyRole`, `requireOwnershipOrRole`
+- **Implementación:** Validación tipada con constantes `UserRole`
+
+#### Rutas de Usuario
+- **Archivo:** `src/routes/users.ts`
+- **Cambios:** Reemplazo de `'admin'` por `UserRole.SUPER_ADMIN`
+- **Beneficio:** Consistencia en toda la aplicación
+
+### 4.3 Configuración de Permisos
+
+| Rol | Acceso a Rutas | Permisos Especiales |
+|-----|----------------|--------------------|
+| `GUEST` | Públicas, información básica | Solo lectura |
+| `MEMBER` | Interacción con música, puntos | Agregar a cola, gastar puntos |
+| `BAR_OWNER` | Gestión de bar, analytics | Control total del establecimiento |
+| `SUPER_ADMIN` | Todas las rutas | Gestión global del sistema |
+
+### 4.4 Integración con Servicios
+
+```typescript
+// Ejemplo de uso en servicios
+import { UserRole } from '../types/UserRole';
+
+// En lugar de: requireRole('admin')
+requireRole(UserRole.SUPER_ADMIN);
+
+// En lugar de: user.role === 'bar_owner'
+user.role === UserRole.BAR_OWNER;
+```
+
+## 5. Definiciones de API
+
+### 5.1 Auth Service API
 
 **Registro de usuario**
 ```
