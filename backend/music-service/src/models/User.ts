@@ -3,12 +3,20 @@ import logger from '../../../shared/utils/logger';
 import { ValidationError, NotFoundError } from '../../../shared/utils/errors';
 import { validateId, validateEmail } from '../../../shared/utils/validation';
 
+// User roles enumeration
+export enum UserRole {
+  GUEST = 'guest',
+  MEMBER = 'member',
+  BAR_OWNER = 'bar_owner',
+  SUPER_ADMIN = 'super_admin'
+}
+
 export interface UserData {
   id: string;
   email: string;
   first_name?: string;
   last_name?: string;
-  role: 'customer' | 'bar_owner' | 'admin';
+  role: UserRole;
   is_verified: boolean;
   is_active: boolean;
   created_at: Date;
@@ -19,13 +27,13 @@ export interface CreateUserData {
   email: string;
   first_name?: string;
   last_name?: string;
-  role?: 'customer' | 'bar_owner' | 'admin';
+  role?: UserRole;
 }
 
 export interface UpdateUserData {
   first_name?: string;
   last_name?: string;
-  role?: 'customer' | 'bar_owner' | 'admin';
+  role?: UserRole;
   is_verified?: boolean;
   is_active?: boolean;
 }
@@ -50,7 +58,7 @@ export class UserModel {
           data.email,
           data.first_name || null,
           data.last_name || null,
-          data.role || 'customer',
+          data.role || UserRole.MEMBER,
           false, // is_verified
           true   // is_active
         ]

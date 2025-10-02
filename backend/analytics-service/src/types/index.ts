@@ -1,10 +1,11 @@
 import { Request } from 'express';
+import { UserRole } from './common';
 
 // Base interfaces
 export interface User {
   id: string;
   email: string;
-  role: 'admin' | 'bar_owner' | 'customer';
+  role: UserRole;
   bar_id?: string;
 }
 

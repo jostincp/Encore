@@ -1,6 +1,14 @@
 // Local type definitions to replace shared imports
 import { Request } from 'express';
 
+// User roles enumeration
+export enum UserRole {
+  GUEST = 'guest',
+  MEMBER = 'member',
+  BAR_OWNER = 'bar_owner',
+  SUPER_ADMIN = 'super_admin'
+}
+
 export interface Config {
   port: number;
   nodeEnv: string;
@@ -24,7 +32,7 @@ export interface User {
   id: string;
   email: string;
   username: string;
-  role: 'admin' | 'bar_owner' | 'customer';
+  role: UserRole;
   bar_id?: string;
   created_at: Date;
   updated_at: Date;
@@ -105,7 +113,7 @@ export class ForbiddenError extends AppError {
 export interface JwtPayload {
   userId: string;
   email: string;
-  role: string;
+  role: UserRole;
   barId?: string;
 }
 
@@ -119,7 +127,7 @@ export const verifyToken = (token: string): JwtPayload => {
   return {
     userId: 'mock-user-id',
     email: 'mock@email.com',
-    role: 'customer'
+    role: UserRole.MEMBER
   };
 };
 

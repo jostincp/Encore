@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from '../../../shared/utils/jwt';
 import logger from '../../../shared/utils/logger';
 import { getPool } from '../../../shared/database';
 import stripeService from '../services/stripeService';
+import { UserRole } from '../../../shared/types/index';
 
 export class PaymentController {
   // Create payment intent
@@ -84,7 +85,7 @@ export class PaymentController {
      }
 
      // Check if user has permission to view this payment
-     if (payment.user_id !== userId && req.user!.role !== 'admin') {
+     if (payment.user_id !== userId && req.user!.role !== UserRole.SUPER_ADMIN) {
        // Check if user owns the bar
        const result = await getPool().query(
          'SELECT owner_id FROM bars WHERE id = $1',
@@ -171,7 +172,7 @@ export class PaymentController {
       const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin') {
+      if (req.user!.role !== UserRole.SUPER_ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [barId]
@@ -258,7 +259,7 @@ export class PaymentController {
       }
 
       // Verify admin has permission for this payment
-      if (req.user!.role !== 'admin') {
+      if (req.user!.role !== UserRole.SUPER_ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [payment.bar_id]
@@ -315,7 +316,7 @@ export class PaymentController {
       const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin') {
+      if (req.user!.role !== UserRole.SUPER_ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [barId]

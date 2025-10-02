@@ -3,12 +3,13 @@ import { StringValue } from 'ms';
 import { Request, Response, NextFunction } from 'express';
 import { UnauthorizedError, ForbiddenError } from './errors';
 import { logError } from './logger';
+import { UserRole } from '../types/index';
 
 // Interfaces para el payload del JWT
 export interface JwtPayload {
   userId: string;
   email: string;
-  role: 'admin' | 'customer';
+  role: UserRole;
   barId?: string;
   iat?: number;
   exp?: number;
@@ -131,7 +132,7 @@ export const requireBarAccess = (req: Request, res: Response, next: NextFunction
     }
 
     // Si es admin, debe tener acceso al bar específico
-    if (req.user.role === 'admin' && req.user.barId !== barId) {
+    if (req.user.role === UserRole.SUPER_ADMIN && req.user.barId !== barId) {
       throw new ForbiddenError('Access denied to this bar');
     }
 
@@ -187,7 +188,7 @@ export const generateTableSessionToken = (tableId: string, barId: string): strin
       tableId,
       barId,
       type: 'table_session',
-      role: 'customer'
+      role: UserRole.MEMBER
     },
     JWT_SECRET,
     {
@@ -231,7 +232,7 @@ export const authenticateTableSession = (req: Request, res: Response, next: Next
     req.user = {
       userId: `table_${sessionData.tableId}`,
       email: '',
-      role: 'customer',
+      role: UserRole.MEMBER,
       barId: sessionData.barId
     };
     

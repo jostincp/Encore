@@ -8,6 +8,7 @@ import { validateRequired, validateUUID, validateEnum } from '../../../shared/ut
 import { QueueEventEmitter } from '../events/queueEvents';
 import { emitToBar, emitToUser } from '../websocket/socketHandler';
 import { redisClient } from '../../../shared/cache';
+import { UserRole } from '../../../shared/types/index';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -272,7 +273,7 @@ export class QueueController {
       validateUUID(id, 'id');
       
       // Check permissions
-      if (userRole !== 'admin' && userRole !== 'bar_owner') {
+      if (userRole !== UserRole.SUPER_ADMIN && userRole !== UserRole.BAR_OWNER) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. Admin or bar owner role required.'
@@ -415,7 +416,7 @@ export class QueueController {
       }
       
       // Check permissions
-      if (userRole !== 'admin' && userRole !== 'bar_owner') {
+      if (userRole !== UserRole.SUPER_ADMIN && userRole !== UserRole.BAR_OWNER) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. Admin or bar owner role required.'
@@ -465,7 +466,7 @@ export class QueueController {
       validateUUID(barId, 'barId');
       
       // Check permissions
-      if (userRole !== 'admin' && userRole !== 'bar_owner') {
+      if (userRole !== UserRole.SUPER_ADMIN && userRole !== UserRole.BAR_OWNER) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. Admin or bar owner role required.'

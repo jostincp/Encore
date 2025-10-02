@@ -4,6 +4,7 @@ import { getPool } from '../../../shared/database';
 import logger from '../../../shared/utils/logger';
 import { validateRequest } from '../../../shared/middleware/validation';
 import { AuthenticatedRequest } from '../../../shared/utils/jwt';
+import { UserRole } from '../../../shared/types/index';
 
 export class PointsController {
   // Get user points balance
@@ -83,13 +84,13 @@ export class PointsController {
       const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin') {
+      if (req.user!.role !== UserRole.SUPER_ADMIN) {
         // Check if user is bar owner
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [bar_id]
         );
-        
+
         if (result.rows.length === 0 || result.rows[0].owner_id !== adminId) {
           res.status(403).json({
             success: false,
@@ -146,12 +147,12 @@ export class PointsController {
       const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin') {
+      if (req.user!.role !== UserRole.SUPER_ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [bar_id]
         );
-        
+
         if (result.rows.length === 0 || result.rows[0].owner_id !== adminId) {
           res.status(403).json({
             success: false,
@@ -215,12 +216,12 @@ export class PointsController {
       const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin') {
+      if (req.user!.role !== UserRole.SUPER_ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [barId]
         );
-        
+
         if (result.rows.length === 0 || result.rows[0].owner_id !== userId) {
           res.status(403).json({
             success: false,
@@ -292,12 +293,12 @@ export class PointsController {
       const userId = req.user!.userId;
       
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin') {
+      if (req.user!.role !== UserRole.SUPER_ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [barId]
         );
-        
+
         if (result.rows.length === 0 || result.rows[0].owner_id !== userId) {
           res.status(403).json({
             success: false,
@@ -356,12 +357,12 @@ export class PointsController {
       const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== 'admin') {
+      if (req.user!.role !== UserRole.SUPER_ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [bar_id]
         );
-        
+
         if (result.rows.length === 0 || result.rows[0].owner_id !== adminId) {
           res.status(403).json({
             success: false,

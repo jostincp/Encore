@@ -4,6 +4,14 @@
 export type ID = string;
 export type Timestamp = Date;
 
+// User roles enumeration
+export enum UserRole {
+  GUEST = 'guest',
+  MEMBER = 'member',
+  BAR_OWNER = 'bar_owner',
+  SUPER_ADMIN = 'super_admin'
+}
+
 // Validation types
 export interface ValidationResult {
   isValid: boolean;
@@ -14,7 +22,7 @@ export interface User {
   id: string;
   email: string;
   password?: string;
-  role: 'admin' | 'customer';
+  role: UserRole;
   barId?: string;
   createdAt: Date;
   updatedAt: Date;

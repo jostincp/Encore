@@ -1,5 +1,13 @@
 // Common types for the Analytics Service
 
+// User roles enumeration
+export enum UserRole {
+  GUEST = 'guest',
+  MEMBER = 'member',
+  BAR_OWNER = 'bar_owner',
+  SUPER_ADMIN = 'super_admin'
+}
+
 export interface BaseEntity {
   id: string;
   created_at: Date;
@@ -314,7 +322,7 @@ export interface User {
   id: string;
   email: string;
   username: string;
-  role: 'admin' | 'manager' | 'staff' | 'customer';
+  role: UserRole;
   barId?: string;
   permissions: string[];
   isActive: boolean;

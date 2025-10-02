@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Request, Response, NextFunction } from 'express';
 import { ValidationError } from './errors';
+import { UserRole } from '../types/index';
 
 // ==============================================
 // ESQUEMAS DE VALIDACIÓN CON ZOD
@@ -69,7 +70,7 @@ export const registerSchema = z.object({
     password: passwordSchema,
     firstName: nameSchema,
     lastName: nameSchema,
-    role: z.enum(['customer', 'bar_owner']).optional().default('customer')
+    role: z.nativeEnum(UserRole).optional().default(UserRole.MEMBER)
   })
 });
 

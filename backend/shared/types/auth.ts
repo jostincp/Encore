@@ -1,11 +1,11 @@
 import { Request } from 'express';
-import { User } from './index';
+import { User, UserRole } from './index';
 
 // JWT Payload interface
 export interface JwtPayload {
   userId: string;
   email: string;
-  role: 'admin' | 'customer';
+  role: UserRole;
   barId?: string;
   iat?: number;
   exp?: number;
@@ -47,7 +47,7 @@ export interface LoginRequest {
 export interface RegisterRequest {
   email: string;
   password: string;
-  role?: 'admin' | 'customer';
+  role?: UserRole;
   barId?: string;
 }
 
