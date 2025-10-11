@@ -21,6 +21,8 @@ import { Progress } from '@/components/ui/progress';
 import { Layout, PageContainer } from '@/components/ui/layout';
 import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
+import { useWebSocket } from '@/utils/websocket';
+import { WS_EVENTS } from '@/utils/websocket';
 
 import { formatDuration, formatRelativeTime } from '@/utils/format';
 import { QueueItem } from '@/types';
@@ -28,16 +30,49 @@ import { QueueItem } from '@/types';
 export default function QueuePage() {
   const { user, queue, currentSong } = useAppStore();
   const router = useRouter();
+  const { connect, on, off, isConnected } = useWebSocket();
 
   const [currentTime, setCurrentTime] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [wsConnected, setWsConnected] = useState(false);
 
   useEffect(() => {
     if (!user) {
       router.push('/qr');
       return;
     }
-  }, [user, router]);
+
+    // Conectar WebSocket
+    const initWebSocket = async () => {
+      try {
+        await connect(user.tableNumber);
+        setWsConnected(true);
+
+        // Escuchar actualizaciones de cola
+        on(WS_EVENTS.QUEUE_UPDATED, (data) => {
+          console.log('Queue updated:', data);
+          // Aquí actualizaríamos la cola con los datos del servidor
+          // Por ahora, simulamos
+        });
+
+        // Escuchar canción actual
+        on(WS_EVENTS.NOW_PLAYING, (data) => {
+          console.log('Now playing:', data);
+          // Actualizar canción actual
+        });
+
+      } catch (error) {
+        console.error('WebSocket connection failed:', error);
+      }
+    };
+
+    initWebSocket();
+
+    return () => {
+      off(WS_EVENTS.QUEUE_UPDATED);
+      off(WS_EVENTS.NOW_PLAYING);
+    };
+  }, [user, router, connect, on, off]);
 
   useEffect(() => {
     // Simular progreso de la canción actual

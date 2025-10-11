@@ -27,6 +27,7 @@ import { useToast } from '@/hooks/useToast';
 import { useDebounce } from '@/hooks/useDebounce';
 import { formatDuration, formatPoints } from '@/utils/format';
 import { Song } from '@/types';
+import axios from 'axios';
 
 // Mock data para el catálogo musical
 const mockSongs: Song[] = [
@@ -83,11 +84,12 @@ export default function MusicPage() {
   const { success: showSuccessToast, error: showErrorToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('all');
-  const [songs, setSongs] = useState<Song[]>(mockSongs);
+  const [songs, setSongs] = useState<Song[]>([]);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [showPriorityDialog, setShowPriorityDialog] = useState(false);
-  
-  const debouncedSearch = useDebounce(searchTerm, 300);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const debouncedSearch = useDebounce(searchTerm, 500);
 
   useEffect(() => {
     if (!user) {
@@ -97,59 +99,81 @@ export default function MusicPage() {
   }, [user, router]);
 
   useEffect(() => {
-    // Filtrar canciones basado en búsqueda y género
-    let filtered = mockSongs;
-    
-    if (debouncedSearch) {
-      filtered = filtered.filter(song => 
-        song.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-        song.artist.toLowerCase().includes(debouncedSearch.toLowerCase())
-      );
-    }
-    
-    if (selectedGenre !== 'all') {
-      filtered = filtered.filter(song => song.genre?.toLowerCase() === selectedGenre.toLowerCase());
-    }
-    
-    setSongs(filtered);
-  }, [debouncedSearch, selectedGenre]);
+    const searchSongs = async () => {
+      if (!debouncedSearch.trim()) {
+        setSongs([]);
+        return;
+      }
 
-  const handleSongRequest = (song: Song, isPriority = false) => {
+      setIsSearching(true);
+      try {
+        const response = await axios.get('http://localhost:3003/api/music/songs/external/youtube/search', {
+          params: { q: debouncedSearch, maxResults: 25 }
+        });
+
+        // Transformar respuesta de la API a formato Song
+        const apiSongs: Song[] = response.data.songs.map((item: any) => ({
+          id: item.song_id,
+          title: item.title,
+          artist: item.artist,
+          duration: item.duration,
+          thumbnailUrl: item.thumbnailUrl,
+          genre: 'Unknown', // La API no proporciona género
+          pointsCost: 50 // Costo por defecto
+        }));
+
+        setSongs(apiSongs);
+      } catch (error) {
+        console.error('Error searching songs:', error);
+        showErrorToast('Error al buscar canciones');
+        setSongs([]);
+      } finally {
+        setIsSearching(false);
+      }
+    };
+
+    searchSongs();
+  }, [debouncedSearch, showErrorToast]);
+
+  const handleSongRequest = async (song: Song, isPriority = false) => {
     if (!user) return;
-    
+
     const cost = isPriority ? 100 : 50;
-    
+
     if (user.points < cost) {
       showErrorToast(`Necesitas ${cost} puntos para solicitar esta canción`);
       return;
     }
 
-    // Verificar si ya está en cola
-    const isAlreadyInQueue = queue.some(item => item.song.id === song.id && item.requestedBy === user.id);
-    if (isAlreadyInQueue) {
-      showErrorToast('Esta canción ya está en tu cola');
-      return;
+    try {
+      // Llamar a la API para añadir a la cola
+      const response = await axios.post('http://localhost:3003/api/music/queue/default-bar/add', {
+        song_id: song.id,
+        priority_play: isPriority,
+        points_used: cost
+      });
+
+      if (response.data.success) {
+        showSuccessToast(
+          isPriority
+            ? `¡${song.title} agregada con Priority Play!`
+            : `¡${song.title} agregada a la cola!`
+        );
+
+        // Actualizar puntos del usuario (restar los usados)
+        // Esto debería venir del backend, pero por ahora lo simulamos
+        // user.points -= cost;
+
+        setSelectedSong(null);
+        setShowPriorityDialog(false);
+      } else {
+        showErrorToast(response.data.message || 'Error al añadir canción a la cola');
+      }
+    } catch (error: any) {
+      console.error('Error adding song to queue:', error);
+      const errorMessage = error.response?.data?.message || 'Error al añadir canción a la cola';
+      showErrorToast(errorMessage);
     }
-
-    addToQueue({
-      id: `queue_${Date.now()}`,
-      song,
-      requestedBy: user.id,
-      tableNumber: user.tableNumber || 0,
-      timestamp: new Date(),
-      status: 'pending',
-      isPriority,
-      pointsSpent: cost
-    });
-
-    showSuccessToast(
-      isPriority 
-        ? `¡${song.title} agregada con Priority Play!` 
-        : `¡${song.title} agregada a la cola!`
-    );
-    
-    setSelectedSong(null);
-    setShowPriorityDialog(false);
   };
 
   const genres = ['all', 'rock', 'pop', 'jazz', 'electronic', 'reggaeton', 'salsa'];

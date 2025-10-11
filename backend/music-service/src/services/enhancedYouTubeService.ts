@@ -654,6 +654,134 @@ export class EnhancedYouTubeService {
     });
   }
 
+  /**
+   * Buscar canciones en YouTube con filtrado de contenido inapropiado
+   * Este es el método principal para la rocola digital
+   */
+  public async searchSongs(query: string, options: {
+    maxResults?: number;
+    regionCode?: string;
+  } = {}): Promise<{
+    songs: Array<{
+      id: string;
+      song_id: string;
+      title: string;
+      artist: string;
+      thumbnailUrl: string;
+      duration: number;
+    }>;
+    total: number;
+  }> {
+    const { maxResults = 25, regionCode = 'US' } = options;
+
+    return this.withRetry(async () => {
+      const cacheKey = `youtube:songs:${query}:${maxResults}:${regionCode}`;
+
+      const cached = await redisHelpers.get(cacheKey);
+      if (cached) {
+        this.metrics.cacheHits++;
+        return cached;
+      }
+
+      this.metrics.cacheMisses++;
+
+      // Buscar videos en YouTube
+      const videos = await this.searchVideos(query, {
+        maxResults: Math.min(maxResults * 2, 50), // Buscar más para filtrar
+        regionCode,
+        order: 'relevance'
+      });
+
+      // Filtrar y procesar videos para obtener detalles completos
+      const songPromises = videos
+        .filter(video => this.isAppropriateContent(video))
+        .slice(0, maxResults)
+        .map(async (video) => {
+          try {
+            // Obtener detalles completos del video
+            const videoId = video.videoId || video.id.split(':').pop();
+            const details = await this.getVideoDetails(videoId);
+
+            return {
+              id: video.id,
+              song_id: videoId,
+              title: details.title,
+              artist: details.artist,
+              thumbnailUrl: details.thumbnailUrl,
+              duration: details.duration
+            };
+          } catch (error) {
+            logger.warn('Failed to get video details for song search', {
+              videoId: video.videoId,
+              error: error instanceof Error ? error.message : 'Unknown error'
+            });
+            // Fallback con datos básicos
+            return {
+              id: video.id,
+              song_id: video.videoId || video.id.split(':').pop() || '',
+              title: video.title,
+              artist: video.artist || 'Unknown Artist',
+              thumbnailUrl: video.thumbnailUrl,
+              duration: 0
+            };
+          }
+        });
+
+      const songs = await Promise.all(songPromises);
+
+      const result = {
+        songs: songs.filter(song => song.duration > 30 && song.duration < 600), // 30s - 10min
+        total: songs.length
+      };
+
+      // Cache for 10 minutes
+      await redisHelpers.set(cacheKey, result, 600);
+
+      return result;
+    });
+  }
+
+  /**
+   * Filtrar contenido inapropiado basado en título, descripción y tags
+   */
+  private isAppropriateContent(video: any): boolean {
+    const content = `${video.title} ${video.description || ''} ${video.tags?.join(' ') || ''}`.toLowerCase();
+
+    // Lista de palabras clave para contenido inapropiado
+    const inappropriateKeywords = [
+      'nsfw', 'porn', 'sex', 'nude', 'naked', 'adult', 'xxx', 'hentai',
+      'violence', 'gore', 'blood', 'kill', 'death', 'murder',
+      'drugs', 'cocaine', 'heroin', 'meth', 'weed', 'marijuana',
+      'hate', 'racist', 'nazi', 'kkk', 'supremacist',
+      'explicit', 'fuck', 'shit', 'damn', 'bitch', 'asshole'
+    ];
+
+    // Verificar si contiene palabras inapropiadas
+    const hasInappropriateContent = inappropriateKeywords.some(keyword =>
+      content.includes(keyword)
+    );
+
+    // Verificar si es contenido musical (tiene términos relacionados con música)
+    const musicKeywords = [
+      'music', 'song', 'track', 'album', 'artist', 'band', 'singer',
+      'official', 'video', 'audio', 'lyrics', 'remix', 'cover',
+      'rock', 'pop', 'jazz', 'hip hop', 'rap', 'electronic', 'dance'
+    ];
+
+    const isMusicalContent = musicKeywords.some(keyword =>
+      content.includes(keyword)
+    );
+
+    // Verificar si el canal parece ser musical
+    const channelName = video.channelTitle?.toLowerCase() || '';
+    const isMusicChannel = channelName.includes('music') ||
+                          channelName.includes('records') ||
+                          channelName.includes('official') ||
+                          channelName.includes('vevo');
+
+    return !hasInappropriateContent && (isMusicalContent || isMusicChannel);
+  }
+
   // Método para invalidar caché específico
   public async invalidateCache(pattern: string): Promise<void> {
     try {
@@ -746,6 +874,9 @@ export const enhancedYouTubeService = EnhancedYouTubeService.getInstance();
 // Funciones de utilidad para mantener compatibilidad
 export const searchYouTubeVideos = (query: string, options?: any) =>
   enhancedYouTubeService.searchVideos(query, options);
+
+export const searchYouTubeSongs = (query: string, options?: any) =>
+  enhancedYouTubeService.searchSongs(query, options);
 
 export const getYouTubeVideoDetails = (videoId: string) =>
   enhancedYouTubeService.getVideoDetails(videoId);

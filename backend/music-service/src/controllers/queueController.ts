@@ -6,6 +6,7 @@ import logger from '../../../shared/utils/logger';
 import { validatePaginationParams } from '../../../shared/utils/validation';
 import { AuthenticatedRequest } from '../../../shared/types/auth';
 import { BarService } from '../services/barService';
+import { queueEventService } from '../services/queueEventService';
 
 export class QueueController {
   // Add song to queue
@@ -98,10 +99,13 @@ export class QueueController {
       };
       
       const queueEntry = await QueueModel.create(queueData);
-      
+
       // Get full queue entry with song and user details
       const fullQueueEntry = await QueueModel.findById(queueEntry.id, true);
-      
+
+      // Emit event for real-time updates
+      await queueEventService.songAdded(bar_id, fullQueueEntry);
+
       logger.info('Song added to queue via API', {
         queueId: queueEntry.id,
         barId: bar_id,
@@ -109,7 +113,7 @@ export class QueueController {
         userId: user_id,
         priorityPlay: priority_play
       });
-      
+
       res.status(201).json({
         success: true,
         data: fullQueueEntry
@@ -258,7 +262,7 @@ export class QueueController {
       }
       
       const updatedEntry = await QueueModel.update(id, updateData);
-      
+
       if (!updatedEntry) {
         res.status(404).json({
           success: false,
@@ -266,16 +270,21 @@ export class QueueController {
         });
         return;
       }
-      
+
       // Get full updated entry with details
       const fullUpdatedEntry = await QueueModel.findById(id, true);
-      
+
+      // Emit event for real-time updates
+      if (updateData.status) {
+        await queueEventService.songStatusUpdated(queueEntry.bar_id, fullUpdatedEntry, queueEntry.status, updateData.status);
+      }
+
       logger.info('Queue entry updated via API', {
         queueId: id,
         updatedFields: Object.keys(updateData),
         userId
       });
-      
+
       res.json({
         success: true,
         data: fullUpdatedEntry
@@ -326,7 +335,7 @@ export class QueueController {
       }
       
       const deleted = await QueueModel.delete(id);
-      
+
       if (!deleted) {
         res.status(404).json({
           success: false,
@@ -334,12 +343,15 @@ export class QueueController {
         });
         return;
       }
-      
+
+      // Emit event for real-time updates
+      await queueEventService.songRemoved(queueEntry.bar_id, id);
+
       logger.info('Song removed from queue via API', {
         queueId: id,
         userId
       });
-      
+
       res.json({
         success: true,
         message: 'Song removed from queue'
@@ -384,13 +396,16 @@ export class QueueController {
       }
       
       await QueueModel.reorderQueue(barId, queue_ids);
-      
+
+      // Emit event for real-time updates
+      await queueEventService.queueReordered(barId, queue_ids);
+
       logger.info('Queue reordered via API', {
         barId,
         queueCount: queue_ids.length,
         userId
       });
-      
+
       res.json({
         success: true,
         message: 'Queue reordered successfully'
@@ -427,14 +442,17 @@ export class QueueController {
       }
       
       const deletedCount = await QueueModel.clearQueue(barId, status);
-      
+
+      // Emit event for real-time updates
+      await queueEventService.queueCleared(barId, deletedCount);
+
       logger.info('Queue cleared via API', {
         barId,
         deletedCount,
         status,
         userId
       });
-      
+
       res.json({
         success: true,
         message: `${deletedCount} songs removed from queue`

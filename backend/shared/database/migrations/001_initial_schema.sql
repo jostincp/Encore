@@ -105,7 +105,7 @@ CREATE TABLE songs (
 );
 
 -- Queue table (Queue Service)
-CREATE TABLE queue_items (
+CREATE TABLE queue (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     bar_id UUID NOT NULL REFERENCES bars(id) ON DELETE CASCADE,
     song_id UUID NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
@@ -239,10 +239,10 @@ CREATE INDEX idx_table_sessions_expires_at ON table_sessions(expires_at);
 CREATE INDEX idx_songs_external_id_platform ON songs(external_id, platform);
 CREATE INDEX idx_songs_title ON songs(title);
 CREATE INDEX idx_songs_artist ON songs(artist);
-CREATE INDEX idx_queue_items_bar_id ON queue_items(bar_id);
-CREATE INDEX idx_queue_items_status ON queue_items(status);
-CREATE INDEX idx_queue_items_position ON queue_items(position);
-CREATE INDEX idx_queue_items_requested_at ON queue_items(requested_at);
+CREATE INDEX idx_queue_bar_id ON queue(bar_id);
+CREATE INDEX idx_queue_status ON queue(status);
+CREATE INDEX idx_queue_position ON queue(position);
+CREATE INDEX idx_queue_requested_at ON queue(requested_at);
 CREATE INDEX idx_menu_items_bar_id ON menu_items(bar_id);
 CREATE INDEX idx_menu_items_category_id ON menu_items(category_id);
 CREATE INDEX idx_menu_items_is_available ON menu_items(is_available);
@@ -277,7 +277,7 @@ CREATE TRIGGER update_bar_settings_updated_at BEFORE UPDATE ON bar_settings FOR 
 CREATE TRIGGER update_tables_updated_at BEFORE UPDATE ON tables FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_table_sessions_updated_at BEFORE UPDATE ON table_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_songs_updated_at BEFORE UPDATE ON songs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-CREATE TRIGGER update_queue_items_updated_at BEFORE UPDATE ON queue_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_queue_updated_at BEFORE UPDATE ON queue FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_menu_categories_updated_at BEFORE UPDATE ON menu_categories FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_menu_items_updated_at BEFORE UPDATE ON menu_items FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

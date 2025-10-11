@@ -5,6 +5,7 @@ import { logger } from '../../../shared/utils/logger';
 import { redisClient } from '../../../shared/cache';
 import { QueueModel } from '../models/Queue';
 import { BarModel } from '../../../shared/models/Bar';
+import Redis from 'ioredis';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -23,7 +24,91 @@ const barConnections = new Map<string, Set<string>>();
 // Store user connections
 const userConnections = new Map<string, string>();
 
+/**
+ * Handle queue events from Redis pub/sub
+ */
+async function handleQueueEvent(io: SocketIOServer, eventData: any) {
+  const { barId, eventType, data } = eventData;
+
+  logger.debug('Processing queue event', { barId, eventType });
+
+  try {
+    switch (eventType) {
+      case 'song_added':
+        // Emit to all clients in the bar
+        io.to(`bar_${barId}`).emit('queue_updated', {
+          type: 'song_added',
+          data: data.queueEntry
+        });
+        break;
+
+      case 'song_status_updated':
+        // Emit to all clients in the bar
+        io.to(`bar_${barId}`).emit('queue_updated', {
+          type: 'song_status_updated',
+          data: {
+            queueEntry: data.queueEntry,
+            oldStatus: data.oldStatus,
+            newStatus: data.newStatus
+          }
+        });
+        break;
+
+      case 'song_removed':
+        // Emit to all clients in the bar
+        io.to(`bar_${barId}`).emit('queue_updated', {
+          type: 'song_removed',
+          data: { queueId: data.queueId }
+        });
+        break;
+
+      case 'queue_reordered':
+        // Emit to all clients in the bar
+        io.to(`bar_${barId}`).emit('queue_updated', {
+          type: 'queue_reordered',
+          data: { newOrder: data.newOrder }
+        });
+        break;
+
+      case 'queue_cleared':
+        // Emit to all clients in the bar
+        io.to(`bar_${barId}`).emit('queue_updated', {
+          type: 'queue_cleared',
+          data: { clearedCount: data.clearedCount }
+        });
+        break;
+
+      default:
+        logger.warn('Unknown queue event type', { eventType });
+    }
+  } catch (error) {
+    logger.error('Failed to handle queue event', error);
+  }
+}
+
 export function initializeSocketIO(io: SocketIOServer) {
+  // Initialize Redis subscriber for queue events
+  const redisSubscriber = new Redis(config.redis.url);
+
+  redisSubscriber.subscribe('queue:events', (err) => {
+    if (err) {
+      logger.error('Failed to subscribe to queue events', err);
+    } else {
+      logger.info('Subscribed to queue events');
+    }
+  });
+
+  redisSubscriber.on('message', async (channel, message) => {
+    if (channel === 'queue:events') {
+      try {
+        const eventData = JSON.parse(message);
+        await handleQueueEvent(io, eventData);
+      } catch (error) {
+        logger.error('Failed to process queue event', error);
+      }
+    }
+  });
+
   // Authentication middleware
   io.use(async (socket: AuthenticatedSocket, next) => {
     try {

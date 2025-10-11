@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { SongModel, CreateSongData, UpdateSongData, SongSearchFilters } from '../models/Song';
 import { YouTubeService } from '../services/youtubeService';
 import { SpotifyService } from '../services/spotifyService';
+import { enhancedYouTubeService } from '../services/enhancedYouTubeService';
 import { asyncHandler } from '../../../shared/utils/errors';
 import logger from '../../../shared/utils/logger';
 import { validatePaginationParams } from '../../../shared/utils/validation';
@@ -419,10 +420,10 @@ export class SongController {
     try {
       const {
         q: query,
-        page = 1,
-        limit = 25
+        maxResults = 25,
+        regionCode = 'US'
       } = req.query;
-      
+
       if (!query) {
         res.status(400).json({
           success: false,
@@ -430,26 +431,23 @@ export class SongController {
         });
         return;
       }
-      
-      const { offset, validatedLimit } = validatePaginationParams(
-        parseInt(page as string),
-        parseInt(limit as string)
-      );
-      
-      const results = await YouTubeService.searchSongs(
+
+      const results = await enhancedYouTubeService.searchSongs(
         query as string,
-        validatedLimit,
-        offset
+        {
+          maxResults: Math.min(parseInt(maxResults as string), 50),
+          regionCode: regionCode as string
+        }
       );
-      
+
       res.json({
         success: true,
-        data: results.videos,
-        pagination: {
-          page: parseInt(page as string),
-          limit: validatedLimit,
+        data: results.songs,
+        meta: {
+          query: query,
           total: results.total,
-          pages: Math.ceil(results.total / validatedLimit)
+          maxResults: parseInt(maxResults as string),
+          regionCode: regionCode
         }
       });
     } catch (error) {

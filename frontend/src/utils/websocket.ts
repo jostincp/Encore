@@ -9,7 +9,7 @@ class WebSocketManager {
   connect(tableNumber?: number): Promise<Socket> {
     return new Promise((resolve, reject) => {
       try {
-        const serverUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3001';
+        const serverUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3005';
         
         this.socket = io(serverUrl, {
           transports: ['websocket', 'polling'],

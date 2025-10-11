@@ -2,27 +2,23 @@ import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { authenticateToken } from '../middleware/auth';
 import { handleValidationErrors } from '../middleware/validation';
-
-// Mock controller and rate limiting
-const QueueController = {
-  addToQueue: (req: any, res: any) => res.json({ success: true, message: 'Song added to queue' }),
-  getUserQueue: (req: any, res: any) => res.json({ success: true, data: [] }),
-  getUserQueuePosition: (req: any, res: any) => res.json({ success: true, position: 1 }),
-  removeFromQueue: (req: any, res: any) => res.json({ success: true, message: 'Song removed from queue' }),
-  getQueue: (req: any, res: any) => res.json({ success: true, data: [] }),
-  getCurrentlyPlaying: (req: any, res: any) => res.json({ success: true, data: null }),
-  getNextInQueue: (req: any, res: any) => res.json({ success: true, data: null }),
-  updateQueueEntry: (req: any, res: any) => res.json({ success: true, message: 'Queue entry updated' }),
-  reorderQueue: (req: any, res: any) => res.json({ success: true, message: 'Queue reordered' }),
-  clearQueue: (req: any, res: any) => res.json({ success: true, message: 'Queue cleared' }),
-  getQueueStats: (req: any, res: any) => res.json({ success: true, data: {} }),
-  skipCurrentSong: (req: any, res: any) => res.json({ success: true, message: 'Song skipped' }),
-  playNextSong: (req: any, res: any) => res.json({ success: true, message: 'Playing next song' })
-};
-
-const rateLimitMiddleware = (type: string, limit: number, window: number) => (req: any, res: any, next: any) => next();
+import { QueueController } from '../controllers/queueController';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
+
+// Rate limiting middleware factory
+const rateLimitMiddleware = (type: string, limit: number, windowMs: number) => rateLimit({
+  windowMs,
+  max: limit,
+  message: {
+    success: false,
+    error: 'Too many requests',
+    retryAfter: Math.ceil(windowMs / 1000)
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+}) as any;
 
 // Validation schemas
 const addToQueueValidation = [
@@ -148,33 +144,7 @@ router.post('/:barId/add',
   rateLimitMiddleware('queue_add', 10, 60 * 1000), // 10 requests per minute
   addToQueueValidation,
   handleValidationErrors,
-  (req: any, res: any) => {
-    const { songId } = req.body;
-    if (!songId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Song data is required'
-      });
-    }
-
-    // Simulate duplicate song error for testing
-    if (songId === 'duplicate-song-id') {
-      return res.status(409).json({
-        success: false,
-        error: 'Song already in queue'
-      });
-    }
-
-    res.status(201).json({
-      success: true,
-      message: 'Song added to queue successfully',
-      data: {
-        id: 'queue-123',
-        song_id: songId,
-        position: 1
-      }
-    });
-  }
+  QueueController.addToQueue as any
 );
 
 // Get user's queue entries for a bar
@@ -193,7 +163,7 @@ router.get('/bars/:barId/user',
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 50 }),
   handleValidationErrors,
-  QueueController.getUserQueue
+  QueueController.getUserQueue as any
 );
 
 // Get user's position in queue
@@ -202,7 +172,7 @@ router.get('/bars/:barId/user/position',
   rateLimitMiddleware('general', 200, 15 * 60 * 1000),
   barIdValidation,
   handleValidationErrors,
-  QueueController.getUserQueuePosition
+  QueueController.getUserQueuePosition as any
 );
 
 // Remove user's own song from queue (if pending)
@@ -211,7 +181,7 @@ router.delete('/:id/user',
   rateLimitMiddleware('queue_remove', 20, 60 * 1000), // 20 requests per minute
   queueIdValidation,
   handleValidationErrors,
-  QueueController.removeFromQueue
+  QueueController.removeFromQueue as any
 );
 
 // Public routes (no authentication required)
@@ -222,18 +192,7 @@ router.get('/:barId',
   barIdValidation,
   queueFiltersValidation,
   handleValidationErrors,
-  (req: any, res: any) => {
-    res.json({
-      success: true,
-      data: [],
-      pagination: {
-        page: 1,
-        limit: 50,
-        total: 0,
-        totalPages: 0
-      }
-    });
-  }
+  QueueController.getQueue as any
 );
 
 // Get currently playing song
@@ -241,23 +200,7 @@ router.get('/:barId/current',
   rateLimitMiddleware('public_queue', 300, 15 * 60 * 1000),
   barIdValidation,
   handleValidationErrors,
-  (req: any, res: any) => {
-    const { barId } = req.params;
-
-    // Simulate no current song for testing
-    if (barId === 'empty-bar') {
-      return res.json({
-        success: true,
-        data: null,
-        message: 'No song currently playing'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: null
-    });
-  }
+  QueueController.getCurrentlyPlaying as any
 );
 
 // Get user queue history
@@ -306,29 +249,7 @@ router.patch('/:barId/:queueId/status',
   queueIdValidation,
   updateQueueValidation,
   handleValidationErrors,
-  (req: any, res: any) => {
-    const { status } = req.body;
-    if (!status) {
-      return res.status(400).json({
-        success: false,
-        error: 'Status is required'
-      });
-    }
-    if (!['pending', 'approved', 'rejected', 'playing', 'played', 'skipped'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid status. Must be one of: pending, playing, completed, skipped'
-      });
-    }
-    res.json({
-      success: true,
-      message: 'Queue status updated successfully',
-      data: {
-        id: req.params.queueId,
-        status: status
-      }
-    });
-  }
+  QueueController.updateQueueEntry as any
 );
 
 // Remove song from queue (admin/bar_owner)
@@ -337,30 +258,7 @@ router.delete('/:barId/:queueId',
   rateLimitMiddleware('queue_admin', 50, 60 * 60 * 1000), // 50 requests per hour
   queueIdValidation,
   handleValidationErrors,
-  (req: any, res: any) => {
-    const { queueId } = req.params;
-
-    // Simulate different error scenarios for testing
-    if (queueId === 'nonexistent') {
-      return res.status(404).json({
-        success: false,
-        error: 'Queue entry not found'
-      });
-    }
-
-    // Simulate permission error
-    if (queueId === 'queue-123') {
-      return res.status(403).json({
-        success: false,
-        error: 'You can only remove your own songs'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Song removed from queue successfully'
-    });
-  }
+  QueueController.removeFromQueue as any
 );
 
 // Reorder queue
@@ -370,32 +268,17 @@ router.patch('/bars/:barId/reorder',
   barIdValidation,
   reorderQueueValidation,
   handleValidationErrors,
-  QueueController.reorderQueue
+  QueueController.reorderQueue as any
 );
 
-// Clear queue cache
-router.delete('/:barId/cache',
+// Clear queue
+router.delete('/:barId/clear',
   authenticateToken,
   rateLimitMiddleware('queue_admin', 10, 60 * 60 * 1000), // 10 requests per hour
   barIdValidation,
   clearQueueValidation,
   handleValidationErrors,
-  (req: any, res: any) => {
-    const { barId } = req.params;
-
-    // Simulate cache clearing error for testing
-    if (barId === 'error-bar') {
-      return res.status(500).json({
-        success: false,
-        error: 'Cache clearing failed'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Queue cache cleared successfully'
-    });
-  }
+  QueueController.clearQueue as any
 );
 
 // Get queue statistics
@@ -405,7 +288,7 @@ router.get('/bars/:barId/stats',
   barIdValidation,
   statsDateValidation,
   handleValidationErrors,
-  QueueController.getQueueStats
+  QueueController.getQueueStats as any
 );
 
 // Skip current song
@@ -414,7 +297,7 @@ router.patch('/bars/:barId/skip',
   rateLimitMiddleware('queue_admin', 30, 60 * 60 * 1000), // 30 requests per hour
   barIdValidation,
   handleValidationErrors,
-  QueueController.skipCurrentSong
+  QueueController.skipCurrentSong as any
 );
 
 // Play next song
@@ -423,7 +306,7 @@ router.patch('/bars/:barId/next',
   rateLimitMiddleware('queue_admin', 100, 60 * 60 * 1000), // 100 requests per hour
   barIdValidation,
   handleValidationErrors,
-  QueueController.playNextSong
+  QueueController.playNextSong as any
 );
 
 export default router;

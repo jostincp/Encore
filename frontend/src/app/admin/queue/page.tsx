@@ -35,6 +35,9 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 import { formatTime, formatDuration } from '@/utils/format';
 import { QueueItem } from '@/types';
+import axios from 'axios';
+import { useWebSocket } from '@/utils/websocket';
+import { WS_EVENTS } from '@/utils/websocket';
 
 // Mock data para la cola musical
 const mockQueue: QueueItem[] = [
@@ -115,15 +118,17 @@ const mockQueue: QueueItem[] = [
 export default function AdminQueuePage() {
   const { user } = useAppStore();
   const router = useRouter();
-  const { success } = useToast();
-  const [queue, setQueue] = useState(mockQueue);
+  const { success, error } = useToast();
+  const { connect, on, off } = useWebSocket();
+
+  const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentProgress, setCurrentProgress] = useState(45);
-
   const [isMuted, setIsMuted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const handleNextSong = useCallback(() => {
     const currentIndex = queue.findIndex(item => item.status === 'playing');
@@ -142,7 +147,63 @@ export default function AdminQueuePage() {
       router.push('/');
       return;
     }
-  }, [user, router]);
+
+    // Cargar cola inicial
+    const loadQueue = async () => {
+      try {
+        const response = await axios.get('http://localhost:3003/api/music/queue/default-bar');
+        if (response.data.success) {
+          // Transformar datos de la API al formato QueueItem
+          const apiQueue: QueueItem[] = response.data.data.map((item: any) => ({
+            id: item.id,
+            song: {
+              id: item.song.id,
+              title: item.song.title,
+              artist: item.song.artist,
+              duration: item.song.duration,
+              thumbnailUrl: item.song.thumbnail_url,
+              genre: 'Unknown',
+              pointsCost: 50
+            },
+            requestedBy: item.user.first_name + ' ' + item.user.last_name,
+            tableNumber: 1, // Asumir mesa por defecto
+            timestamp: new Date(item.requested_at),
+            status: item.status as 'pending' | 'approved' | 'rejected' | 'playing' | 'completed',
+            isPriority: item.priority_play,
+            pointsSpent: item.points_used
+          }));
+          setQueue(apiQueue);
+        }
+      } catch (err) {
+        console.error('Error loading queue:', err);
+        error('Error al cargar la cola');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadQueue();
+
+    // Conectar WebSocket para actualizaciones en tiempo real
+    const initWebSocket = async () => {
+      try {
+        await connect(); // Conectar como admin
+        on(WS_EVENTS.QUEUE_UPDATED, (data) => {
+          console.log('Admin queue updated:', data);
+          // Recargar cola cuando haya cambios
+          loadQueue();
+        });
+      } catch (wsError) {
+        console.error('WebSocket connection failed:', wsError);
+      }
+    };
+
+    initWebSocket();
+
+    return () => {
+      off(WS_EVENTS.QUEUE_UPDATED);
+    };
+  }, [user, router, connect, on, off, error]);
 
   useEffect(() => {
     // Simular progreso de la canción actual
@@ -177,21 +238,49 @@ export default function AdminQueuePage() {
     success(isPlaying ? 'Música pausada' : 'Música reanudada');
   };
 
-  const handleApproveSong = (id: string) => {
-    setQueue(prev => prev.map(item => 
-      item.id === id ? { ...item, status: 'approved' as const } : item
-    ));
-    success('Canción aprobada');
+  const handleApproveSong = async (id: string) => {
+    try {
+      const response = await axios.patch(`http://localhost:3002/api/music/queue/default-bar/${id}/status`, {
+        status: 'approved'
+      });
+      if (response.data.success) {
+        setQueue(prev => prev.map(item =>
+          item.id === id ? { ...item, status: 'approved' as const } : item
+        ));
+        success('Canción aprobada');
+      }
+    } catch (err) {
+      console.error('Error approving song:', err);
+      error('Error al aprobar canción');
+    }
   };
 
-  const handleRejectSong = (id: string) => {
-    setQueue(prev => prev.filter(item => item.id !== id));
-    success('Canción rechazada y eliminada');
+  const handleRejectSong = async (id: string) => {
+    try {
+      const response = await axios.patch(`http://localhost:3003/api/music/queue/default-bar/${id}/status`, {
+        status: 'rejected'
+      });
+      if (response.data.success) {
+        setQueue(prev => prev.filter(item => item.id !== id));
+        success('Canción rechazada');
+      }
+    } catch (err) {
+      console.error('Error rejecting song:', err);
+      error('Error al rechazar canción');
+    }
   };
 
-  const handleRemoveSong = (id: string) => {
-    setQueue(prev => prev.filter(item => item.id !== id));
-    success('Canción eliminada de la cola');
+  const handleRemoveSong = async (id: string) => {
+    try {
+      const response = await axios.delete(`http://localhost:3003/api/music/queue/default-bar/${id}`);
+      if (response.data.success) {
+        setQueue(prev => prev.filter(item => item.id !== id));
+        success('Canción eliminada de la cola');
+      }
+    } catch (err) {
+      console.error('Error removing song:', err);
+      error('Error al eliminar canción');
+    }
   };
 
   const handleMoveToTop = (id: string) => {
