@@ -309,4 +309,14 @@ router.patch('/bars/:barId/next',
   QueueController.playNextSong as any
 );
 
+// Handle song finished (called by player)
+router.post('/song-finished',
+  rateLimitMiddleware('player', 1000, 60 * 1000), // 1000 requests per minute for player
+  body('queueId')
+    .isUUID()
+    .withMessage('Invalid queue ID format'),
+  handleValidationErrors,
+  QueueController.songFinished as any
+);
+
 export default router;

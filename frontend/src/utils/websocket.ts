@@ -126,6 +126,7 @@ export const WS_EVENTS = {
   SONG_APPROVED: 'song_approved',
   SONG_REJECTED: 'song_rejected',
   NOW_PLAYING: 'now_playing',
+  PLAY_NEXT_SONG: 'play_next_song',
   POINTS_UPDATED: 'points_updated',
   ORDER_STATUS: 'order_status',
   STATS_UPDATED: 'stats_updated'

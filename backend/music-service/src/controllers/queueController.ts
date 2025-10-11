@@ -731,4 +731,86 @@ export class QueueController {
       });
     }
   }
+
+  // Handle song finished playing (called by player)
+  static async songFinished(req: Request, res: Response): Promise<void> {
+    try {
+      const { queueId } = req.body;
+
+      if (!queueId) {
+        res.status(400).json({
+          success: false,
+          message: 'queueId is required'
+        });
+        return;
+      }
+
+      // Get the queue entry
+      const queueEntry = await QueueModel.findById(queueId);
+      if (!queueEntry) {
+        res.status(404).json({
+          success: false,
+          message: 'Queue entry not found'
+        });
+        return;
+      }
+
+      if (queueEntry.status !== 'playing') {
+        res.status(400).json({
+          success: false,
+          message: 'Song is not currently playing'
+        });
+        return;
+      }
+
+      // Mark current song as played
+      await QueueModel.update(queueId, {
+        status: 'played',
+        played_at: new Date()
+      });
+
+      // Get next song in queue
+      const nextSong = await QueueModel.getNextInQueue(queueEntry.bar_id);
+
+      let nextSongData = null;
+      if (nextSong) {
+        // Mark next song as playing
+        await QueueModel.update(nextSong.id, {
+          status: 'playing'
+        });
+
+        // Get full next song data
+        nextSongData = await QueueModel.findById(nextSong.id, true);
+
+        logger.info('Next song started automatically', {
+          barId: queueEntry.bar_id,
+          previousSongId: queueId,
+          nextSongId: nextSong.id
+        });
+      } else {
+        logger.info('No more songs in queue', {
+          barId: queueEntry.bar_id,
+          lastSongId: queueId
+        });
+      }
+
+      // Emit event for real-time updates
+      await queueEventService.playNextSong(queueEntry.bar_id, nextSongData);
+
+      res.json({
+        success: true,
+        message: nextSongData ? 'Next song started' : 'No more songs in queue',
+        data: {
+          previous_song: queueEntry,
+          next_song: nextSongData
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to handle song finished', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to handle song finished'
+      });
+    }
+  }
 }

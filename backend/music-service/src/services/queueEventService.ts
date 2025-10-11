@@ -106,14 +106,24 @@ export class QueueEventService {
   }
 
   /**
-   * Notificar cuando se limpia la cola
-   */
-  async queueCleared(barId: string, clearedCount: number) {
-    await this.emitQueueUpdate(barId, 'queue_cleared', {
-      clearedCount,
-      action: 'clear'
-    });
-  }
+    * Notificar cuando se limpia la cola
+    */
+   async queueCleared(barId: string, clearedCount: number) {
+     await this.emitQueueUpdate(barId, 'queue_cleared', {
+       clearedCount,
+       action: 'clear'
+     });
+   }
+
+   /**
+    * Notificar cuando se debe reproducir la siguiente canción
+    */
+   async playNextSong(barId: string, nextSong: any) {
+     await this.emitQueueUpdate(barId, 'play_next_song', {
+       nextSong,
+       action: 'play_next'
+     });
+   }
 }
 
 export const queueEventService = QueueEventService.getInstance();
