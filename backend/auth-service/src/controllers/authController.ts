@@ -91,16 +91,16 @@ export const registerGuest = asyncHandler(async (req: Request, res: Response) =>
 });
 
 /**
- * Register a member from guest (migration)
+ * Migrar GUEST a USER (registro)
  */
 export const registerMember = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { email, password, firstName, lastName } = req.body;
   const guestUserId = req.user?.userId;
   const guestRole = req.user?.role;
 
-  // Validate that user is authenticated as guest
+  // Validar que el usuario esté autenticado como invitado (GUEST)
   if (!guestUserId || guestRole !== UserRole.GUEST) {
-    throw new UnauthorizedError('Solo usuarios invitados pueden registrarse como miembros');
+    throw new UnauthorizedError('Solo usuarios invitados pueden registrarse como usuarios');
   }
 
   // Validate input
@@ -131,12 +131,12 @@ export const registerMember = asyncHandler(async (req: RequestWithUser, res: Res
     throw new ConflictError('El email ya está registrado');
   }
 
-  // Update guest user to member (without password)
+  // Actualizar usuario invitado a usuario registrado (USER)
   const updatedUser = await UserModel.update(guestUserId, {
     email: sanitizedEmail,
     firstName: sanitizedFirstName,
     lastName: sanitizedLastName,
-    role: UserRole.MEMBER,
+    role: UserRole.USER,
     isEmailVerified: false // Reset email verification for new email
   });
 
@@ -154,14 +154,14 @@ export const registerMember = asyncHandler(async (req: RequestWithUser, res: Res
     throw new BadRequestError('Error al actualizar usuario');
   }
 
-  // Generate new tokens for member
+  // Generar nuevos tokens para usuario
   const accessToken = generateAccessToken({ userId: updatedUser.id, role: updatedUser.role });
   const refreshTokenExpiresAt = new Date(Date.now() +
     (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );
   const refreshTokenData = await RefreshTokenModel.create(updatedUser.id, refreshTokenExpiresAt);
 
-  logger.info('Guest migrated to member', { userId: updatedUser.id, email: updatedUser.email });
+  logger.info('Guest migrated to user', { userId: updatedUser.id, email: updatedUser.email });
 
   sendSuccess(res, {
     user: {
@@ -175,7 +175,7 @@ export const registerMember = asyncHandler(async (req: RequestWithUser, res: Res
     },
     accessToken,
     refreshToken: refreshTokenData.token
-  }, 'Usuario registrado como miembro exitosamente', 201);
+  }, 'Usuario registrado exitosamente', 201);
 });
 
 /**
@@ -211,13 +211,13 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
     throw new ConflictError('El usuario ya existe con este email');
   }
 
-  // Create user with bar_owner role (mapped to bar_admin internally)
+  // Crear usuario con rol BAR_OWNER
   const user = await UserModel.create({
     email: sanitizedEmail,
     password,
     firstName: 'Bar Owner', // Default first name
     lastName: 'Default', // Default last name
-    role: UserRole.BAR_OWNER // Internal mapping
+    role: UserRole.BAR_OWNER
   });
 
   // Create basic bar entry

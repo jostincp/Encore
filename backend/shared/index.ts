@@ -75,7 +75,10 @@ export const CONSTANTS = {
   // Roles de usuario
   USER_ROLES: {
     ADMIN: 'admin' as const,
-    CUSTOMER: 'customer' as const
+    BAR_OWNER: 'bar_owner' as const,
+    STAFF: 'staff' as const,
+    USER: 'user' as const,
+    GUEST: 'guest' as const
   },
   
   // Estados de cola

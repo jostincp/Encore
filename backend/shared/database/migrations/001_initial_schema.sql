@@ -11,7 +11,7 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('customer', 'bar_admin', 'super_admin')),
+    role VARCHAR(20) NOT NULL CHECK (role IN ('guest','user','staff','bar_owner','admin')),
     is_active BOOLEAN DEFAULT true,
     email_verified BOOLEAN DEFAULT false,
     phone VARCHAR(20),
@@ -284,9 +284,9 @@ CREATE TRIGGER update_orders_updated_at BEFORE UPDATE ON orders FOR EACH ROW EXE
 
 -- Sample data for development
 INSERT INTO users (id, email, password_hash, first_name, last_name, role, email_verified) VALUES
-('550e8400-e29b-41d4-a716-446655440000', 'admin@encore.com', '$2b$10$rOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQ', 'Admin', 'User', 'super_admin', true),
-('550e8400-e29b-41d4-a716-446655440001', 'bar@example.com', '$2b$10$rOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQ', 'Bar', 'Owner', 'bar_admin', true),
-('550e8400-e29b-41d4-a716-446655440002', 'customer@example.com', '$2b$10$rOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQ', 'John', 'Doe', 'customer', true);
+('550e8400-e29b-41d4-a716-446655440000', 'admin@encore.com', '$2b$10$rOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQ', 'Admin', 'User', 'admin', true),
+('550e8400-e29b-41d4-a716-446655440001', 'bar@example.com', '$2b$10$rOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQ', 'Bar', 'Owner', 'bar_owner', true),
+('550e8400-e29b-41d4-a716-446655440002', 'user@example.com', '$2b$10$rOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQZQZQZQZOzJqQZQZQZQZQ', 'John', 'Doe', 'user', true);
 
 INSERT INTO bars (id, name, description, address, city, country, owner_id) VALUES
 ('660e8400-e29b-41d4-a716-446655440000', 'The Music Lounge', 'A cozy bar with great music and atmosphere', '123 Music Street', 'Barcelona', 'Spain', '550e8400-e29b-41d4-a716-446655440001');

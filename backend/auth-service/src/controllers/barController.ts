@@ -31,7 +31,7 @@ export const createBar = asyncHandler(async (req: RequestWithUser, res: Response
   let actualOwnerId = userId;
   
   // If admin is creating a bar for someone else
-  if (userRole === 'super_admin' && ownerId) {
+  if (userRole === 'admin' && ownerId) {
     const owner = await UserModel.findById(ownerId);
     if (!owner) {
       throw new NotFoundError('Propietario no encontrado');
@@ -40,7 +40,7 @@ export const createBar = asyncHandler(async (req: RequestWithUser, res: Response
       throw new ValidationError('El propietario debe tener rol de bar_owner');
     }
     actualOwnerId = ownerId;
-  } else if (userRole !== 'bar_owner' && userRole !== 'super_admin') {
+  } else if (userRole !== 'bar_owner' && userRole !== 'admin') {
     throw new ForbiddenError('Solo los propietarios de bares y administradores pueden crear bares');
   }
 
@@ -143,7 +143,7 @@ export const updateBar = asyncHandler(async (req: RequestWithUser, res: Response
   }
 
   // Check if user can update this bar
-  if (userRole !== 'super_admin') {
+  if (userRole !== 'admin') {
     const isOwner = await BarModel.isOwner(id, userId);
     if (!isOwner) {
       throw new ForbiddenError('Solo el propietario o un administrador pueden actualizar este bar');
@@ -234,7 +234,7 @@ export const getMyBars = asyncHandler(async (req: RequestWithUser, res: Response
     throw new BadRequestError('Usuario no autenticado');
   }
 
-  if (userRole !== 'bar_owner' && userRole !== 'super_admin') {
+  if (userRole !== 'bar_owner' && userRole !== 'admin') {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -260,7 +260,7 @@ export const deactivateBar = asyncHandler(async (req: RequestWithUser, res: Resp
   }
 
   // Check if user can deactivate this bar
-  if (userRole !== 'super_admin') {
+  if (userRole !== 'admin') {
     const isOwner = await BarModel.isOwner(id, userId);
     if (!isOwner) {
       throw new ForbiddenError('Solo el propietario o un administrador pueden desactivar este bar');
@@ -289,7 +289,7 @@ export const activateBar = asyncHandler(async (req: RequestWithUser, res: Respon
     throw new BadRequestError('ID del bar requerido');
   }
 
-  if (userRole !== 'super_admin') {
+  if (userRole !== 'admin') {
     throw new ForbiddenError('Solo los administradores pueden activar bares');
   }
 
@@ -315,7 +315,7 @@ export const deleteBar = asyncHandler(async (req: RequestWithUser, res: Response
     throw new BadRequestError('ID del bar requerido');
   }
 
-  if (userRole !== 'super_admin') {
+  if (userRole !== 'admin') {
     throw new ForbiddenError('Solo los administradores pueden eliminar bares');
   }
 
@@ -346,7 +346,7 @@ export const getBarSettings = asyncHandler(async (req: RequestWithUser, res: Res
   }
 
   // Check if user can access bar settings
-  if (userRole !== 'super_admin') {
+  if (userRole !== 'admin') {
     const isOwner = await BarModel.isOwner(id, userId);
     if (!isOwner) {
       throw new ForbiddenError('Solo el propietario o un administrador pueden ver la configuración del bar');
@@ -379,7 +379,7 @@ export const updateBarSettings = asyncHandler(async (req: RequestWithUser, res: 
   }
 
   // Check if user can update bar settings
-  if (userRole !== 'super_admin') {
+  if (userRole !== 'admin') {
     const isOwner = await BarModel.isOwner(id, userId);
     if (!isOwner) {
       throw new ForbiddenError('Solo el propietario o un administrador pueden actualizar la configuración del bar');
@@ -428,9 +428,9 @@ export const getBarStats = asyncHandler(async (req: RequestWithUser, res: Respon
 
   let ownerId: string | undefined;
   
-  // If not admin, only show stats for owned bars
-  if (userRole !== 'super_admin') {
-    if (userRole !== 'bar_owner') {
+  // Si no es ADMIN, solo mostrar estadísticas de los bares del dueño
+  if (userRole !== 'admin') {
+  if (userRole !== 'bar_owner') {
       throw new ForbiddenError('Acceso denegado');
     }
     ownerId = userId;

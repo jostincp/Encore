@@ -13,13 +13,9 @@ import {
 import cors from 'cors';
 import helmet from 'helmet';
 
-// Configuración básica sin shared
-const config = {
-  services: { auth: { port: 3001 } }
-};
-
+// Configuración de puerto vía variables de entorno para evitar conflictos
 const app: express.Application = express();
-const PORT = config.services.auth.port;
+const PORT = parseInt(process.env.AUTH_PORT || process.env.PORT || '3001', 10);
 
 // Security middleware avanzado
 app.use(helmet(helmetOptions));
@@ -28,7 +24,7 @@ app.use(cors(corsOptions));
 // Rate limiting específico para autenticación
 app.use('/api/auth/login', rateLimiters.auth);
 app.use('/api/auth/register-guest', rateLimiters.auth);
-app.use('/api/auth/register-member', rateLimiters.auth);
+app.use('/api/auth/register-user', rateLimiters.auth);
 app.use('/api/auth/register-bar-owner', rateLimiters.auth);
 
 // General middleware with stricter limits for security
@@ -49,8 +45,8 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api', routes);
 
-// 404 handler for undefined routes
-app.use('*', (req, res, next) => {
+// 404 handler for undefined routes (Express v5: use (.*) or no path)
+app.use((req, res, next) => {
   const error = new NotFoundError(`Route ${req.method} ${req.originalUrl} not found`);
   next(error);
 });
@@ -104,27 +100,49 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
 
 // Initialize services and start server
 const startServer = async () => {
+  // Initialize database (optional in development)
+  if (process.env.DISABLE_DB === 'true') {
+    logger.warn('Database initialization skipped (DISABLE_DB=true)');
+  } else {
+    try {
+      await initializeDatabase();
+      logger.info('Database initialized');
+
+      // Run migrations
+      await runMigrations();
+      logger.info('Database migrations completed');
+    } catch (dbError) {
+      // Do not crash the server in development
+      const isDev = (process.env.NODE_ENV || 'development') === 'development';
+      const message = (dbError as Error).message || 'Unknown DB error';
+      if (isDev) {
+        logger.warn('Database not available, continuing without DB in development', { error: message });
+      } else {
+        logger.error('Failed to initialize database', { error: message });
+      }
+    }
+  }
+
+  // Initialize Redis (optional in development)
+  if (process.env.DISABLE_REDIS === 'true') {
+    logger.warn('Redis initialization skipped (DISABLE_REDIS=true)');
+  } else {
+    try {
+      await initRedis();
+      logger.info('Redis initialized');
+    } catch (redisError) {
+      logger.warn('Redis not available, continuing without Redis in development', { error: (redisError as Error).message });
+    }
+  }
+
+  // Start server (always attempt to start)
   try {
-    // Initialize database
-    await initializeDatabase();
-    logger.info('Database initialized');
-
-    // Run migrations
-    await runMigrations();
-    logger.info('Database migrations completed');
-
-    // Initialize Redis
-    await initRedis();
-    logger.info('Redis initialized');
-
-    // Start server
     app.listen(PORT, () => {
       logger.info(`Auth Service running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
-  } catch (error) {
-    logger.error('Failed to start Auth Service:', error);
-    process.exit(1);
+  } catch (listenError) {
+    logger.error('Failed to start Auth Service (listen error):', listenError);
   }
 };
 

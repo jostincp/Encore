@@ -221,12 +221,13 @@ export const requireAdmin = requireRole('admin');
 /**
  * Manager or admin authorization middleware
  */
-export const requireManager = requireRole('admin', 'manager');
+// Replace manager with bar_owner per unified roles
+export const requireManager = requireRole('admin', 'bar_owner');
 
 /**
  * Staff or higher authorization middleware
  */
-export const requireStaff = requireRole('admin', 'manager', 'staff');
+export const requireStaff = requireRole('admin', 'bar_owner', 'staff');
 
 // =============================================================================
 // Permission-based Authorization Middleware

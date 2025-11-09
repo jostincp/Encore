@@ -143,7 +143,7 @@ export const authorizeBarAccess = (barId: string) => {
       }
 
       // Admin can access any bar
-      if (req.user.role === 'super_admin') {
+      if (req.user.role === 'admin') {
         return next();
       }
 

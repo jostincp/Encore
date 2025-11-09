@@ -2,10 +2,11 @@
 
 // User roles enumeration
 export enum UserRole {
-  GUEST = 'guest',
-  MEMBER = 'member',
+  ADMIN = 'admin',
   BAR_OWNER = 'bar_owner',
-  SUPER_ADMIN = 'super_admin'
+  STAFF = 'staff',
+  USER = 'user',
+  GUEST = 'guest'
 }
 
 export interface BaseEntity {

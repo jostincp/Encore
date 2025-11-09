@@ -3,10 +3,11 @@ import { Request } from 'express';
 
 // User roles enumeration
 export enum UserRole {
-  GUEST = 'guest',
-  MEMBER = 'member',
+  ADMIN = 'admin',
   BAR_OWNER = 'bar_owner',
-  SUPER_ADMIN = 'super_admin'
+  STAFF = 'staff',
+  USER = 'user',
+  GUEST = 'guest'
 }
 
 export interface Config {
@@ -127,7 +128,7 @@ export const verifyToken = (token: string): JwtPayload => {
   return {
     userId: 'mock-user-id',
     email: 'mock@email.com',
-    role: UserRole.MEMBER
+    role: UserRole.USER
   };
 };
 

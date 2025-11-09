@@ -273,7 +273,7 @@ export class QueueController {
       validateUUID(id, 'id');
       
       // Check permissions
-      if (userRole !== UserRole.SUPER_ADMIN && userRole !== UserRole.BAR_OWNER) {
+      if (userRole !== UserRole.ADMIN && userRole !== UserRole.BAR_OWNER && userRole !== UserRole.STAFF) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. Admin or bar owner role required.'
@@ -289,8 +289,8 @@ export class QueueController {
         });
       }
       
-      // For bar owners, check if they own the bar
-      if (userRole === 'bar_owner' && req.user!.barId !== currentEntry.bar_id) {
+      // For bar owners/staff, check if they belong to the bar
+      if ((userRole === 'bar_owner' || userRole === 'staff') && req.user!.barId !== currentEntry.bar_id) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. You can only manage your own bar.'
@@ -364,6 +364,7 @@ export class QueueController {
       const canRemove = 
         userRole === 'admin' ||
         (userRole === 'bar_owner' && req.user!.barId === queueEntry.bar_id) ||
+        (userRole === 'staff' && req.user!.barId === queueEntry.bar_id) ||
         (queueEntry.user_id === userId && queueEntry.status === 'pending');
       
       if (!canRemove) {
@@ -416,7 +417,7 @@ export class QueueController {
       }
       
       // Check permissions
-      if (userRole !== UserRole.SUPER_ADMIN && userRole !== UserRole.BAR_OWNER) {
+      if (userRole !== UserRole.ADMIN && userRole !== UserRole.BAR_OWNER && userRole !== UserRole.STAFF) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. Admin or bar owner role required.'
@@ -424,7 +425,7 @@ export class QueueController {
       }
       
       // For bar owners, check if they own the bar
-      if (userRole === 'bar_owner' && req.user!.barId !== barId) {
+      if ((userRole === 'bar_owner' || userRole === 'staff') && req.user!.barId !== barId) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. You can only manage your own bar.'
@@ -466,7 +467,7 @@ export class QueueController {
       validateUUID(barId, 'barId');
       
       // Check permissions
-      if (userRole !== UserRole.SUPER_ADMIN && userRole !== UserRole.BAR_OWNER) {
+      if (userRole !== UserRole.ADMIN && userRole !== UserRole.BAR_OWNER && userRole !== UserRole.STAFF) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. Admin or bar owner role required.'
@@ -474,7 +475,7 @@ export class QueueController {
       }
       
       // For bar owners, check if they own the bar
-      if (userRole === 'bar_owner' && req.user!.barId !== barId) {
+      if ((userRole === 'bar_owner' || userRole === 'staff') && req.user!.barId !== barId) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. You can only manage your own bar.'
@@ -510,7 +511,7 @@ export class QueueController {
       validateUUID(barId, 'barId');
       
       // Check permissions
-      if (userRole !== 'admin' && userRole !== 'bar_owner') {
+      if (userRole !== 'admin' && userRole !== 'bar_owner' && userRole !== 'staff') {
         return res.status(403).json({
           success: false,
           message: 'Access denied. Admin or bar owner role required.'
@@ -518,7 +519,7 @@ export class QueueController {
       }
       
       // For bar owners, check if they own the bar
-      if (userRole === 'bar_owner' && req.user!.barId !== barId) {
+      if ((userRole === 'bar_owner' || userRole === 'staff') && req.user!.barId !== barId) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. You can only view your own bar statistics.'
@@ -625,7 +626,7 @@ export class QueueController {
       validateUUID(barId, 'barId');
       
       // Check permissions
-      if (userRole !== 'admin' && userRole !== 'bar_owner') {
+      if (userRole !== 'admin' && userRole !== 'bar_owner' && userRole !== 'staff') {
         return res.status(403).json({
           success: false,
           message: 'Access denied. Admin or bar owner role required.'
@@ -633,7 +634,7 @@ export class QueueController {
       }
       
       // For bar owners, check if they own the bar
-      if (userRole === 'bar_owner' && req.user!.barId !== barId) {
+      if ((userRole === 'bar_owner' || userRole === 'staff') && req.user!.barId !== barId) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. You can only manage your own bar.'

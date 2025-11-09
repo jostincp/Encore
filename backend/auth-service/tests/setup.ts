@@ -99,7 +99,7 @@ export const mockUser = {
   username: 'testuser',
   first_name: 'Test',
   last_name: 'User',
-  role: 'customer',
+  role: 'user',
   is_verified: true,
   created_at: new Date(),
   updated_at: new Date()

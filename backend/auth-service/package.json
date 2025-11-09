@@ -14,7 +14,8 @@
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "seed:admin": "ts-node src/seed.ts"
   },
   "keywords": [
     "encore",

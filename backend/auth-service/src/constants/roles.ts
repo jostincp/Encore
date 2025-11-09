@@ -3,10 +3,11 @@
  * This ensures consistency across the application and prevents role injection attacks
  */
 export enum UserRole {
-  GUEST = 'guest',
-  MEMBER = 'member',
+  ADMIN = 'admin',
   BAR_OWNER = 'bar_owner',
-  SUPER_ADMIN = 'super_admin'
+  STAFF = 'staff',
+  USER = 'user',
+  GUEST = 'guest'
 }
 
 /**
@@ -14,9 +15,10 @@ export enum UserRole {
  */
 export const VALID_USER_ROLES = [
   UserRole.GUEST,
-  UserRole.MEMBER,
+  UserRole.USER,
+  UserRole.STAFF,
   UserRole.BAR_OWNER,
-  UserRole.SUPER_ADMIN
+  UserRole.ADMIN
 ] as const;
 
 /**
@@ -25,9 +27,10 @@ export const VALID_USER_ROLES = [
  */
 export const ROLE_HIERARCHY = {
   [UserRole.GUEST]: 0,
-  [UserRole.MEMBER]: 1,
-  [UserRole.BAR_OWNER]: 2,
-  [UserRole.SUPER_ADMIN]: 3
+  [UserRole.USER]: 1,
+  [UserRole.STAFF]: 2,
+  [UserRole.BAR_OWNER]: 3,
+  [UserRole.ADMIN]: 4
 } as const;
 
 /**

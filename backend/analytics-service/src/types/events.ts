@@ -69,7 +69,7 @@ export interface PlaylistChangeEvent extends BaseEvent {
 // User Events
 export interface UserJoinEvent extends BaseEvent {
   eventType: 'user_join';
-  userType: 'customer' | 'staff' | 'dj';
+  userType: 'user' | 'guest' | 'staff' | 'dj';
   deviceInfo?: {
     type: string;
     os: string;

@@ -37,7 +37,7 @@ router.get('/',
  */
 router.get('/stats',
   authenticate,
-  requireRole([UserRole.BAR_OWNER, UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   getBarStats
 );
 
@@ -48,7 +48,7 @@ router.get('/stats',
  */
 router.get('/my',
   authenticate,
-  requireRole([UserRole.BAR_OWNER, UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   getMyBars
 );
 
@@ -59,7 +59,7 @@ router.get('/my',
  */
 router.post('/',
   authenticate,
-  requireRole([UserRole.BAR_OWNER, UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   rateLimitBasic,
   validateContentType(['application/json']),
   createBar
@@ -81,7 +81,7 @@ router.get('/:id',
  */
 router.put('/:id',
   authenticate,
-  requireRole([UserRole.BAR_OWNER, UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   rateLimitBasic,
   validateContentType(['application/json']),
   updateBar
@@ -94,7 +94,7 @@ router.put('/:id',
  */
 router.patch('/:id',
   authenticate,
-  requireRole([UserRole.BAR_OWNER, UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   rateLimitBasic,
   validateContentType(['application/json']),
   updateBar
@@ -107,7 +107,7 @@ router.patch('/:id',
  */
 router.put('/:id/deactivate', 
   authenticate,
-  requireRole([UserRole.BAR_OWNER, UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   rateLimitStrict,
   deactivateBar
 );
@@ -119,19 +119,19 @@ router.put('/:id/deactivate',
  */
 router.put('/:id/activate', 
   authenticate,
-  requireRole([UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.ADMIN]),
   rateLimitStrict,
   activateBar
 );
 
 /**
  * @route   DELETE /api/bars/:id
- * @desc    Delete bar (Super Admin solo)
- * @access  Private (Super Admin)
+ * @desc    Eliminar bar (solo ADMIN)
+ * @access  Privado (ADMIN)
  */
 router.delete('/:id', 
   authenticate,
-  requireRole([UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.ADMIN]),
   rateLimitStrict,
   deleteBar
 );
@@ -139,22 +139,22 @@ router.delete('/:id',
 /**
  * @route   GET /api/bars/:id/settings
  * @desc    Get bar settings
- * @access  Private (Bar Owner o Super Admin)
+ * @access  Privado (BAR_OWNER o ADMIN)
  */
 router.get('/:id/settings', 
   authenticate,
-  requireRole([UserRole.BAR_OWNER, UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   getBarSettings
 );
 
 /**
  * @route   PUT /api/bars/:id/settings
  * @desc    Update bar settings
- * @access  Private (Bar Owner o Super Admin)
+ * @access  Privado (BAR_OWNER o ADMIN)
  */
 router.put('/:id/settings', 
   authenticate,
-  requireRole([UserRole.BAR_OWNER, UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   rateLimitBasic,
   validateContentType(['application/json']),
   updateBarSettings

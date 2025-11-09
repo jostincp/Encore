@@ -69,7 +69,7 @@ export class BarModel {
       throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
     }
 
-    // Check if owner exists and is a bar_admin
+    // Verificar que el propietario exista y tenga rol BAR_OWNER o ADMIN
     const owner = await query(
       'SELECT id, role FROM users WHERE id = $1 AND is_active = true',
       [barData.ownerId]
@@ -79,8 +79,8 @@ export class BarModel {
       throw new Error('Owner not found or inactive');
     }
 
-    if (owner.rows[0].role !== 'bar_admin' && owner.rows[0].role !== 'super_admin') {
-      throw new Error('Owner must have bar_admin or super_admin role');
+    if (owner.rows[0].role !== 'bar_owner' && owner.rows[0].role !== 'admin') {
+      throw new Error('Owner must have bar_owner or admin role');
     }
 
     return await transaction(async (client) => {

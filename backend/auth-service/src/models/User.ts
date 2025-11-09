@@ -67,7 +67,7 @@ export class UserModel {
       password_hash: passwordHash,
       first_name: userData.firstName,
       last_name: userData.lastName,
-      role: userData.role || 'customer',
+      role: userData.role || UserRole.USER,
       phone: userData.phone || null,
       is_active: true,
       email_verified: false

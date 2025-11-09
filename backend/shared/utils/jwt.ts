@@ -132,7 +132,7 @@ export const requireBarAccess = (req: Request, res: Response, next: NextFunction
     }
 
     // Si es admin, debe tener acceso al bar específico
-    if (req.user.role === UserRole.SUPER_ADMIN && req.user.barId !== barId) {
+    if (req.user.role === UserRole.ADMIN && req.user.barId && req.user.barId !== barId) {
       throw new ForbiddenError('Access denied to this bar');
     }
 
@@ -188,7 +188,7 @@ export const generateTableSessionToken = (tableId: string, barId: string): strin
       tableId,
       barId,
       type: 'table_session',
-      role: UserRole.MEMBER
+      role: UserRole.USER
     },
     JWT_SECRET,
     {
@@ -232,7 +232,7 @@ export const authenticateTableSession = (req: Request, res: Response, next: Next
     req.user = {
       userId: `table_${sessionData.tableId}`,
       email: '',
-      role: UserRole.MEMBER,
+      role: UserRole.USER,
       barId: sessionData.barId
     };
     

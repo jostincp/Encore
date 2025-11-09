@@ -24,7 +24,7 @@ describe('UserModel', () => {
       username: 'testuser',
       first_name: 'Test',
       last_name: 'User',
-      role: 'customer' as const
+      role: 'user' as const
     };
 
     it('should create a new user successfully', async () => {
@@ -73,7 +73,7 @@ describe('UserModel', () => {
       const expectedUser = {
         id: 'user-123',
         ...userDataWithoutRole,
-        role: 'customer',
+        role: 'user',
         is_verified: false,
         created_at: new Date(),
         updated_at: new Date()
@@ -91,10 +91,10 @@ describe('UserModel', () => {
           userDataWithoutRole.username,
           userDataWithoutRole.first_name,
           userDataWithoutRole.last_name,
-          'customer'
+          'user'
         ])
       );
-      expect(result.role).toBe('customer');
+      expect(result.role).toBe('user');
     });
   });
 

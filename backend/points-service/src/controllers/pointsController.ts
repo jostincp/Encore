@@ -84,7 +84,7 @@ export class PointsController {
       const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== UserRole.SUPER_ADMIN) {
+      if (req.user!.role !== UserRole.ADMIN) {
         // Check if user is bar owner
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
@@ -147,7 +147,7 @@ export class PointsController {
       const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== UserRole.SUPER_ADMIN) {
+      if (req.user!.role !== UserRole.ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [bar_id]
@@ -216,7 +216,7 @@ export class PointsController {
       const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== UserRole.SUPER_ADMIN) {
+      if (req.user!.role !== UserRole.ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [barId]
@@ -286,14 +286,14 @@ export class PointsController {
     }
   }
 
-  // Get all transactions for a bar (admin/bar owner only)
+      // Get all transactions for a bar (admin/bar owner only)
   static async getBarTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
       const userId = req.user!.userId;
       
       // Verify admin has permission for this bar
-      if (req.user!.role !== UserRole.SUPER_ADMIN) {
+      if (req.user!.role !== UserRole.ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [barId]
@@ -350,14 +350,14 @@ export class PointsController {
     }
   }
 
-  // Bulk add points to multiple users (admin only)
+      // Bulk add points to multiple users (admin only)
   static async bulkAddPoints(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { bar_id, users, amount, description, reference_type } = req.body;
       const adminId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== UserRole.SUPER_ADMIN) {
+      if (req.user!.role !== UserRole.ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [bar_id]

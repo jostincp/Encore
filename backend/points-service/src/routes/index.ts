@@ -103,13 +103,14 @@ router.get('/info', (req, res) => {
       webhooks: '1000 webhook calls per minute'
     },
     authentication: {
-      required: 'JWT token in Authorization header (Bearer token)',
-      roles: ['user', 'bar_owner', 'admin', 'super_admin'],
+      required: 'JWT token en Authorization header (Bearer token)',
+      roles: ['guest', 'user', 'staff', 'bar_owner', 'admin'],
       permissions: {
-        user: 'Can view own points and make payments',
-        bar_owner: 'Can manage points for owned bars',
-        admin: 'Can manage points for any bar',
-        super_admin: 'Full system access'
+        guest: 'Acceso temporal a funciones básicas en sesión actual',
+        user: 'Puede ver sus puntos y realizar pagos',
+        staff: 'Opera la cola y valida pedidos en su bar',
+        bar_owner: 'Gestiona puntos y pagos de su bar',
+        admin: 'Gestión completa de puntos y pagos en toda la plataforma'
       }
     },
     integrations: {

@@ -7,7 +7,7 @@ export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     email: string;
-    role: 'admin' | 'bar_owner' | 'customer';
+    role: 'admin' | 'bar_owner' | 'staff' | 'user' | 'guest';
     bar_id?: string;
   };
 }
@@ -192,8 +192,8 @@ export const requireBarAccess = (
     return;
   }
 
-  // Customers can view menu items but cannot modify
-  if (req.user.role === 'customer') {
+  // Users can view menu items but cannot modify
+  if (req.user.role === 'user') {
     const method = req.method.toLowerCase();
     if (method === 'get') {
       next();
@@ -201,7 +201,7 @@ export const requireBarAccess = (
     } else {
       res.status(403).json({
         success: false,
-        message: 'Customers can only view menu items'
+        message: 'Users can only view menu items'
       });
       return;
     }
@@ -309,10 +309,10 @@ export const createRoleBasedRateLimit = () => {
     const user = req.user;
     
     if (!user) {
-      // Anonymous users get lowest limit
-      (req as any).rateLimit = { max: 10, windowMs: 60000 }; // 10 requests per minute
-    } else if (user.role === 'customer') {
-      (req as any).rateLimit = { max: 30, windowMs: 60000 }; // 30 requests per minute
+      // Usuarios invitados/anonimos (GUEST)
+      (req as any).rateLimit = { max: 10, windowMs: 60000 }; // 10 solicitudes por minuto
+    } else if (user.role === 'user') {
+      (req as any).rateLimit = { max: 30, windowMs: 60000 }; // 30 solicitudes por minuto
     } else if (user.role === 'bar_owner') {
       (req as any).rateLimit = { max: 100, windowMs: 60000 }; // 100 requests per minute
     } else if (user.role === 'admin') {

@@ -1,7 +1,8 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables (prefer root .env to align monorepo)
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 /**
  * Application configuration
@@ -11,18 +12,39 @@ export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   
-  // Database configuration
-  database: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    name: process.env.DB_NAME || 'musicbar_auth',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'password',
-    ssl: process.env.DB_SSL === 'true',
-    maxConnections: parseInt(process.env.DB_MAX_CONNECTIONS || '20', 10),
-    idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
-    connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '2000', 10),
-  },
+  // Database configuration (supports DATABASE_URL fallback)
+  database: (() => {
+    const url = process.env.DATABASE_URL;
+    if (url) {
+      try {
+        const u = new URL(url);
+        return {
+          host: u.hostname || (process.env.DB_HOST || 'localhost'),
+          port: parseInt(u.port || (process.env.DB_PORT || '5432'), 10),
+          name: (u.pathname || '/musicbar_auth').replace(/^\//, ''),
+          user: decodeURIComponent(u.username || (process.env.DB_USER || 'postgres')),
+          password: decodeURIComponent(u.password || (process.env.DB_PASSWORD || 'password')),
+          ssl: process.env.DATABASE_SSL === 'true' || process.env.DB_SSL === 'true',
+          maxConnections: parseInt(process.env.DB_MAX_CONNECTIONS || '20', 10),
+          idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
+          connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '2000', 10),
+        };
+      } catch {
+        // Fallback to discrete envs if URL parsing fails
+      }
+    }
+    return {
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      name: process.env.DB_NAME || 'musicbar_auth',
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'password',
+      ssl: process.env.DB_SSL === 'true',
+      maxConnections: parseInt(process.env.DB_MAX_CONNECTIONS || '20', 10),
+      idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
+      connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '2000', 10),
+    };
+  })(),
   
   // JWT configuration
   jwt: {

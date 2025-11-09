@@ -61,11 +61,13 @@ router.get('/info', (req, res) => {
       },
       authentication: {
         required: 'Bearer token in Authorization header for protected endpoints',
-        roles: ['admin', 'bar_owner', 'customer'],
+        roles: ['admin', 'bar_owner', 'staff', 'user', 'guest'],
         permissions: {
           admin: 'Full access to all bars and operations',
           bar_owner: 'Full access to own bar only',
-          customer: 'Read-only access to menu items'
+          staff: 'Operate queue and validate orders/payments',
+          user: 'Read-only access and loyalty functions',
+          guest: 'Temporary access in current session only'
         }
       },
       features: [

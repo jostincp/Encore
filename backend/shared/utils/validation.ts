@@ -70,7 +70,9 @@ export const registerSchema = z.object({
     password: passwordSchema,
     firstName: nameSchema,
     lastName: nameSchema,
-    role: z.nativeEnum(UserRole).optional().default(UserRole.MEMBER)
+    // Evitar z.nativeEnum por issues de runtime con Zod cuando el enum
+    // se resuelve como undefined en ciertos loaders. Usamos valores explícitos.
+    role: z.enum(['guest', 'user', 'staff', 'bar_owner', 'admin']).optional().default('user')
   })
 });
 

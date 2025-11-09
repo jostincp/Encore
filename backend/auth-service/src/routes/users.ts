@@ -25,7 +25,7 @@ const rateLimitBasic = rateLimiter;
  * @access  Private (Admin)
  */
 router.get('/', 
-  requireRole([UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.ADMIN]),
 
   getUsers
 );
@@ -56,7 +56,7 @@ router.put('/:id',
  * @access  Private (Admin)
  */
 router.put('/:id/deactivate', 
-  requireRole([UserRole.SUPER_ADMIN]),
+  requireRole([UserRole.ADMIN]),
   rateLimitStrict,
   deactivateUser
 );

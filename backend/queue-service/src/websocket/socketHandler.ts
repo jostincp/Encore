@@ -146,7 +146,7 @@ export function initializeSocketIO(io: SocketIOServer) {
         }
 
         // Check if user has access to this bar
-        if (socket.userRole !== 'admin' && socket.userRole !== 'bar_owner' && socket.barId !== barId) {
+        if (socket.userRole !== 'admin' && socket.userRole !== 'bar_owner' && socket.userRole !== 'staff' && socket.barId !== barId) {
           socket.emit('error', { message: 'Access denied to this bar' });
           return;
         }
@@ -231,10 +231,10 @@ export function initializeSocketIO(io: SocketIOServer) {
       }
     });
 
-    // Handle queue stats request (admin/bar owner only)
+    // Handle queue stats request (admin/bar owner/staff only)
     socket.on('get_queue_stats', async (data: { barId: string }) => {
       try {
-        if (socket.userRole !== 'admin' && socket.userRole !== 'bar_owner') {
+        if (socket.userRole !== 'admin' && socket.userRole !== 'bar_owner' && socket.userRole !== 'staff') {
           socket.emit('error', { message: 'Access denied' });
           return;
         }

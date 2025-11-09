@@ -38,7 +38,7 @@ describe('AuthController', () => {
       username: 'testuser',
       first_name: 'Test',
       last_name: 'User',
-      role: 'customer'
+      role: 'user'
     };
 
     it('should register a new user successfully', async () => {

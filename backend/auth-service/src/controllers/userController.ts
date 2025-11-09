@@ -24,7 +24,7 @@ const validateEmail = (email: string): boolean => {
 export const getUsers = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const userRole = req.user?.role;
   
-  if (userRole !== UserRole.SUPER_ADMIN) {
+  if (userRole !== UserRole.ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -82,7 +82,7 @@ export const getUserById = asyncHandler(async (req: RequestWithUser, res: Respon
   }
 
   // Users can only view their own profile unless they are admin
-  if (currentUserRole !== UserRole.SUPER_ADMIN && currentUserId !== id) {
+  if (currentUserRole !== UserRole.ADMIN && currentUserId !== id) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -120,7 +120,7 @@ export const updateUser = asyncHandler(async (req: RequestWithUser, res: Respons
   }
 
   // Users can only update their own profile unless they are admin
-  if (currentUserRole !== UserRole.SUPER_ADMIN && currentUserId !== id) {
+  if (currentUserRole !== UserRole.ADMIN && currentUserId !== id) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -194,7 +194,7 @@ export const deactivateUser = asyncHandler(async (req: RequestWithUser, res: Res
     throw new BadRequestError('ID de usuario requerido');
   }
 
-  if (currentUserRole !== UserRole.SUPER_ADMIN) {
+  if (currentUserRole !== UserRole.ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -225,7 +225,7 @@ export const activateUser = asyncHandler(async (req: RequestWithUser, res: Respo
     throw new BadRequestError('ID de usuario requerido');
   }
 
-  if (currentUserRole !== UserRole.SUPER_ADMIN) {
+  if (currentUserRole !== UserRole.ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -263,7 +263,7 @@ export const deleteUser = asyncHandler(async (req: RequestWithUser, res: Respons
     throw new BadRequestError('ID de usuario requerido');
   }
 
-  if (currentUserRole !== UserRole.SUPER_ADMIN) {
+  if (currentUserRole !== UserRole.ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
@@ -295,11 +295,11 @@ export const updateUserRole = asyncHandler(async (req: RequestWithUser, res: Res
     throw new BadRequestError('ID de usuario requerido');
   }
 
-  if (currentUserRole !== UserRole.SUPER_ADMIN) {
+  if (currentUserRole !== UserRole.ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
-  if (!role || ![UserRole.MEMBER, UserRole.BAR_OWNER, UserRole.SUPER_ADMIN].includes(role)) {
+  if (!role || ![UserRole.USER, UserRole.BAR_OWNER, UserRole.ADMIN, UserRole.STAFF, UserRole.GUEST].includes(role)) {
     throw new ValidationError('Rol inválido');
   }
 
@@ -336,15 +336,15 @@ export const updateUserRole = asyncHandler(async (req: RequestWithUser, res: Res
 export const getUserStats = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const currentUserRole = req.user?.role;
 
-  if (currentUserRole !== UserRole.SUPER_ADMIN) {
+  if (currentUserRole !== UserRole.ADMIN) {
     throw new ForbiddenError('Acceso denegado');
   }
 
-  // Get user counts by role
-  const customerResult = await UserModel.findMany({ 
+  // Obtener conteos por rol
+  const userResult = await UserModel.findMany({ 
     limit: 1, 
     offset: 0,
-    role: UserRole.MEMBER
+    role: UserRole.USER
   });
   
   const barOwnerResult = await UserModel.findMany({ 
@@ -356,7 +356,17 @@ export const getUserStats = asyncHandler(async (req: RequestWithUser, res: Respo
   const adminResult = await UserModel.findMany({ 
     limit: 1, 
     offset: 0,
-    role: UserRole.SUPER_ADMIN
+    role: UserRole.ADMIN
+  });
+  const staffResult = await UserModel.findMany({ 
+    limit: 1, 
+    offset: 0,
+    role: UserRole.STAFF
+  });
+  const guestResult = await UserModel.findMany({ 
+    limit: 1, 
+    offset: 0,
+    role: UserRole.GUEST
   });
 
   const activeResult = await UserModel.findMany({ 
@@ -373,11 +383,13 @@ export const getUserStats = asyncHandler(async (req: RequestWithUser, res: Respo
 
   sendSuccess(res, {
     stats: {
-      total: customerResult.total + barOwnerResult.total + adminResult.total,
+      total: userResult.total + barOwnerResult.total + adminResult.total + staffResult.total + guestResult.total,
       byRole: {
-        customers: customerResult.total,
+        users: userResult.total,
         barOwners: barOwnerResult.total,
-        admins: adminResult.total
+        admins: adminResult.total,
+        staff: staffResult.total,
+        guests: guestResult.total
       },
       byStatus: {
         active: activeResult.total,

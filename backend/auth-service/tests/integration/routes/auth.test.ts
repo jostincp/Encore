@@ -18,7 +18,7 @@ describe('Auth Routes Integration Tests', () => {
     username: 'testuser',
     first_name: 'Test',
     last_name: 'User',
-    role: 'customer'
+    role: 'user'
   };
 
   beforeAll(async () => {

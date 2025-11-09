@@ -26,11 +26,11 @@ export interface AuthenticatedSocket extends Socket {
 // Configuración de Socket.IO
 const SOCKET_CONFIG = {
   cors: {
-    origin: config.corsOrigins,
+    origin: config.websocket.corsOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   },
-  transports: ['websocket' as const, 'polling' as const],
+  transports: config.websocket.transports as ('websocket' | 'polling')[],
   pingTimeout: 60000,
   pingInterval: 25000,
   upgradeTimeout: 10000,
@@ -40,7 +40,7 @@ const SOCKET_CONFIG = {
 // Clase principal para gestión de Socket.IO
 export class SocketManager {
   private io: SocketIOServer;
-  private redis: Redis;
+  private redis: Redis | import('./memory-cache').MemoryCache;
   private connectedUsers: Map<string, Set<string>> = new Map(); // barId -> Set<socketId>
   private userSockets: Map<string, string> = new Map(); // userId -> socketId
 
@@ -55,11 +55,15 @@ export class SocketManager {
   // Configurar adaptador Redis para múltiples instancias
   private async setupRedisAdapter(): Promise<void> {
     try {
-      const pubClient = this.redis.duplicate();
-      const subClient = this.redis.duplicate();
-      
-      this.io.adapter(createAdapter(pubClient, subClient));
-      logInfo('Socket.IO Redis adapter configured');
+      // Only configure adapter when using real Redis client
+      if ('duplicate' in (this.redis as Redis)) {
+        const pubClient = (this.redis as Redis).duplicate();
+        const subClient = (this.redis as Redis).duplicate();
+        this.io.adapter(createAdapter(pubClient, subClient));
+        logInfo('Socket.IO Redis adapter configured');
+      } else {
+        logWarn('Socket.IO Redis adapter not configured (using memory cache)');
+      }
     } catch (error) {
       logError('Failed to setup Socket.IO Redis adapter', error as Error);
     }
@@ -91,7 +95,7 @@ export class SocketManager {
             socket.user = {
               userId: `table_${tableSession.tableId}`,
               email: '',
-              role: 'customer',
+              role: 'user',
               barId: tableSession.barId
             };
           } catch (tableTokenError) {
@@ -99,7 +103,11 @@ export class SocketManager {
           }
         }
 
-        logInfo(`Socket authenticated: ${socket.user.userId} (${socket.user.role})`);
+        if (socket.user) {
+          logInfo(`Socket authenticated: ${socket.user.userId} (${socket.user.role})`);
+        } else {
+          logWarn('Socket authenticated without user payload');
+        }
         next();
       } catch (error) {
         logError('Socket authentication error', error as Error);

@@ -7,7 +7,7 @@ export interface User {
   password: string;
   firstName: string;
   lastName: string;
-  role: 'guest' | 'member' | 'bar_owner' | 'super_admin';
+  role: 'guest' | 'user' | 'staff' | 'bar_owner' | 'admin';
   isActive: boolean;
   isEmailVerified: boolean;
   phone?: string;

@@ -75,8 +75,14 @@ export const validateUserRegistration = (data: {
     errors.push('Apellido requerido');
   }
 
-  if (data.role && !['admin', 'bar_owner', 'customer'].includes(data.role)) {
+  // Validación de roles según el sistema unificado
+  if (data.role && !['admin', 'bar_owner', 'staff', 'user', 'guest'].includes(data.role)) {
     errors.push('Rol inválido');
+  }
+
+  // Rol por defecto para registro estándar: USER
+  if (!data.role) {
+    data.role = 'user';
   }
 
   return {

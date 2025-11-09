@@ -393,7 +393,7 @@ export class WebSocketManager {
       }
       
       // Join admin room if admin
-      if (socket.role === 'admin' || socket.role === 'super_admin') {
+      if (socket.role === 'admin') {
         const adminRoom = this.getRoomName(RoomType.ADMIN, 'all');
         socket.join(adminRoom);
         logger.debug('Socket joined admin room', {

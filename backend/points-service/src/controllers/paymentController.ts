@@ -85,7 +85,7 @@ export class PaymentController {
      }
 
      // Check if user has permission to view this payment
-     if (payment.user_id !== userId && req.user!.role !== UserRole.SUPER_ADMIN) {
+     if (payment.user_id !== userId && req.user!.role !== UserRole.ADMIN) {
        // Check if user owns the bar
        const result = await getPool().query(
          'SELECT owner_id FROM bars WHERE id = $1',
@@ -172,7 +172,7 @@ export class PaymentController {
       const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== UserRole.SUPER_ADMIN) {
+      if (req.user!.role !== UserRole.ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [barId]
@@ -259,7 +259,7 @@ export class PaymentController {
       }
 
       // Verify admin has permission for this payment
-      if (req.user!.role !== UserRole.SUPER_ADMIN) {
+      if (req.user!.role !== UserRole.ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [payment.bar_id]
@@ -316,7 +316,7 @@ export class PaymentController {
       const userId = req.user!.userId;
 
       // Verify admin has permission for this bar
-      if (req.user!.role !== UserRole.SUPER_ADMIN) {
+      if (req.user!.role !== UserRole.ADMIN) {
         const result = await getPool().query(
           'SELECT owner_id FROM bars WHERE id = $1',
           [barId]

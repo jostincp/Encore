@@ -44,11 +44,11 @@ router.post('/register-guest',
 );
 
 /**
- * @route   POST /api/auth/register-member
- * @desc    Register a member from guest
- * @access  Private (Guest only)
+ * @route   POST /api/auth/register-user
+ * @desc    Migrar GUEST a USER (registro)
+ * @access  Privado (solo GUEST)
  */
-router.post('/register-member',
+router.post('/register-user',
   authenticate,
   rateLimitAuth,
   validateContentType(['application/json']),

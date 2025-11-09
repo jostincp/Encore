@@ -75,9 +75,9 @@ const skipLimiting = (req: Request): boolean => {
     return true;
   }
   
-  // Skip for super admin users
+  // Skip for admin users
   const user = (req as any).user;
-  if (user && user.role === 'super_admin') {
+  if (user && user.role === 'admin') {
     return true;
   }
   
@@ -147,9 +147,9 @@ export const strictLimiter = createRateLimiter({
   legacyHeaders: false,
   keyGenerator: generateKey,
   skip: (req: Request) => {
-    // Only skip for super admin
+    // Only skip for admin
     const user = (req as any).user;
-    return user && user.role === 'super_admin';
+    return user && user.role === 'admin';
   }
 });
 
