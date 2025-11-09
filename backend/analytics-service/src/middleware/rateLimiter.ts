@@ -1,6 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
-import { Request, Response } from 'express';
+import { Request, Response, RequestHandler } from 'express';
 import { logger } from '../utils/logger';
 import config from '../utils/config';
 import { CacheManager } from '../utils/cache';
@@ -193,14 +193,30 @@ export const createCustomLimiter = (options: {
 /**
  * Rate limiter for different endpoints
  */
-export const rateLimiter = {
-  events: eventsLimiter,
-  analytics: analyticsLimiter,
-  reports: reportsLimiter,
-  general: generalLimiter,
-  strict: strictLimiter,
-  burst: burstLimiter,
-  custom: createCustomLimiter
+type RateLimiterHandlers = {
+  events: RequestHandler;
+  analytics: RequestHandler;
+  reports: RequestHandler;
+  general: RequestHandler;
+  strict: RequestHandler;
+  burst: RequestHandler;
+  custom: (options: {
+    windowMs: number;
+    max: number;
+    message?: string;
+    skipSuccessful?: boolean;
+    skipFailed?: boolean;
+  }) => RequestHandler;
+};
+
+export const rateLimiter: RateLimiterHandlers = {
+  events: eventsLimiter as unknown as RequestHandler,
+  analytics: analyticsLimiter as unknown as RequestHandler,
+  reports: reportsLimiter as unknown as RequestHandler,
+  general: generalLimiter as unknown as RequestHandler,
+  strict: strictLimiter as unknown as RequestHandler,
+  burst: burstLimiter as unknown as RequestHandler,
+  custom: ((options) => createCustomLimiter(options)) as unknown as RateLimiterHandlers['custom']
 };
 
 /**

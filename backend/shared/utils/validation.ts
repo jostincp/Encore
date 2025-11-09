@@ -267,11 +267,12 @@ export const createCategorySchema = z.object({
 export const validateRequest = (schema: z.ZodSchema<any>) =>
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      // Validar el cuerpo de la petición
-      const validatedData = await schema.parseAsync(req.body);
+      // Validar el cuerpo de la petición (compatibilidad con esquemas que envuelven en { body })
+      const validatedData = await schema.parseAsync({ body: req.body });
 
       // Asignar datos validados y sanitizados de vuelta a req
-      req.body = validatedData;
+      // Si el esquema utiliza wrapper { body }, extraerlo; de lo contrario, asignar completo
+      req.body = (validatedData as any).body ?? validatedData;
 
       next();
     } catch (error) {
@@ -293,8 +294,9 @@ export const validateRequest = (schema: z.ZodSchema<any>) =>
 export const validateQuery = (schema: z.ZodSchema<any>) =>
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const validatedData = await schema.parseAsync(req.query);
-      req.query = validatedData;
+      // Compatibilidad con esquemas que envuelven en { query }
+      const validatedData = await schema.parseAsync({ query: req.query });
+      req.query = (validatedData as any).query ?? validatedData;
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -315,8 +317,9 @@ export const validateQuery = (schema: z.ZodSchema<any>) =>
 export const validateParams = (schema: z.ZodSchema<any>) =>
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const validatedData = await schema.parseAsync(req.params);
-      req.params = validatedData;
+      // Compatibilidad con esquemas que envuelven en { params }
+      const validatedData = await schema.parseAsync({ params: req.params });
+      req.params = (validatedData as any).params ?? validatedData;
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {

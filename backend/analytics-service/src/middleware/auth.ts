@@ -21,7 +21,7 @@ import { CacheManager } from '../utils/cache';
 export interface AuthenticatedUser {
   id: string;
   email: string;
-  role: 'admin' | 'manager' | 'staff' | 'user';
+  role: 'admin' | 'bar_owner' | 'staff' | 'user';
   bar_id?: string;
   permissions: string[];
   iat?: number;

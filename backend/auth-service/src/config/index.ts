@@ -1,7 +1,9 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load environment variables (prefer root .env to align monorepo)
+// Load environment variables from monorepo root, then service root as fallback
+// This ensures we read c:\www\Encore\.env first, and c:\www\Encore\backend\.env if present
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 /**

@@ -123,10 +123,10 @@ ${null} = Send-Request -Method POST -Url $registerGuestUrl
 if ($isDryRun) { Mock-Response @{ success = $true; user = @{ id = $userId; role = "guest"; isGuest = $true }; accessToken = $guestAccessToken } }
 
 # 6) Upgrade a Miembro
-Show-Step "Cliente pasa a Miembro"
-$registerMemberUrl = "$AuthBase/auth/register-user"
+Show-Step "Cliente pasa a Usuario"
+$registerUserUrl = "$AuthBase/auth/register-user"
 $memberBody = @{ email = "client@example.com"; password = "Password123!"; firstName = "Ana"; lastName = "Pérez" }
-${null} = Send-Request -Method POST -Url $registerMemberUrl -Headers @{ Authorization = "Bearer $guestAccessToken" } -Body $memberBody
+${null} = Send-Request -Method POST -Url $registerUserUrl -Headers @{ Authorization = "Bearer $guestAccessToken" } -Body $memberBody
 if ($isDryRun) { Mock-Response @{ success = $true; user = @{ id = $userId; email = "client@example.com"; role = "user" }; accessToken = $memberAccessToken; refreshToken = "mock_refresh_token_user" } }
 
 # 7) Explorar Menú

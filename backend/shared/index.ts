@@ -31,24 +31,20 @@ export * from './utils/socket';
 
 // Exportar funciones específicas
 export { logInfo, logError } from './utils/logger';
-export { closeRedis, initRedis } from './utils/redis';
 
 // Exportar middleware
 export * from './middleware';
 
 // Exportar servicios principales
 export {
-  getCacheService,
-  getSessionService,
-  getRateLimitService,
   CacheService,
   SessionService,
-  RateLimitService,
-  initRedis,
-  closeRedis
+  RateLimitService
 } from './utils/redis';
 
 // Mantener compatibilidad con las exportaciones anteriores
+import { getCacheService, getSessionService, getRateLimitService } from './utils/redis';
+
 export const cacheService = {
   get: () => getCacheService()
 };

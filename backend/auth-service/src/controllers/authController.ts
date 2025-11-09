@@ -93,7 +93,7 @@ export const registerGuest = asyncHandler(async (req: Request, res: Response) =>
 /**
  * Migrar GUEST a USER (registro)
  */
-export const registerMember = asyncHandler(async (req: RequestWithUser, res: Response) => {
+export const registerUser = asyncHandler(async (req: RequestWithUser, res: Response) => {
   const { email, password, firstName, lastName } = req.body;
   const guestUserId = req.user?.userId;
   const guestRole = req.user?.role;
@@ -302,9 +302,10 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Check if user has bar_owner role
-  if (user.role !== UserRole.BAR_OWNER) {
-    logger.warn('Login attempt by non-bar-owner user', { userId: user.id, email: sanitizedEmail, role: user.role });
-    throw new UnauthorizedError('Acceso denegado. Solo propietarios de bares pueden acceder.');
+  // Permitir ADMIN y BAR_OWNER
+  if (![UserRole.BAR_OWNER, UserRole.ADMIN].includes(user.role as UserRole)) {
+    logger.warn('Login attempt by unauthorized role', { userId: user.id, email: sanitizedEmail, role: user.role });
+    throw new UnauthorizedError('Acceso denegado. Solo propietarios de bares o administradores pueden acceder.');
   }
 
   // Generate tokens con configuración segura
@@ -326,7 +327,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
       isEmailVerified: user.isEmailVerified,
       isActive: user.isActive
     },
-    accessToken,
+    token: accessToken,
     refreshToken: refreshTokenData.token
   }, 'Inicio de sesión exitoso');
 });

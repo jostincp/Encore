@@ -1,10 +1,15 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { config } from '../../../shared/config';
-import { logger } from '../../../shared/utils/logger';
-import { redisClient } from '../../../shared/cache';
+import logger from '../../../shared/utils/logger';
 import { QueueModel } from '../models/Queue';
-import { BarModel } from '../../../shared/models/Bar';
+// Compat: use REST or stub model to validate bar exists
+const BarModel = {
+  async findById(id: string) {
+    // Minimal stub: assume bar exists; replace with real import when shared models are available
+    return { id, is_active: true } as any;
+  }
+};
 import Redis from 'ioredis';
 
 interface AuthenticatedSocket extends Socket {

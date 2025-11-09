@@ -110,11 +110,33 @@ export class UserModel {
    * Find user by email with password (for authentication)
    */
   static async findByEmailWithPassword(email: string): Promise<(User & { password_hash: string }) | null> {
-    const result = await query<User & { password_hash: string }>(
-      'SELECT * FROM users WHERE email = $1 AND is_active = true',
+    const result = await query<
+      User & {
+        password_hash: string;
+        first_name?: string;
+        last_name?: string;
+        is_active?: boolean;
+        email_verified?: boolean;
+        created_at?: string;
+        updated_at?: string;
+      }
+    >(
+      `SELECT 
+        id,
+        email,
+        first_name AS "firstName",
+        last_name AS "lastName",
+        role,
+        is_active AS "isActive",
+        email_verified AS "isEmailVerified",
+        created_at AS "createdAt",
+        updated_at AS "updatedAt",
+        password_hash
+      FROM users
+      WHERE email = $1 AND is_active = true`,
       [email.toLowerCase()]
     );
-    
+
     return result.rows[0] || null;
   }
 
@@ -166,21 +188,21 @@ export class UserModel {
   }
 
   /**
-   * Verify user password
+   * Verify user password by user ID
    */
-  static async verifyPassword(email: string, password: string): Promise<User | null> {
-    const user = await this.findByEmailWithPassword(email);
-    if (!user) {
-      return null;
+  static async verifyPassword(id: string, password: string): Promise<boolean> {
+    const result = await query<{ password_hash: string }>(
+      'SELECT password_hash FROM users WHERE id = $1 AND is_active = true',
+      [id]
+    );
+
+    const row = result.rows[0];
+    if (!row || !row.password_hash) {
+      return false;
     }
 
-    const isValidPassword = await bcrypt.compare(password, user.password_hash);
-    if (!isValidPassword) {
-      return null;
-    }
-
-    const { password_hash, ...userWithoutPassword } = user;
-    return userWithoutPassword as User;
+    const isValidPassword = await bcrypt.compare(password, row.password_hash);
+    return isValidPassword;
   }
 
   /**

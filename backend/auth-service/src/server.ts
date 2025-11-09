@@ -38,7 +38,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: 'auth-service',
-    version: '1.0.0'
+    version: '1.0.1'
   });
 });
 
@@ -85,6 +85,13 @@ app.use((error: Error, req: express.Request, res: express.Response, next: expres
   if (error instanceof AppError) {
     statusCode = error.statusCode;
     message = error.message;
+  } else if ((error as any)?.statusCode && typeof (error as any).statusCode === 'number') {
+    // Manejar errores compatibles provenientes de paquetes compartidos
+    statusCode = (error as any).statusCode;
+    message = (error as any).message || message;
+    if ((error as any).validationErrors) {
+      data = { validationErrors: (error as any).validationErrors };
+    }
   }
 
   if (process.env.NODE_ENV === 'development') {

@@ -86,6 +86,7 @@ export class BarModel {
     return await transaction(async (client) => {
       // Create bar
       const barId = uuidv4();
+      const settingsId = uuidv4();
       const barResult = await client.query<Bar>(
         `INSERT INTO bars (id, name, description, address, city, country, phone, email, website_url, logo_url, cover_image_url, owner_id, timezone)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -109,8 +110,8 @@ export class BarModel {
 
       // Create default bar settings
       await client.query(
-        `INSERT INTO bar_settings (bar_id) VALUES ($1)`,
-        [barId]
+        `INSERT INTO bar_settings (id, bar_id) VALUES ($1, $2)`,
+        [settingsId, barId]
       );
 
       return barResult.rows[0];

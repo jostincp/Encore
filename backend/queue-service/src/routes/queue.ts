@@ -1,26 +1,30 @@
-import { Router } from 'express';
+import { Router, RequestHandler } from 'express';
 import { body, param, query } from 'express-validator';
 import { QueueController } from '../controllers/queueController';
-import { authenticateToken } from '../../../shared/middleware/auth';
+import { authenticateToken as authenticateTokenFn } from '../../../shared/middleware/auth';
 import { rateLimitMiddleware } from '../../../shared/middleware/rateLimit';
-import { validateRequest } from '../../../shared/middleware/validation';
+import { validateRequest as validateRequestFn } from '../../../shared/middleware/validation';
 
 const router = Router();
 
+// Type-safe wrappers to satisfy Express RequestHandler typing
+const authenticateToken: RequestHandler = (req, res, next) => (authenticateTokenFn as any)(req, res, next);
+const validateRequest: RequestHandler = (req, res, next) => (validateRequestFn as any)(req, res, next);
+
 // Rate limiting configurations
-const queueRateLimit = rateLimitMiddleware({
+const queueRateLimit: RequestHandler = rateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   message: 'Too many queue requests, please try again later'
 });
 
-const addSongRateLimit = rateLimitMiddleware({
+const addSongRateLimit: RequestHandler = rateLimitMiddleware({
   windowMs: 5 * 60 * 1000, // 5 minutes
   max: 10, // 10 song additions per window
   message: 'Too many song additions, please try again later'
 });
 
-const adminRateLimit = rateLimitMiddleware({
+const adminRateLimit: RequestHandler = rateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200, // 200 admin requests per window
   message: 'Too many admin requests, please try again later'

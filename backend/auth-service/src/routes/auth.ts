@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import {
   registerGuest,
-  registerMember,
+  registerUser,
   registerBarOwner,
   login,
   refreshToken,
@@ -52,7 +52,7 @@ router.post('/register-user',
   authenticate,
   rateLimitAuth,
   validateContentType(['application/json']),
-  registerMember
+  registerUser
 );
 
 /**

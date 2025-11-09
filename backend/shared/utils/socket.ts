@@ -6,7 +6,7 @@ import { verifyToken, verifyTableSessionToken, JwtPayload } from './jwt';
 import { logInfo, logError, logWarn } from './logger';
 import { config } from '../config';
 import { getRedisClient } from './redis';
-import { SocketEvent, QueueUpdateEvent, SongRequestEvent, PointsUpdateEvent } from '../types';
+import { SocketEvent, QueueUpdateEvent, SongRequestEvent, PointsUpdateEvent, UserRole } from '../types';
 
 // Interface para socket autenticado
 export interface AuthenticatedSocket extends Socket {
@@ -95,7 +95,7 @@ export class SocketManager {
             socket.user = {
               userId: `table_${tableSession.tableId}`,
               email: '',
-              role: 'user',
+              role: UserRole.USER,
               barId: tableSession.barId
             };
           } catch (tableTokenError) {

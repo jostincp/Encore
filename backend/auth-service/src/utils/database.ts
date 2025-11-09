@@ -8,6 +8,15 @@ let pool: Pool | null = null;
 
 export const initializeDatabase = async () => {
   try {
+    // Log configuration used for DB connection (excluding password for security)
+    logger.info('Initializing DB connection', {
+      host: config.database.host,
+      port: config.database.port,
+      database: config.database.name,
+      user: config.database.user,
+      ssl: config.database.ssl
+    });
+
     pool = new Pool({
       host: config.database.host,
       port: config.database.port,
@@ -31,8 +40,105 @@ export const initializeDatabase = async () => {
 export const runMigrations = async () => {
   try {
     logger.info('Running database migrations...');
-    // Add migration logic here if needed
-    logger.info('Database migrations completed');
+    // Create required tables if they do not exist
+    const pool = getPool();
+    const client = await pool.connect();
+
+    try {
+      // Ensure users table exists (minimal schema)
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS users (
+          id UUID PRIMARY KEY,
+          email VARCHAR(255) UNIQUE NOT NULL,
+          password_hash VARCHAR(255) NOT NULL,
+          first_name VARCHAR(100) NOT NULL,
+          last_name VARCHAR(100) NOT NULL,
+          role VARCHAR(50) NOT NULL DEFAULT 'user',
+          phone VARCHAR(20),
+          avatar_url TEXT,
+          bar_id UUID,
+          is_active BOOLEAN DEFAULT true,
+          email_verified BOOLEAN DEFAULT false,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )`
+      );
+
+      // Create refresh_tokens table required by auth flow
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS refresh_tokens (
+          id UUID PRIMARY KEY,
+          user_id UUID NOT NULL,
+          token_hash TEXT NOT NULL,
+          expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+          is_revoked BOOLEAN DEFAULT false,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT fk_refresh_tokens_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )`
+      );
+
+      // Indexes to optimize lookups
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash)`);
+
+      // Create bars table used by BarModel
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS bars (
+          id UUID PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          address VARCHAR(255) NOT NULL,
+          city VARCHAR(100) NOT NULL,
+          country VARCHAR(100) NOT NULL,
+          phone VARCHAR(20),
+          email VARCHAR(255),
+          website_url TEXT,
+          logo_url TEXT,
+          cover_image_url TEXT,
+          owner_id UUID NOT NULL,
+          timezone VARCHAR(50),
+          is_active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT fk_bars_owner_id FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+        )`
+      );
+
+      // Helpful indexes for bars
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_bars_owner_id ON bars(owner_id)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_bars_is_active ON bars(is_active)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_bars_city ON bars(city)`);
+
+      // Create bar_settings table used by BarModel.getSettings / updateSettings
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS bar_settings (
+          id UUID PRIMARY KEY,
+          bar_id UUID NOT NULL UNIQUE,
+          max_songs_per_user INTEGER DEFAULT 5,
+          song_request_cooldown INTEGER DEFAULT 60,
+          priority_play_cost INTEGER DEFAULT 100,
+          auto_approve_requests BOOLEAN DEFAULT false,
+          allow_explicit_content BOOLEAN DEFAULT false,
+          max_queue_size INTEGER DEFAULT 100,
+          points_per_visit INTEGER DEFAULT 10,
+          points_per_purchase INTEGER DEFAULT 10,
+          enable_loyalty_program BOOLEAN DEFAULT true,
+          open_time VARCHAR(10),
+          close_time VARCHAR(10),
+          timezone VARCHAR(50),
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT fk_bar_settings_bar_id FOREIGN KEY (bar_id) REFERENCES bars(id) ON DELETE CASCADE
+        )`
+      );
+
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_bar_settings_bar_id ON bar_settings(bar_id)`);
+
+      logger.info('Database migrations completed');
+    } finally {
+      client.release();
+    }
   } catch (error) {
     logger.error('Failed to run migrations:', error);
     throw error;

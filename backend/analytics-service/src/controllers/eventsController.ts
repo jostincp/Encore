@@ -82,7 +82,7 @@ export class EventsController {
 
       const filters = {
         bar_id: req.query.bar_id as string,
-        event_type: req.query.event_type as string,
+        event_type: req.query.event_type as any,
         start_date: req.query.start_date ? new Date(req.query.start_date as string) : undefined,
         end_date: req.query.end_date ? new Date(req.query.end_date as string) : undefined
       };
@@ -305,8 +305,8 @@ export class EventsController {
         return;
       }
 
-      const { event_ids, options } = req.body;
-      const result = await this.eventService.processEventsBatch(event_ids, options);
+      const { options } = req.body;
+      const result = await this.eventService.processEventsBatch(options);
 
       res.json({
         success: true,
@@ -360,7 +360,7 @@ export class EventsController {
     try {
       const filters = {
         bar_id: req.query.bar_id as string,
-        event_type: req.query.event_type as string,
+        event_type: req.query.event_type as any,
         start_date: req.query.start_date ? new Date(req.query.start_date as string) : undefined,
         end_date: req.query.end_date ? new Date(req.query.end_date as string) : undefined
       };
@@ -391,11 +391,11 @@ export class EventsController {
     try {
       const filters = {
         bar_id: req.query.bar_id as string,
-        event_type: req.query.event_type as string,
+        event_type: req.query.event_type as any,
         limit: parseInt(req.query.limit as string) || 100
       };
 
-      const result = await this.eventService.getRealTimeEvents(filters);
+      const result = await this.eventService.getRealTimeEvents(filters.bar_id as string);
 
       res.json({
         success: true,
@@ -474,10 +474,10 @@ export class EventsController {
     try {
       const filters = {
         bar_id: req.query.bar_id as string,
-        event_type: req.query.event_type as string,
+        event_type: req.query.event_type as any,
         start_date: req.query.start_date ? new Date(req.query.start_date as string) : undefined,
         end_date: req.query.end_date ? new Date(req.query.end_date as string) : undefined,
-        format: req.query.format as string || 'json'
+        format: (req.query.format as 'json' | 'csv') || 'json'
       };
 
       const result = await this.eventService.exportEvents(filters);

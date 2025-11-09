@@ -1,15 +1,35 @@
 import { Pool } from 'pg';
 import { UserRole } from './constants/roles';
 import bcrypt from 'bcrypt';
+import path from 'path';
+import dotenv from 'dotenv';
 
-// Configuración de conexión a base de datos (usando las credenciales del stack existente)
-const pool = new Pool({
-  host: 'localhost',
-  port: 5432,
-  database: 'stackdb',
-  user: 'stackuser',
-  password: 'SuperSecurePassword123!'
-});
+// Cargar variables de entorno: primero monorepo root, luego service root como fallback
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+// Configuración de conexión a base de datos utilizando variables de entorno o defaults de docker-compose
+let pool: Pool;
+
+const databaseUrl = process.env.DATABASE_URL;
+
+if (databaseUrl) {
+  pool = new Pool({ connectionString: databaseUrl });
+} else {
+  const dbHost = process.env.DB_HOST || 'localhost';
+  const dbPort = parseInt(process.env.DB_PORT || '5432', 10);
+  const dbName = process.env.DB_NAME || 'encore_db';
+  const dbUser = process.env.DB_USER || 'postgres';
+  const dbPassword = process.env.DB_PASSWORD || 'password';
+
+  pool = new Pool({
+    host: dbHost,
+    port: dbPort,
+    database: dbName,
+    user: dbUser,
+    password: dbPassword,
+  });
+}
 
 // Credenciales predeterminadas para el entorno de desarrollo
 const ADMIN_EMAIL = 'admin@encore.com';
@@ -21,6 +41,9 @@ async function seedAdmin() {
   const client = await pool.connect();
 
   try {
+    // Asegurar extensión pgcrypto para gen_random_uuid (idempotente)
+    await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+
     // 1. Hashear la contraseña para almacenamiento seguro
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(ADMIN_PASSWORD, saltRounds);

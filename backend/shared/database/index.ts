@@ -159,7 +159,8 @@ export const runMigrations = async (): Promise<void> => {
     
     // Migration files to run
     const migrationFiles = [
-      '001_initial_schema.sql'
+      '001_initial_schema.sql',
+      '002_role_mapping.sql'
     ];
     
     for (const filename of migrationFiles) {

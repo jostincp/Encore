@@ -33,7 +33,7 @@ export const corsMiddleware = cors({
     // Permitir requests sin origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    if (config.corsOrigins.includes(origin) || config.corsOrigins.includes('*')) {
+    if (config.cors.origins.includes(origin) || config.cors.origins.includes('*')) {
       return callback(null, true);
     }
     
@@ -73,12 +73,12 @@ export const compressionMiddleware: RequestHandler = compression({
 
 // Rate limiting básico con express-rate-limit
 export const basicRateLimit: RequestHandler = rateLimit({
-  windowMs: config.rateLimitWindowMs,
-  max: config.rateLimitMaxRequests,
+  windowMs: config.rateLimit.windowMs,
+  max: config.rateLimit.maxRequests,
   message: {
     error: 'Too many requests',
     message: 'Too many requests from this IP, please try again later.',
-    retryAfter: Math.ceil(config.rateLimitWindowMs / 1000)
+    retryAfter: Math.ceil(config.rateLimit.windowMs / 1000)
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -92,7 +92,7 @@ export const basicRateLimit: RequestHandler = rateLimit({
     res.status(429).json({
       error: 'Too many requests',
       message: 'Too many requests from this IP, please try again later.',
-      retryAfter: Math.ceil(config.rateLimitWindowMs / 1000)
+      retryAfter: Math.ceil(config.rateLimit.windowMs / 1000)
     });
   }
 });

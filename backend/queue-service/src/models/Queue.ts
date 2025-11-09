@@ -1,10 +1,10 @@
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../../../shared/database';
+import { query as dbQuery, getPool } from '../../../shared/database';
 import { logger } from '../../../shared/utils/logger';
 import { validateRequired, validateUUID, validateEnum } from '../../../shared/utils/validation';
 import { QueueEventEmitter } from '../events/queueEvents';
-import { redisClient } from '../../../shared/cache';
+import { getRedisClient } from '../../../shared/utils/redis';
 
 // Interfaces
 export interface QueueData {
@@ -103,7 +103,7 @@ export interface PaginatedQueueResult {
 export class QueueModel {
   // Create a new queue entry
   static async create(data: CreateQueueData): Promise<QueueData> {
-    const client = await db.connect();
+    const client = await getPool().connect();
     
     try {
       await client.query('BEGIN');
@@ -215,7 +215,7 @@ export class QueueModel {
         `;
       }
       
-      const result = await db.query(query, [id]);
+      const result = await dbQuery(query, [id]);
       
       if (result.rows.length === 0) {
         return null;
@@ -242,7 +242,8 @@ export class QueueModel {
       
       // Check cache first
       const cacheKey = `queue:${barId}:${JSON.stringify(filters)}:${page}:${limit}`;
-      const cached = await redisClient.get(cacheKey);
+      const redis = getRedisClient();
+      const cached = await redis.get(cacheKey);
       if (cached) {
         return JSON.parse(cached);
       }
@@ -304,7 +305,7 @@ export class QueueModel {
       
       // Count query
       const countQuery = `SELECT COUNT(*) FROM queue q ${joinClause} ${whereClause}`;
-      const countResult = await db.query(countQuery, params);
+      const countResult = await dbQuery(countQuery, params);
       const total = parseInt(countResult.rows[0].count);
       
       // Data query with pagination
@@ -318,7 +319,7 @@ export class QueueModel {
       `;
       params.push(limit, offset);
       
-      const dataResult = await db.query(dataQuery, params);
+      const dataResult = await dbQuery(dataQuery, params);
       
       const data = dataResult.rows.map(row => this.formatQueueData(row, filters.includeDetails));
       
@@ -331,7 +332,8 @@ export class QueueModel {
       };
       
       // Cache result
-      await redisClient.setex(cacheKey, 60, JSON.stringify(result)); // Cache for 1 minute
+      const redis = getRedisClient();
+      await redis.setex(cacheKey, 60, JSON.stringify(result)); // Cache for 1 minute
       
       return result;
       
@@ -343,7 +345,7 @@ export class QueueModel {
 
   // Update queue entry
   static async update(id: string, data: UpdateQueueData): Promise<QueueData | null> {
-    const client = await db.connect();
+    const client = await getPool().connect();
     
     try {
       await client.query('BEGIN');
@@ -438,7 +440,7 @@ export class QueueModel {
 
   // Delete queue entry
   static async delete(id: string): Promise<boolean> {
-    const client = await db.connect();
+    const client = await getPool().connect();
     
     try {
       await client.query('BEGIN');
@@ -485,7 +487,8 @@ export class QueueModel {
       validateUUID(barId, 'barId');
       
       const cacheKey = `queue:current:${barId}`;
-      const cached = await redisClient.get(cacheKey);
+      const redis = getRedisClient();
+      const cached = await redis.get(cacheKey);
       if (cached) {
         return JSON.parse(cached);
       }
@@ -503,7 +506,7 @@ export class QueueModel {
         LIMIT 1
       `;
       
-      const result = await db.query(query, [barId]);
+      const result = await dbQuery(query, [barId]);
       
       if (result.rows.length === 0) {
         return null;
@@ -512,7 +515,8 @@ export class QueueModel {
       const currentSong = this.formatQueueData(result.rows[0], true);
       
       // Cache for 30 seconds
-      await redisClient.setex(cacheKey, 30, JSON.stringify(currentSong));
+      const redis = getRedisClient();
+      await redis.setex(cacheKey, 30, JSON.stringify(currentSong));
       
       return currentSong;
       
@@ -540,7 +544,7 @@ export class QueueModel {
         LIMIT 1
       `;
       
-      const result = await db.query(query, [barId]);
+      const result = await dbQuery(query, [barId]);
       
       if (result.rows.length === 0) {
         return null;
@@ -556,7 +560,7 @@ export class QueueModel {
 
   // Reorder queue
   static async reorderQueue(barId: string, queueIds: string[]): Promise<boolean> {
-    const client = await db.connect();
+    const client = await getPool().connect();
     
     try {
       await client.query('BEGIN');
@@ -616,7 +620,7 @@ export class QueueModel {
 
   // Clear queue
   static async clearQueue(barId: string, status?: string[]): Promise<number> {
-    const client = await db.connect();
+    const client = await getPool().connect();
     
     try {
       await client.query('BEGIN');
@@ -664,7 +668,8 @@ export class QueueModel {
       validateUUID(barId, 'barId');
       
       const cacheKey = `queue:stats:${barId}:${dateFrom?.toISOString()}:${dateTo?.toISOString()}`;
-      const cached = await redisClient.get(cacheKey);
+      const redis = getRedisClient();
+      const cached = await redis.get(cacheKey);
       if (cached) {
         return JSON.parse(cached);
       }
@@ -698,7 +703,7 @@ export class QueueModel {
         WHERE q.bar_id = $1 ${dateFilter}
       `;
       
-      const statsResult = await db.query(statsQuery, params);
+      const statsResult = await dbQuery(statsQuery, params);
       const stats = statsResult.rows[0];
       
       // Most requested songs
@@ -712,7 +717,7 @@ export class QueueModel {
         LIMIT 10
       `;
       
-      const songsResult = await db.query(songsQuery, params);
+      const songsResult = await dbQuery(songsQuery, params);
       
       // Top requesters
       const usersQuery = `
@@ -725,7 +730,7 @@ export class QueueModel {
         LIMIT 10
       `;
       
-      const usersResult = await db.query(usersQuery, params);
+      const usersResult = await dbQuery(usersQuery, params);
       
       const result: QueueStats = {
         total_requests: parseInt(stats.total_requests),
@@ -741,7 +746,8 @@ export class QueueModel {
       };
       
       // Cache for 5 minutes
-      await redisClient.setex(cacheKey, 300, JSON.stringify(result));
+      const redis = getRedisClient();
+      await redis.setex(cacheKey, 300, JSON.stringify(result));
       
       return result;
       
@@ -765,7 +771,7 @@ export class QueueModel {
         LIMIT 1
       `;
       
-      const result = await db.query(query, [barId, userId]);
+      const result = await dbQuery(query, [barId, userId]);
       
       if (result.rows.length === 0) {
         return null;
@@ -791,7 +797,7 @@ export class QueueModel {
         WHERE bar_id = $1 AND user_id = $2 AND status IN ('pending', 'approved', 'playing')
       `;
       
-      const result = await db.query(query, [barId, userId]);
+      const result = await dbQuery(query, [barId, userId]);
       const currentSongs = parseInt(result.rows[0].current_songs);
       
       return currentSongs < maxSongsPerUser;
@@ -857,13 +863,15 @@ export class QueueModel {
   private static async clearQueueCache(barId: string): Promise<void> {
     try {
       const pattern = `queue:${barId}:*`;
-      const keys = await redisClient.keys(pattern);
+      const redis = getRedisClient();
+      const keys = await redis.keys(pattern);
       if (keys.length > 0) {
-        await redisClient.del(...keys);
+        await (redis as any).del(...keys);
       }
       
       // Also clear current song cache
-      await redisClient.del(`queue:current:${barId}`);
+    const redis = getRedisClient();
+    await redis.del(`queue:current:${barId}`);
       
     } catch (error) {
       logger.error('Error clearing queue cache:', error);

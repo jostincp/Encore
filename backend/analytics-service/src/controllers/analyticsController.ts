@@ -46,10 +46,10 @@ export class AnalyticsController {
       }
 
       const filters = {
-        bar_id: req.query.bar_id as string,
-        start_date: req.query.start_date ? new Date(req.query.start_date as string) : undefined,
-        end_date: req.query.end_date ? new Date(req.query.end_date as string) : undefined,
-        metric_type: req.query.metric_type as string
+        barId: req.query.bar_id as string,
+        startDate: req.query.start_date ? new Date(req.query.start_date as string) : undefined,
+        endDate: req.query.end_date ? new Date(req.query.end_date as string) : undefined,
+        metricTypes: req.query.metric_type ? [req.query.metric_type as import('../types/common').MetricType] : undefined
       };
 
       const result = await this.analyticsService.getAnalytics(filters);

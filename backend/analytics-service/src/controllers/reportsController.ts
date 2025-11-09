@@ -82,7 +82,7 @@ export class ReportsController {
 
       const filters = {
         bar_id: req.query.bar_id as string,
-        report_type: req.query.report_type as string,
+        report_type: req.query.report_type as 'analytics' | 'events' | 'dashboard' | 'custom',
         status: req.query.status as 'pending' | 'generating' | 'completed' | 'failed' | 'cancelled',
         created_by: req.query.created_by as string,
         start_date: req.query.start_date ? new Date(req.query.start_date as string) : undefined,
@@ -356,13 +356,8 @@ export class ReportsController {
       const { id } = req.params;
       const result = await this.reportService.downloadReport(id);
 
-      // Set appropriate headers for file download
-      res.setHeader('Content-Type', result.content_type);
-      res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
-      res.setHeader('Content-Length', result.size);
-
-      // Send file data
-      res.send(result.data);
+      // Use Express response.download to stream file
+      res.download(result.filePath, result.fileName);
 
     } catch (error) {
       logger.error('Error downloading report', { error: error.message, id: req.params.id });
@@ -390,13 +385,13 @@ export class ReportsController {
     try {
       const { id } = req.params;
       const expiresIn = parseInt(req.query.expires_in as string) || 3600; // 1 hour default
-      
-      const result = await this.reportService.getDownloadUrl(id, expiresIn);
+      // ReportService exposes generateDownloadUrl; expire handling is not implemented for local files
+      const url = this.reportService.generateDownloadUrl(id);
 
       res.json({
         success: true,
         message: 'Download URL generated successfully',
-        data: result
+        data: { url, expires_in: expiresIn }
       });
 
     } catch (error) {
@@ -429,7 +424,7 @@ export class ReportsController {
     try {
       const filters = {
         bar_id: req.query.bar_id as string,
-        report_type: req.query.report_type as string,
+        report_type: req.query.report_type as 'analytics' | 'events' | 'dashboard' | 'custom',
         is_active: req.query.is_active === 'true'
       };
 
@@ -1346,4 +1341,8 @@ export class ReportsController {
       });
     }
   }
+
+  // Default export compatibility
 }
+
+export default ReportsController;
