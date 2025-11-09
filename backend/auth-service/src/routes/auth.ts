@@ -3,6 +3,7 @@ import {
   registerGuest,
   registerUser,
   registerBarOwner,
+  createAdmin,
   login,
   refreshToken,
   logout,
@@ -24,11 +25,18 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   verifyEmailSchema,
+  registerBarOwnerSchema,
+  createAdminSchema,
   validateRequest,
   validateParams
 } from '../../../shared/utils/validation';
 
 const router: Router = Router();
+
+// Toggle de rate limit vía entorno
+const skipRateLimit = process.env.DISABLE_RATE_LIMIT === 'true';
+const noop = (req: Request, res: Response, next: Function) => next();
+const rateLimitAuthMaybe = skipRateLimit ? noop : rateLimitAuth;
 
 // Removed generic register route for security - use specific routes instead
 
@@ -38,7 +46,7 @@ const router: Router = Router();
  * @access  Public
  */
 router.post('/register-guest',
-  rateLimitAuth,
+  rateLimitAuthMaybe,
   validateContentType(['application/json']),
   registerGuest
 );
@@ -50,7 +58,7 @@ router.post('/register-guest',
  */
 router.post('/register-user',
   authenticate,
-  rateLimitAuth,
+  rateLimitAuthMaybe,
   validateContentType(['application/json']),
   registerUser
 );
@@ -61,9 +69,22 @@ router.post('/register-user',
  * @access  Public
  */
 router.post('/register-bar-owner',
-  rateLimitAuth,
+  rateLimitAuthMaybe,
   validateContentType(['application/json']),
+  validateRequest(registerBarOwnerSchema),
   registerBarOwner
+);
+
+/**
+ * @route   POST /api/auth/create-admin
+ * @desc    Crear usuario ADMIN (solo API, controlado por secreto)
+ * @access  Private (header X-Admin-Create-Secret)
+ */
+router.post('/create-admin',
+  rateLimitAuthMaybe,
+  validateContentType(['application/json']),
+  validateRequest(createAdminSchema),
+  createAdmin
 );
 
 /**
@@ -72,7 +93,7 @@ router.post('/register-bar-owner',
  * @access  Public
  */
 router.post('/login',
-  rateLimitAuth,
+  rateLimitAuthMaybe,
   validateContentType(['application/json']),
   validateRequest(loginSchema),
   login
@@ -84,7 +105,7 @@ router.post('/login',
  * @access  Public
  */
 router.post('/refresh',
-  rateLimitAuth,
+  rateLimitAuthMaybe,
   validateContentType(['application/json']),
   validateRequest(refreshTokenSchema),
   refreshToken
@@ -142,6 +163,30 @@ router.put('/change-password',
   rateLimitStrict,
   validateContentType(['application/json']),
   changePassword
+);
+
+/**
+ * @route   POST /api/auth/forgot-password
+ * @desc    Solicitar recuperación de contraseña
+ * @access  Public
+ */
+router.post('/forgot-password',
+  rateLimitAuthMaybe,
+  validateContentType(['application/json']),
+  validateRequest(forgotPasswordSchema),
+  forgotPassword
+);
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Restablecer contraseña con token
+ * @access  Public
+ */
+router.post('/reset-password',
+  rateLimitAuthMaybe,
+  validateContentType(['application/json']),
+  validateRequest(resetPasswordSchema),
+  resetPassword
 );
 
 // Session management routes removed - functions not implemented

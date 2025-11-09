@@ -30,6 +30,7 @@ import { AdminLayout, PageContainer } from '@/components/ui/layout';
 import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
 import { formatPrice, formatTime, formatDuration } from '@/utils/format';
+import { API_ENDPOINTS } from '@/utils/constants';
 import { BarStats, Order } from '@/types';
 
 // Mock data para el dashboard
@@ -147,6 +148,11 @@ export default function AdminDashboard() {
   const [activeOrders] = useState(mockActiveOrders);
   const [currentQueue] = useState(mockCurrentQueue);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [realBar, setRealBar] = useState<any | null>(null);
+  const [realUser, setRealUser] = useState<any | null>(null);
+  const [realError, setRealError] = useState<string | null>(null);
+  const [realMetrics, setRealMetrics] = useState<any | null>(null);
+  const barConnected = !!(realBar && (realBar.id || realBar._id));
 
   useEffect(() => {
     // Verificar si es admin - temporalmente deshabilitado para desarrollo
@@ -177,6 +183,71 @@ export default function AdminDashboard() {
   // Temporalmente permitir acceso sin verificación de admin
   // TODO: Revertir cuando se implemente autenticación
   // if (!user || user.role !== 'admin') return null;
+
+  // Cargar datos reales del bar y del usuario usando el token guardado
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('encore_access_token') : null;
+    if (!token) {
+      setRealError('Token no encontrado. Registra tu cuenta o inicia sesión.');
+      return;
+    }
+
+    const fetchRealData = async () => {
+      try {
+        setRealError(null);
+        const headers = {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`
+        } as const;
+
+        const [barRes, userRes, metricsRes] = await Promise.all([
+          fetch(`${API_ENDPOINTS.base}/api/bars/my`, { headers }),
+          fetch(`${API_ENDPOINTS.base}/api/auth/profile`, { headers }),
+          fetch(`${API_ENDPOINTS.base}/api/v1/analytics/dashboard/overview`, { headers })
+        ]);
+
+        const barJson = await barRes.json().catch(() => ({}));
+        const userJson = await userRes.json().catch(() => ({}));
+        const metricsJson = await metricsRes.json().catch(() => ({}));
+
+        if (!barRes.ok) {
+          const msg = barJson?.message || barJson?.error || barJson?.data?.message || `Error al cargar el bar (${barRes.status})`;
+          setRealError(msg);
+        } else {
+          // La respuesta es { success, message, data: { bars: [...] } }
+          const barsArr = barJson?.data?.bars || barJson?.bars;
+          const bar = Array.isArray(barsArr) && barsArr.length > 0 ? barsArr[0] : null;
+          setRealBar(bar);
+        }
+
+        if (!userRes.ok) {
+          const msg = userJson?.message || userJson?.error || userJson?.data?.message || `Error al cargar el perfil (${userRes.status})`;
+          // no sobreescribir error del bar si ya existe
+          setRealError(prev => prev ?? msg);
+        } else {
+          const u = userJson?.data || userJson;
+          setRealUser(u);
+        }
+
+        if (metricsRes.ok) {
+          const m = metricsJson?.data || metricsJson;
+          const normalized = {
+            occupiedTables: m?.occupiedTables ?? m?.tablesOccupied ?? null,
+            totalTables: m?.totalTables ?? null,
+            totalRevenue: m?.totalRevenue ?? m?.salesTotal ?? null,
+            totalSongsPlayed: m?.totalSongsPlayed ?? m?.songsPlayed ?? null,
+            totalOrders: m?.totalOrders ?? m?.ordersTotal ?? null,
+            averageOrderValue: m?.averageOrderValue ?? null
+          };
+          setRealMetrics(normalized);
+        }
+      } catch (err: any) {
+        setRealError(err?.message || 'Error de red al cargar datos reales');
+      }
+    };
+
+    fetchRealData();
+  }, []);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -223,6 +294,38 @@ export default function AdminDashboard() {
             <p className="text-muted-foreground mt-1">
               Vista general del local - {formatTime(new Date())}
             </p>
+            {/* Panel de datos reales del bar */}
+            <div className="mt-4">
+              <Card>
+                <CardContent className="p-4">
+                  {!realBar && !realUser && !realError && (
+                    <p className="text-sm text-muted-foreground">Cargando datos reales...</p>
+                  )}
+                  {realError && (
+                    <p className="text-sm text-red-600">{realError}</p>
+                  )}
+                  {(realBar || realUser) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      {realBar && (
+                        <div>
+                          <p className="font-medium">Bar</p>
+                          <p className="text-muted-foreground">Nombre: {realBar.name || realBar.nombre || '—'}</p>
+                          <p className="text-muted-foreground">ID: {realBar.id || '—'}</p>
+                          {realBar.city && <p className="text-muted-foreground">Ciudad: {realBar.city}</p>}
+                        </div>
+                      )}
+                      {realUser && (
+                        <div>
+                          <p className="font-medium">Administrador</p>
+                          <p className="text-muted-foreground">Email: {realUser.email || '—'}</p>
+                          <p className="text-muted-foreground">Usuario ID: {realUser.id || '—'}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <Button
@@ -256,15 +359,21 @@ export default function AdminDashboard() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Mesas Ocupadas</p>
                   <p className="text-2xl font-bold">
-                    {stats.activeTables}/{additionalStats.totalTables}
+                    {barConnected && realMetrics?.occupiedTables != null && realMetrics?.totalTables != null
+                      ? `${realMetrics.occupiedTables}/${realMetrics.totalTables}`
+                      : 'Sin datos'}
                   </p>
                 </div>
                 <Users className="h-8 w-8 text-blue-600" />
               </div>
-              <Progress 
-                value={(stats.activeTables / additionalStats.totalTables) * 100} 
-                className="mt-3" 
-              />
+              {barConnected && realMetrics?.occupiedTables != null && realMetrics?.totalTables != null ? (
+                <Progress 
+                  value={(realMetrics.occupiedTables / realMetrics.totalTables) * 100} 
+                  className="mt-3" 
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground mt-3">Conecta tu bar para ver métricas reales</p>
+              )}
             </CardContent>
           </Card>
 
@@ -273,12 +382,12 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Ventas Hoy</p>
-                  <p className="text-2xl font-bold">{formatPrice(stats.totalRevenue)}</p>
+                  <p className="text-2xl font-bold">{barConnected && realMetrics?.totalRevenue != null ? formatPrice(realMetrics.totalRevenue) : 'Sin datos'}</p>
                 </div>
                 <DollarSign className="h-8 w-8 text-green-600" />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                +12% vs ayer
+                {barConnected && realMetrics?.totalRevenue != null ? '+12% vs ayer' : 'Conecta tu bar para ver métricas reales'}
               </p>
             </CardContent>
           </Card>
@@ -288,12 +397,12 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Canciones</p>
-                  <p className="text-2xl font-bold">{additionalStats.totalSongsPlayed}</p>
+                  <p className="text-2xl font-bold">{barConnected && realMetrics?.totalSongsPlayed != null ? realMetrics.totalSongsPlayed : 'Sin datos'}</p>
                 </div>
                 <Music className="h-8 w-8 text-purple-600" />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Promedio: {Math.round(additionalStats.totalSongsPlayed / 8)} por hora
+                {barConnected && realMetrics?.totalSongsPlayed != null && realMetrics?.totalSongsPlayed > 0 ? `Promedio: ${Math.round(realMetrics.totalSongsPlayed / 8)} por hora` : 'Conecta tu bar para ver métricas reales'}
               </p>
             </CardContent>
           </Card>
@@ -303,12 +412,12 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Pedidos</p>
-                  <p className="text-2xl font-bold">{additionalStats.totalOrders}</p>
+                  <p className="text-2xl font-bold">{barConnected && realMetrics?.totalOrders != null ? realMetrics.totalOrders : 'Sin datos'}</p>
                 </div>
                 <ShoppingCart className="h-8 w-8 text-orange-600" />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Promedio: {formatPrice(additionalStats.averageOrderValue)}
+                {barConnected && realMetrics?.averageOrderValue != null ? `Promedio: ${formatPrice(realMetrics.averageOrderValue)}` : 'Conecta tu bar para ver métricas reales'}
               </p>
             </CardContent>
           </Card>
@@ -501,29 +610,15 @@ export default function AdminDashboard() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-green-600">{additionalStats.customerSatisfaction}</p>
+                  <p className="text-2xl font-bold text-green-600">{realMetrics ? 'Sin datos' : 'Sin datos'}</p>
                   <p className="text-sm text-muted-foreground">Satisfacción del Cliente</p>
-                  <div className="flex justify-center mt-1">
-                    {[...Array(5)].map((_, i) => (
-                      <Star 
-                        key={i} 
-                        className={`h-4 w-4 ${
-                          i < Math.floor(additionalStats.customerSatisfaction) 
-                            ? 'text-yellow-400 fill-current' 
-                            : 'text-gray-300'
-                        }`} 
-                      />
-                    ))}
-                  </div>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-blue-600">{additionalStats.averageWaitTime} min</p>
+                  <p className="text-2xl font-bold text-blue-600">{realMetrics ? 'Sin datos' : 'Sin datos'}</p>
                   <p className="text-sm text-muted-foreground">Tiempo Promedio de Espera</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-purple-600">
-                    {additionalStats.topGenres.join(', ')}
-                  </p>
+                  <p className="text-2xl font-bold text-purple-600">{realMetrics ? 'Sin datos' : 'Sin datos'}</p>
                   <p className="text-sm text-muted-foreground">Géneros Más Populares</p>
                 </div>
               </div>

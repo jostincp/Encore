@@ -83,6 +83,44 @@ export const loginSchema = z.object({
   })
 });
 
+// Registro de propietario de bar (Bar Owner)
+export const registerBarOwnerSchema = z.object({
+  body: z.object({
+    email: emailSchema,
+    password: passwordSchema,
+    firstName: nameSchema,
+    lastName: nameSchema,
+    barName: sanitizedString(2, 100),
+    address: sanitizedString(5, 255),
+    city: sanitizedString(2, 100),
+    country: sanitizedString(2, 100),
+    phone: z
+      .string()
+      .min(7, 'Teléfono demasiado corto')
+      .max(20, 'Teléfono demasiado largo')
+      .regex(/^[+]?[-() 0-9]{7,20}$/,
+        'Formato de teléfono inválido')
+      .optional()
+  })
+});
+
+// Creación privada de ADMIN (solo API)
+export const createAdminSchema = z.object({
+  body: z.object({
+    email: emailSchema,
+    password: passwordSchema,
+    firstName: nameSchema,
+    lastName: nameSchema,
+    phone: z
+      .string()
+      .min(7, 'Teléfono demasiado corto')
+      .max(20, 'Teléfono demasiado largo')
+      .regex(/^[+]?[-() 0-9]{7,20}$/,
+        'Formato de teléfono inválido')
+      .optional()
+  })
+});
+
 export const refreshTokenSchema = z.object({
   body: z.object({
     refreshToken: tokenSchema
@@ -389,6 +427,8 @@ export default {
   addToQueueSchema,
   updateQueueItemSchema,
   queueFiltersSchema,
+  registerBarOwnerSchema,
+  createAdminSchema,
   earnPointsSchema,
   redeemPointsSchema,
   pointsTransactionSchema,

@@ -12,10 +12,13 @@ import { asyncHandler } from '../middleware/asyncHandler';
 import {
   validateEmail,
   validatePassword,
-  validateNonEmptyString as validateUsername
+  validateNonEmptyString as validateUsername,
+  validateNonEmptyString,
+  validatePhone
 } from '../utils/validation';
 import { config } from '../../../shared/config';
 import { UserRole } from '../constants/roles';
+import { getRedisService } from '../utils/redis';
 
 // Simple sanitize function
 const sanitizeInput = (input: string): string => {
@@ -182,16 +185,32 @@ export const registerUser = asyncHandler(async (req: RequestWithUser, res: Respo
  * Register a new bar owner with basic bar creation
  */
 export const registerBarOwner = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password, nombre_del_bar } = req.body;
+  const {
+    email,
+    password,
+    firstName,
+    lastName,
+    barName,
+    nombre_del_bar, // soporte retrocompatibilidad
+    address,
+    city,
+    country,
+    phone
+  } = req.body;
 
-  // Validate input
-  if (!email || !password || !nombre_del_bar) {
-    throw new ValidationError('Email, contraseña y nombre del bar son requeridos');
+  // Validación de campos requeridos
+  if (!email || !password || !(barName || nombre_del_bar) || !firstName || !lastName || !address || !city || !country) {
+    throw new ValidationError('Campos requeridos: nombre completo, email, nombre del bar, dirección, ciudad, país y contraseña');
   }
 
   // Sanitizar inputs
   const sanitizedEmail = sanitizeInput(email);
-  const sanitizedBarName = sanitizeInput(nombre_del_bar);
+  const sanitizedFirstName = sanitizeInput(firstName);
+  const sanitizedLastName = sanitizeInput(lastName);
+  const sanitizedBarName = sanitizeInput(barName || nombre_del_bar);
+  const sanitizedAddress = sanitizeInput(address);
+  const sanitizedCity = sanitizeInput(city);
+  const sanitizedCountry = sanitizeInput(country);
 
   if (!validateEmail(sanitizedEmail)) {
     throw new ValidationError('Email válido es requerido');
@@ -201,8 +220,21 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
     throw new ValidationError('Contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y símbolos');
   }
 
+  if (!validateUsername(sanitizedFirstName) || !validateUsername(sanitizedLastName)) {
+    throw new ValidationError('Nombre y apellido deben tener entre 2 y 50 caracteres');
+  }
+
   if (!validateUsername(sanitizedBarName)) {
     throw new ValidationError('Nombre del bar debe tener entre 2 y 50 caracteres');
+  }
+
+  // Validaciones de ubicación y teléfono
+  if (!validateNonEmptyString(sanitizedAddress) || !validateNonEmptyString(sanitizedCity) || !validateNonEmptyString(sanitizedCountry)) {
+    throw new ValidationError('Dirección, ciudad y país son requeridos');
+  }
+
+  if (phone && !validatePhone(phone)) {
+    throw new ValidationError('Teléfono inválido');
   }
 
   // Check if user already exists
@@ -215,17 +247,19 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
   const user = await UserModel.create({
     email: sanitizedEmail,
     password,
-    firstName: 'Bar Owner', // Default first name
-    lastName: 'Default', // Default last name
+    firstName: sanitizedFirstName,
+    lastName: sanitizedLastName,
+    phone,
     role: UserRole.BAR_OWNER
   });
 
-  // Create basic bar entry
+  // Crear bar con datos completos
   const bar = await BarModel.create({
     name: sanitizedBarName,
-    address: 'Dirección por completar', // Placeholder
-    city: 'Ciudad por completar', // Placeholder
-    country: 'País por completar', // Placeholder
+    address: sanitizedAddress,
+    city: sanitizedCity,
+    country: sanitizedCountry,
+    phone: phone || undefined,
     ownerId: user.id
   });
 
@@ -239,25 +273,87 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
   logger.info('Bar owner registered successfully', { userId: user.id, email: user.email, barId: bar.id });
 
   sendSuccess(res, {
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: UserRole.BAR_OWNER, // Return as bar_owner for API consistency
-        isEmailVerified: user.isEmailVerified,
-        isActive: user.isActive
-      },
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: UserRole.BAR_OWNER,
+      isEmailVerified: user.isEmailVerified,
+      isActive: user.isActive
+    },
     bar: {
       id: bar.id,
       name: bar.name,
       address: bar.address,
       city: bar.city,
-      country: bar.country
+      country: bar.country,
+      phone: bar.phone || undefined
     },
     accessToken,
     refreshToken: refreshTokenData.token
   }, 'Propietario del bar registrado exitosamente', 201);
+});
+
+/**
+ * Create ADMIN user (private API, dev/test only)
+ */
+export const createAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const secretHeader = (req.headers['x-admin-create-secret'] || req.headers['X-Admin-Create-Secret']) as string | undefined;
+  const ADMIN_SECRET = process.env.ADMIN_CREATE_SECRET;
+
+  if (!ADMIN_SECRET || !secretHeader || secretHeader !== ADMIN_SECRET) {
+    throw new UnauthorizedError('Acceso denegado');
+  }
+
+  const { email, password, firstName, lastName, phone } = req.body;
+
+  if (!email || !password || !firstName || !lastName) {
+    throw new ValidationError('Email, contraseña, nombre y apellido son requeridos');
+  }
+
+  const sanitizedEmail = sanitizeInput(email);
+  const sanitizedFirstName = sanitizeInput(firstName);
+  const sanitizedLastName = sanitizeInput(lastName);
+
+  if (!validateEmail(sanitizedEmail)) {
+    throw new ValidationError('Email inválido');
+  }
+  if (!validatePassword(password)) {
+    throw new ValidationError('Contraseña insegura');
+  }
+  if (!validateUsername(sanitizedFirstName) || !validateUsername(sanitizedLastName)) {
+    throw new ValidationError('Nombre y apellido inválidos');
+  }
+  if (phone && !validatePhone(phone)) {
+    throw new ValidationError('Teléfono inválido');
+  }
+
+  const exists = await UserModel.findByEmail(sanitizedEmail);
+  if (exists) {
+    throw new ConflictError('El email ya existe');
+  }
+
+  const user = await UserModel.create({
+    email: sanitizedEmail,
+    password,
+    firstName: sanitizedFirstName,
+    lastName: sanitizedLastName,
+    phone,
+    role: UserRole.ADMIN
+  });
+
+  logger.info('Admin user created via private endpoint', { userId: user.id, email: user.email });
+
+  sendSuccess(res, {
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role
+    }
+  }, 'Administrador creado exitosamente', 201);
 });
 
 
@@ -280,11 +376,49 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     throw new ValidationError('Email inválido');
   }
 
+  // Bloqueo incremental por intentos fallidos usando Redis
+  const redis = getRedisService();
+  const lockKey = `login:lock:${sanitizedEmail}`;
+  const attemptsKey = `login:attempts:${sanitizedEmail}`;
+  const stageKey = `login:lock_stage:${sanitizedEmail}`;
+
+  const isLocked = await redis.exists(lockKey);
+  if (isLocked) {
+    const ttl = await redis.ttl(lockKey);
+    const minutes = Math.max(1, Math.ceil(ttl / 60));
+    logger.warn('Login blocked due to lockout', { email: sanitizedEmail, ip: req.ip, ttl_seconds: ttl });
+    res.status(429).json({
+      success: false,
+      message: `Cuenta bloqueada por ${minutes} minutos debido a múltiples intentos fallidos`,
+      error: 'Account locked'
+    });
+    return;
+  }
+
   // Find user with password
   const user = await UserModel.findByEmailWithPassword(sanitizedEmail);
   if (!user) {
-    // Log intento de login fallido para seguridad
-    logger.warn('Failed login attempt', { email: sanitizedEmail, ip: req.ip });
+    // Intento fallido: incrementar contador y aplicar bloqueo si corresponde
+    const attempts = await redis.incr(attemptsKey);
+    logger.warn('Failed login attempt (user not found)', { email: sanitizedEmail, ip: req.ip, attempts });
+
+    if (attempts % 3 === 0) {
+      const currentStageStr = await redis.get(stageKey);
+      const currentStage = Math.min(parseInt(currentStageStr || '0', 10) + 1, 3);
+      const durations = [300, 900, 1800]; // 5m, 15m, 30m
+      const duration = durations[currentStage - 1];
+      await redis.set(lockKey, '1', duration);
+      await redis.set(stageKey, String(currentStage));
+      await redis.set(attemptsKey, '0');
+      logger.warn('Account locked due to repeated failed attempts', { email: sanitizedEmail, stage: currentStage, duration_seconds: duration });
+      res.status(429).json({
+        success: false,
+        message: `Cuenta bloqueada por ${duration / 60} minutos`,
+        error: 'Account locked'
+      });
+      return;
+    }
+
     throw new UnauthorizedError('Credenciales inválidas');
   }
 
@@ -297,7 +431,26 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   // Verify password
   const isValidPassword = await UserModel.verifyPassword(user.id, password);
   if (!isValidPassword) {
-    logger.warn('Invalid password attempt', { userId: user.id, email: sanitizedEmail, ip: req.ip });
+    const attempts = await redis.incr(attemptsKey);
+    logger.warn('Invalid password attempt', { userId: user.id, email: sanitizedEmail, ip: req.ip, attempts });
+
+    if (attempts % 3 === 0) {
+      const currentStageStr = await redis.get(stageKey);
+      const currentStage = Math.min(parseInt(currentStageStr || '0', 10) + 1, 3);
+      const durations = [300, 900, 1800];
+      const duration = durations[currentStage - 1];
+      await redis.set(lockKey, '1', duration);
+      await redis.set(stageKey, String(currentStage));
+      await redis.set(attemptsKey, '0');
+      logger.warn('Account locked due to repeated invalid password attempts', { userId: user.id, email: sanitizedEmail, stage: currentStage, duration_seconds: duration });
+      res.status(429).json({
+        success: false,
+        message: `Cuenta bloqueada por ${duration / 60} minutos`,
+        error: 'Account locked'
+      });
+      return;
+    }
+
     throw new UnauthorizedError('Credenciales inválidas');
   }
 
@@ -316,6 +469,15 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const refreshTokenData = await RefreshTokenModel.create(user.id, refreshTokenExpiresAt);
 
   logger.info('User logged in successfully', { userId: user.id, email: user.email, ip: req.ip });
+
+  // Resetear intentos y stage tras login exitoso
+  try {
+    await redis.del(attemptsKey);
+    await redis.del(stageKey);
+    await redis.del(lockKey);
+  } catch (e) {
+    logger.warn('Failed to reset login attempt counters', { email: sanitizedEmail });
+  }
 
   sendSuccess(res, {
     user: {

@@ -81,8 +81,9 @@ export default function AdminSettings() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    // Verificar si es admin
-    if (!user || user.role !== 'admin') {
+    // Permitir ADMIN y BAR_OWNER
+    const allowedRoles = ['admin', 'ADMIN', 'bar_owner', 'BAR_OWNER'];
+    if (!user || !allowedRoles.includes(user.role as any)) {
       router.push('/');
       return;
     }
@@ -138,7 +139,8 @@ export default function AdminSettings() {
     }));
   };
 
-  if (!user || user.role !== 'admin') return null;
+  const allowedRoles = ['admin', 'ADMIN', 'bar_owner', 'BAR_OWNER'];
+  if (!user || !allowedRoles.includes(user.role as any)) return null;
 
   return (
     <AdminLayout>

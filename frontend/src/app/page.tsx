@@ -15,7 +15,7 @@ export default function Home() {
     if (role === 'client') {
       router.push('/qr');
     } else {
-      router.push('/admin');
+      router.push('/auth/login');
     }
   };
 
@@ -120,9 +120,27 @@ export default function Home() {
                       Configuración de estrategias
                     </li>
                   </ul>
-                  <Button className="w-full group-hover:bg-primary group-hover:text-primary-foreground">
-                    Acceder al Panel
-                  </Button>
+                  <div className="grid grid-cols-1 gap-2">
+                    <Button
+                      className="w-full group-hover:bg-primary group-hover:text-primary-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push('/auth/login');
+                      }}
+                    >
+                      Iniciar sesión
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push('/auth/register-bar-owner');
+                      }}
+                    >
+                      Registrar mi Bar (Propietario)
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>

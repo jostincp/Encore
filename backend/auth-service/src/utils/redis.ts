@@ -6,6 +6,131 @@ import { logger } from './logger';
  * Redis client instance
  */
 let redisClient: Redis | null = null;
+let usingMemoryFallback = false;
+
+// Minimal in-memory Redis-like client for development fallback
+class MemoryRedisClient {
+  private store: Map<string, { value: string; expireAt?: number }>; 
+
+  constructor() {
+    this.store = new Map();
+  }
+
+  private now(): number {
+    return Math.floor(Date.now() / 1000);
+  }
+
+  private getEntry(key: string) {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (entry.expireAt && entry.expireAt <= this.now()) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry;
+  }
+
+  async set(key: string, value: string) {
+    this.store.set(key, { value });
+    return 'OK' as any;
+  }
+
+  async setex(key: string, ttlSeconds: number, value: string) {
+    this.store.set(key, { value, expireAt: this.now() + ttlSeconds });
+    return 'OK' as any;
+  }
+
+  async get(key: string) {
+    const entry = this.getEntry(key);
+    return entry ? entry.value : null;
+  }
+
+  async del(...keys: string[]) {
+    let count = 0;
+    for (const key of keys) {
+      if (this.store.delete(key)) count++;
+    }
+    return count as any;
+  }
+
+  async exists(key: string) {
+    return this.getEntry(key) ? 1 : 0;
+  }
+
+  async expire(key: string, seconds: number) {
+    const entry = this.getEntry(key);
+    if (!entry) return 0 as any;
+    entry.expireAt = this.now() + seconds;
+    this.store.set(key, entry);
+    return 1 as any;
+  }
+
+  async ttl(key: string) {
+    const entry = this.getEntry(key);
+    if (!entry) return -2 as any; // key does not exist
+    if (!entry.expireAt) return -1 as any; // no expire
+    const remaining = entry.expireAt - this.now();
+    return Math.max(remaining, 0) as any;
+  }
+
+  async incr(key: string) {
+    const current = await this.get(key);
+    const num = current ? parseInt(current, 10) || 0 : 0;
+    const next = (num + 1).toString();
+    await this.set(key, next);
+    return parseInt(next, 10) as any;
+  }
+
+  async incrby(key: string, increment: number) {
+    const current = await this.get(key);
+    const num = current ? parseInt(current, 10) || 0 : 0;
+    const next = (num + increment).toString();
+    await this.set(key, next);
+    return parseInt(next, 10) as any;
+  }
+
+  async sadd(key: string, ...members: string[]) {
+    // Basic set: store JSON array of unique members
+    const current = await this.get(key);
+    const set = new Set<string>(current ? JSON.parse(current) : []);
+    members.forEach(m => set.add(m));
+    await this.set(key, JSON.stringify(Array.from(set)));
+    return set.size as any;
+  }
+
+  async smembers(key: string) {
+    const current = await this.get(key);
+    return current ? JSON.parse(current) : [];
+  }
+
+  async sismember(key: string, member: string) {
+    const members: string[] = await this.smembers(key);
+    return (members.includes(member) ? 1 : 0) as any;
+  }
+
+  async srem(key: string, ...members: string[]) {
+    const current = await this.get(key);
+    const set = new Set<string>(current ? JSON.parse(current) : []);
+    let removed = 0;
+    members.forEach(m => { if (set.delete(m)) removed++; });
+    await this.set(key, JSON.stringify(Array.from(set)));
+    return removed as any;
+  }
+
+  async keys(pattern: string) {
+    // Very naive pattern handling: prefix only
+    const prefix = pattern.replace(/\*.*$/, '');
+    const keys: string[] = [];
+    for (const k of this.store.keys()) {
+      if (k.startsWith(prefix)) keys.push(k);
+    }
+    return keys;
+  }
+
+  async quit() {
+    this.store.clear();
+  }
+}
 
 /**
  * Initialize Redis connection
@@ -52,8 +177,12 @@ export const initRedis = async (): Promise<Redis> => {
     logger.info('Redis initialized successfully');
     return redisClient;
   } catch (error) {
-    logger.error('Failed to initialize Redis:', error);
-    throw error;
+    logger.warn('Failed to initialize Redis, falling back to in-memory cache:', error as Error);
+    usingMemoryFallback = true;
+    // Return a dummy object to satisfy type contract, but getRedisClient will serve memory client
+    // @ts-ignore
+    redisClient = null;
+    return (undefined as unknown) as Redis;
   }
 };
 
@@ -61,10 +190,14 @@ export const initRedis = async (): Promise<Redis> => {
  * Get Redis client instance
  */
 export const getRedisClient = (): Redis => {
-  if (!redisClient) {
-    throw new Error('Redis client not initialized. Call initRedis() first.');
+  if (redisClient) {
+    return redisClient;
   }
-  return redisClient;
+  if (usingMemoryFallback) {
+    // @ts-ignore - satisfy Redis type in our wrapper
+    return new MemoryRedisClient() as unknown as Redis;
+  }
+  throw new Error('Redis client not initialized. Call initRedis() first.');
 };
 
 /**
