@@ -1,3 +1,4 @@
+/* Evitar usar PostCSS plugins con WASM en Windows; Tailwind v4 base import */
 @import "tailwindcss";
 @import "tw-animate-css";
 

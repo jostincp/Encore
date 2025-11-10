@@ -93,15 +93,8 @@ export default function QRPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute top-4 left-4"
-              onClick={() => router.back()}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Volver
-            </Button>
+            {/* Botón de retroceso común con soporte click/touch/teclado */}
+            <BackButton label="Volver" />
             
             <div className="bg-primary/10 p-4 rounded-full w-16 h-16 mx-auto mb-4">
               <QrCode className="h-8 w-8 text-primary mx-auto" />
@@ -238,3 +231,4 @@ export default function QRPage() {
     </Layout>
   );
 }
+import BackButton from '@/components/ui/back-button';

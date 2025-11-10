@@ -10,10 +10,12 @@ export const APP_CONFIG = {
 
 // URLs y endpoints
 export const API_ENDPOINTS = {
+  // Base de autenticación sin /api; las rutas añaden /api/... en el código
   base: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
   websocket: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001',
   auth: '/api/auth',
-  music: '/api/music',
+  // Base completa del servicio de música para llamadas directas desde componentes
+  musicBase: `${process.env.NEXT_PUBLIC_MUSIC_API_URL || 'http://localhost:3003'}/api/music`,
   menu: '/api/menu',
   orders: '/api/orders',
   points: '/api/points',

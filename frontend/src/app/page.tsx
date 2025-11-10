@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Music, Shield, Smartphone, Monitor } from 'lucide-react';
+import { Music, Shield, Smartphone, Monitor, PlayCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Layout, PageContainer } from '@/components/ui/layout';
@@ -17,6 +17,10 @@ export default function Home() {
     } else {
       router.push('/auth/login');
     }
+  };
+
+  const handleYouTubePlayer = () => {
+    router.push('/youtube/player');
   };
 
   return (
@@ -42,6 +46,8 @@ export default function Home() {
               La experiencia musical interactiva que transforma tu bar en un espacio único
             </p>
           </motion.div>
+
+          {/* Se elimina botón de demo de YouTube para mantener coherencia visual y UX */}
 
           {/* Role Selection Cards */}
           <div className="grid md:grid-cols-2 gap-8 max-w-2xl mx-auto">

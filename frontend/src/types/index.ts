@@ -4,7 +4,8 @@ export interface User {
   id: string;
   tableNumber: number;
   points: number;
-  role: 'client' | 'admin';
+  // Normalizamos roles para alinearlos con backend
+  role: 'client' | 'admin' | 'bar_owner' | 'staff' | 'user' | 'guest';
   sessionId: string;
 }
 

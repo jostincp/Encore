@@ -27,6 +27,8 @@ import { Badge } from '@/components/ui/badge';
 import { AdminLayout, PageContainer } from '@/components/ui/layout';
 import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
+import BackButton from '@/components/ui/back-button';
+import { API_ENDPOINTS } from '@/utils/constants';
 
 // Configuración por defecto
 const defaultSettings = {
@@ -74,23 +76,69 @@ const defaultSettings = {
 };
 
 export default function AdminSettings() {
-  const { user } = useAppStore();
+  const { user, setUser } = useAppStore();
   const router = useRouter();
   const [settings, setSettings] = useState(defaultSettings);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    // Permitir ADMIN y BAR_OWNER
-    const allowedRoles = ['admin', 'ADMIN', 'bar_owner', 'BAR_OWNER'];
-    if (!user || !allowedRoles.includes(user.role as any)) {
-      router.push('/');
-      return;
-    }
+    const allowedRoles = ['admin', 'bar_owner'];
 
-    // Cargar configuración guardada (simulado)
-    loadSettings();
-  }, [user, router]);
+    const normalizeRole = (raw: any) => String(raw)
+      .toLowerCase()
+      .replace('super_admin', 'admin')
+      .replace('member', 'user')
+      .replace('customer', 'user');
+
+    const ensureAuthorized = async () => {
+      // Si ya hay usuario y rol permitido, cargar settings
+      if (user && allowedRoles.includes(String(user.role))) {
+        loadSettings();
+        return;
+      }
+
+      // Intentar cargar perfil con token si no hay usuario
+      const token = typeof window !== 'undefined' ? localStorage.getItem('encore_access_token') : null;
+      if (!token) {
+        router.push('/');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_ENDPOINTS.base}/api/auth/profile`, {
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          router.push('/');
+          return;
+        }
+
+        const u = json?.data || json;
+        const normalizedRole = normalizeRole(u?.role ?? 'user');
+        setUser({
+          id: u?.id,
+          email: u?.email,
+          role: normalizedRole,
+          points: 0
+        } as any);
+
+        if (allowedRoles.includes(normalizedRole)) {
+          loadSettings();
+        } else {
+          router.push('/');
+        }
+      } catch {
+        router.push('/');
+      }
+    };
+
+    ensureAuthorized();
+  }, [user, router, setUser]);
 
   const loadSettings = () => {
     // Simular carga de configuración desde API
@@ -139,21 +187,23 @@ export default function AdminSettings() {
     }));
   };
 
-  const allowedRoles = ['admin', 'ADMIN', 'bar_owner', 'BAR_OWNER'];
-  if (!user || !allowedRoles.includes(user.role as any)) return null;
+  const allowedRoles = ['admin', 'bar_owner'];
+  if (!user || !allowedRoles.includes(String(user.role))) return null;
 
   return (
     <AdminLayout>
-      <PageContainer className="p-6">
+      <PageContainer className="px-4 sm:px-6 overflow-x-hidden">
+        {/* Botón de retroceso en la esquina superior izquierda */}
+        <BackButton />
         {/* Header */}
         <motion.div
-          className="flex items-center justify-between mb-8"
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-3 break-words">
               <SettingsIcon className="h-8 w-8 text-primary" />
               Configuración del Sistema
             </h1>
@@ -161,7 +211,7 @@ export default function AdminSettings() {
               Gestiona la configuración general de Encore
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
             <Button
               variant="outline"
               onClick={loadSettings}
@@ -223,7 +273,7 @@ export default function AdminSettings() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="pointsRate">Tasa de Puntos</Label>
                     <Input
@@ -251,7 +301,7 @@ export default function AdminSettings() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="minPurchase">Compra Mínima</Label>
                     <Input
@@ -303,7 +353,7 @@ export default function AdminSettings() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="maxSongsPerUser">Máx. Canciones por Usuario</Label>
                     <Input
@@ -403,7 +453,7 @@ export default function AdminSettings() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="contactEmail">Email de Contacto</Label>
                     <Input
@@ -486,7 +536,7 @@ export default function AdminSettings() {
 
                 <div className="border-t border-border my-6" />
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="theme">Tema</Label>
                     <select

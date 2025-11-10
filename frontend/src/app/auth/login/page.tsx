@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/useToast';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Shield } from 'lucide-react';
 import { API_ENDPOINTS } from '@/utils/constants';
+import { getLoginErrorMessage, getLoginSuggestion } from '@/utils/authErrors';
 import { useAppStore } from '@/stores/useAppStore';
 import Link from 'next/link';
 
@@ -30,19 +31,57 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      // Comprobación rápida de disponibilidad del servicio (health)
+      const healthController = new AbortController();
+      const healthTimeout = setTimeout(() => healthController.abort(), 5000);
+      // Probar ambos paths según si se usa Kong (8000) o servicio directo (3001)
+      const tryHealth = async (path: string) => {
+        try {
+          const r = await fetch(`${API_ENDPOINTS.base}${path}`, {
+            method: 'GET',
+            signal: healthController.signal,
+            headers: { 'Accept': 'application/json' }
+          });
+          return r.ok;
+        } catch {
+          return false;
+        }
+      };
+      const healthOk = await (async () => {
+        // Primero intentar ruta común en Kong
+        if (await tryHealth('/api/auth/health')) return true;
+        // Luego intentar health directo del servicio
+        if (await tryHealth('/health')) return true;
+        // Finalmente intentar health bajo /api
+        if (await tryHealth('/api/health')) return true;
+        return false;
+      })();
+      clearTimeout(healthTimeout);
+
+      if (!healthOk) {
+        setError(getLoginErrorMessage({ status: 0, message: 'Service unavailable' }));
+        return;
+      }
+
+      // Timeout para evitar esperas indefinidas en la solicitud de login
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      // API_ENDPOINTS.base ahora no incluye /api
       const res = await fetch(`${API_ENDPOINTS.base}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
+        signal: controller.signal
       });
+      clearTimeout(timeout);
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = data?.message || data?.error || data?.data?.message || 'Error al iniciar sesión';
-        setError(msg);
+        const apiErr = { status: res.status, message: data?.message || data?.error };
+        setError(getLoginErrorMessage(apiErr));
         return;
       }
 
@@ -58,18 +97,43 @@ export default function LoginPage() {
 
       // Guardar usuario en el store para permisos y renderizado
       if (user) {
+        const rawRole = user.role ?? 'user';
+        const normalizedRole = String(rawRole)
+          .toLowerCase()
+          .replace('super_admin', 'admin')
+          .replace('member', 'user')
+          .replace('customer', 'user');
+
         setUser({
           id: user.id,
           email: user.email,
-          role: user.role,
+          role: normalizedRole,
           points: 0
         } as any);
       }
 
       success('Inicio de sesión exitoso. Bienvenido de nuevo');
-      router.push('/admin');
+      // Redirección robusta a /admin
+      const navigateToAdmin = () => {
+        try {
+          // Usar replace para evitar problemas de navegación en desarrollo
+          router.replace('/admin');
+        } catch {}
+        // Fallback duro si la navegación del router se aborta por HMR u otros motivos
+        setTimeout(() => {
+          if (typeof window !== 'undefined' && window.location.pathname.includes('/auth/login')) {
+            window.location.href = '/admin';
+          }
+        }, 300);
+      };
+      navigateToAdmin();
     } catch (err: any) {
-      setError(err?.message || 'Error de red');
+      // Mapear abort/timeout y errores de red claramente
+      if (err?.name === 'AbortError') {
+        setError('Tiempo de espera agotado al conectar con el servidor. Intente nuevamente.');
+      } else {
+        setError(getLoginErrorMessage(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -124,7 +188,12 @@ export default function LoginPage() {
                 </div>
 
                 {error && (
-                  <p className="text-destructive text-sm">{error}</p>
+                  <div className="space-y-1">
+                    <p className="text-destructive text-sm">{error}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {getLoginSuggestion(error) || '¿Olvidó su contraseña?'}
+                    </p>
+                  </div>
                 )}
 
                 <Button type="submit" disabled={loading} className="w-full">

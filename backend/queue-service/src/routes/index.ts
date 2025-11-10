@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import queueRoutes from './queue';
+import youtubePlaylistRoutes from './youtubePlaylist';
 import logger from '../../../shared/utils/logger';
 
 const router = Router();
@@ -32,7 +33,8 @@ router.get('/info', (req, res) => {
       'User queue position tracking',
       'Admin queue controls',
       'Song cooldown management',
-      'Points-based priority system'
+      'Points-based priority system',
+      'YouTube playlist integration'
     ],
     websocket_events: {
       client_to_server: [
@@ -59,12 +61,20 @@ router.get('/info', (req, res) => {
         'POST /add': 'Add a song to queue',
         'GET /bars/:barId/user': 'Get user queue entries for a bar',
         'GET /bars/:barId/user/position': 'Get user position in queue',
-        'DELETE /:id/user': 'Remove own pending song from queue'
+        'DELETE /:id/user': 'Remove own pending song from queue',
+        'POST /playlists': 'Create YouTube playlist',
+        'GET /playlists': 'Get bar playlists',
+        'POST /playlists/:playlistId/videos': 'Add video to playlist',
+        'DELETE /playlists/:playlistId/videos/:itemId': 'Remove video from playlist',
+        'PUT /playlists/:playlistId/reorder': 'Reorder playlist videos',
+        'PUT /playlists/:playlistId': 'Update playlist info',
+        'DELETE /playlists/:playlistId': 'Delete playlist'
       },
       public_routes: {
         'GET /bars/:barId': 'Get current queue for a bar',
         'GET /bars/:barId/current': 'Get currently playing song',
-        'GET /bars/:barId/next': 'Get next song in queue'
+        'GET /bars/:barId/next': 'Get next song in queue',
+        'GET /playlists/:playlistId': 'Get specific playlist'
       },
       admin_routes: {
         'PUT /:id': 'Update queue entry (admin/bar owner)',
@@ -107,7 +117,8 @@ router.get('/info', (req, res) => {
         'Adding songs to queue',
         'Viewing user-specific queue data',
         'Admin operations',
-        'WebSocket connections'
+        'WebSocket connections',
+        'YouTube playlist management'
       ],
       token_type: 'JWT Bearer Token',
       header: 'Authorization: Bearer <token>'
@@ -124,13 +135,16 @@ router.get('/info', (req, res) => {
         'queue:current:{barId}',
         'queue:stats:{barId}',
         'cooldown:{barId}:{songId}',
-        'queue:position:{barId}:{userId}'
+        'queue:position:{barId}:{userId}',
+        'playlist:{playlistId}',
+        'playlists:bar:{barId}'
       ],
       ttl: {
         queue_data: '5 minutes',
         current_song: '1 minute',
         stats: '10 minutes',
-        cooldown: 'Variable (based on cooldown period)'
+        cooldown: 'Variable (based on cooldown period)',
+        playlists: '24 hours'
       }
     }
   });
@@ -138,6 +152,9 @@ router.get('/info', (req, res) => {
 
 // Mount queue routes
 router.use('/', queueRoutes);
+
+// Mount YouTube playlist routes
+router.use('/', youtubePlaylistRoutes);
 
 // 404 handler for unknown routes
 router.use('*', (req, res) => {
@@ -149,7 +166,8 @@ router.use('*', (req, res) => {
     available_endpoints: {
       health: 'GET /health',
       info: 'GET /info',
-      queue: 'See /info for detailed queue endpoints'
+      queue: 'See /info for detailed queue endpoints',
+      playlists: 'YouTube playlist management endpoints'
     }
   });
 });

@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/useToast';
 import { motion } from 'framer-motion';
 import { Mail, Shield } from 'lucide-react';
 import { API_ENDPOINTS } from '@/utils/constants';
+import { getLoginErrorMessage } from '@/utils/authErrors';
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -38,15 +39,15 @@ export default function ForgotPasswordPage() {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = data?.message || data?.error || 'Error al solicitar recuperación';
-        setError(msg);
+        const apiErr = { status: res.status, message: data?.message || data?.error };
+        setError(getLoginErrorMessage(apiErr));
         return;
       }
 
       setSuccessMsg(data?.message || 'Si el email existe, recibirás instrucciones para restablecer tu contraseña');
       success('Solicitud enviada. Revisa tu correo');
     } catch (err: any) {
-      setError(err?.message || 'Error de red');
+      setError(getLoginErrorMessage(err));
     } finally {
       setLoading(false);
     }

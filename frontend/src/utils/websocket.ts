@@ -9,12 +9,29 @@ class WebSocketManager {
   connect(tableNumber?: number): Promise<Socket> {
     return new Promise((resolve, reject) => {
       try {
-        const serverUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3005';
+        // Resolve server URL from env, accepting old and new variable names
+        const rawUrl =
+          process.env.NEXT_PUBLIC_WEBSOCKET_URL ||
+          process.env.NEXT_PUBLIC_WS_URL ||
+          'http://localhost:3003';
+
+        // Normalize ws:// to http:// for Socket.IO handshake
+        const serverUrl = rawUrl.startsWith('ws://')
+          ? rawUrl.replace(/^ws:\/\//, 'http://')
+          : rawUrl.startsWith('wss://')
+          ? rawUrl.replace(/^wss:\/\//, 'https://')
+          : rawUrl;
+
+        // Try to attach auth token if present (admin/bar-owner flows)
+        const token = typeof window !== 'undefined'
+          ? window.localStorage.getItem('encore_access_token') || undefined
+          : undefined;
         
         this.socket = io(serverUrl, {
           transports: ['websocket', 'polling'],
           timeout: 10000,
-          query: tableNumber ? { tableNumber: tableNumber.toString() } : undefined
+          query: tableNumber ? { tableNumber: tableNumber.toString() } : undefined,
+          auth: token ? { token } : undefined
         });
         
         this.socket.on('connect', () => {

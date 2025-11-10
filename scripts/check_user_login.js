@@ -12,13 +12,19 @@ const dotenv = require('dotenv');
     const email = process.argv[2] || 'jostin02castillo@gmail.com';
     const password = process.argv[3] || 'Password123!';
 
-    const host = process.env.DB_HOST || 'localhost';
-    const port = Number(process.env.DB_PORT || 5432);
-    const database = process.env.DB_NAME || 'encore_db';
-    const user = process.env.DB_USER || 'postgres';
-    const dbPassword = process.env.DB_PASSWORD || 'password';
-
-    const client = new Client({ host, port, database, user, password: dbPassword });
+    // Prefer DATABASE_URL if present
+    const dbUrl = process.env.DATABASE_URL;
+    let client;
+    if (dbUrl) {
+      client = new Client({ connectionString: dbUrl });
+    } else {
+      const host = process.env.DB_HOST || 'localhost';
+      const port = Number(process.env.DB_PORT || 5432);
+      const database = process.env.DB_NAME || 'encore_db';
+      const user = process.env.DB_USER || 'postgres';
+      const dbPassword = process.env.DB_PASSWORD || 'password';
+      client = new Client({ host, port, database, user, password: dbPassword });
+    }
     await client.connect();
 
     const q = `SELECT id, email, role, is_active, password_hash, email_verified
