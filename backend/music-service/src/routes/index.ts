@@ -3,6 +3,7 @@ import songRoutes from './songs';
 import queueRoutes from './queue';
 import recommendationRoutes from './recommendations';
 import musicRoutes from './music';
+import youtubeRoutes from './youtubeNew';
 import { Request, Response } from 'express';
 
 const router = Router();
@@ -142,5 +143,6 @@ router.use('/songs', songRoutes);
 router.use('/queue', queueRoutes);
 router.use('/recommendations', recommendationRoutes);
 router.use('/music', musicRoutes);
+router.use('/youtube', youtubeRoutes);
 
 export default router;

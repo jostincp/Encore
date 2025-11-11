@@ -3,18 +3,18 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import { config } from '../../shared/config';
-import logger from '../../shared/utils/logger';
-import { initializeDatabase, closeDatabase, runMigrations } from '../../shared/database';
-import { initRedis, getRedisClient, closeRedis } from '../../shared/utils/redis';
-import { errorHandler, notFoundHandler } from '../../shared/utils/errors';
+import config from './config';
+import logger from '../../../shared/utils/logger';
+import { initializeDatabase, closeDatabase, runMigrations } from '../../../shared/database';
+import { initRedis, getRedisClient, closeRedis } from '../../../shared/utils/redis';
+import { errorHandler, notFoundHandler } from '../../../shared/utils/errors';
 import {
   requestLoggingMiddleware,
   healthCheckMiddleware,
   corsMiddleware,
   basicRateLimit,
   securityMiddleware
-} from '../../shared/middleware';
+} from '../../../shared/middleware';
 import routes from './routes';
 import { setupSwagger } from './swagger/swagger.config';
 import { 
@@ -25,7 +25,7 @@ import {
 } from './middleware/monitoring';
 
 const app = express();
-const PORT = config.services.music.port;
+const PORT = config.server.port;
 
 // Basic middleware
 app.use(express.json({ limit: '10mb' }));
@@ -94,8 +94,8 @@ const startServer = async () => {
     // Start HTTP server
     app.listen(PORT, () => {
       logger.info(`🎵 Music Service running on port ${PORT}`);
-      logger.info(`Environment: ${config.nodeEnv}`);
-      logger.info(`Service: ${config.serviceName}`);
+      logger.info(`Environment: ${config.server.env || 'development'}`);
+      logger.info(`YouTube API configured: ${!!config.youtube.apiKey}`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

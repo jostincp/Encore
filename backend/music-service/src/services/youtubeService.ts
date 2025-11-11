@@ -1,71 +1,54 @@
-import axios, { AxiosInstance } from 'axios';
+import { google } from 'googleapis';
 import { redisHelpers } from '../config/redis';
+import { youtubeConfig } from '../config';
+import logger from '../../../shared/utils/logger';
 
+// YouTube API response interfaces
 interface YouTubeVideo {
   id: {
+    kind: string;
     videoId: string;
   };
   snippet: {
     title: string;
     channelTitle: string;
-    description: string;
-    publishedAt: string;
     thumbnails: {
-      default: { url: string };
-      medium: { url: string };
-      high: { url: string };
+      default?: { url: string; width: number; height: number };
+      medium?: { url: string; width: number; height: number };
+      high?: { url: string; width: number; height: number };
     };
-  };
-}
-
-interface YouTubeVideoDetails {
-  id: string;
-  snippet: {
-    title: string;
-    channelTitle: string;
-    description: string;
-    publishedAt: string;
-    thumbnails: {
-      default: { url: string };
-      medium: { url: string };
-      high: { url: string };
-    };
-  };
-  contentDetails: {
-    duration: string;
-  };
-  statistics: {
-    viewCount: string;
-    likeCount: string;
   };
 }
 
 interface YouTubeSearchResponse {
   items: YouTubeVideo[];
   nextPageToken?: string;
-  pageInfo: {
+  prevPageToken?: string;
+  pageInfo?: {
     totalResults: number;
     resultsPerPage: number;
   };
 }
 
-interface YouTubeVideoDetailsResponse {
-  items: YouTubeVideoDetails[];
+// Clean video interface for our API
+export interface CleanVideo {
+  id: string;
+  title: string;
+  channel: string;
+  thumbnail: string;
+  duration?: string;
+  viewCount?: number;
 }
 
 export class YouTubeService {
   private static instance: YouTubeService;
-  private client: AxiosInstance;
-  private apiKey: string;
+  private youtube: any;
 
   private constructor() {
-    this.apiKey = process.env.YOUTUBE_API_KEY || '';
-    this.client = axios.create({
-      baseURL: 'https://www.googleapis.com/youtube/v3',
-      timeout: 10000,
-      params: {
-        key: this.apiKey,
-      },
+    // Initialize YouTube API client with Google APIs
+    this.youtube = google.youtube({
+      version: 'v3',
+      auth: youtubeConfig.apiKey
     });
   }
 
@@ -76,114 +59,94 @@ export class YouTubeService {
     return YouTubeService.instance;
   }
 
-  private static parseDuration(duration: string): number {
-    // Parse ISO 8601 duration format (PT4M13S) to seconds
-    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-    if (!match) return 0;
-
-    const hours = parseInt(match[1] || '0', 10);
-    const minutes = parseInt(match[2] || '0', 10);
-    const seconds = parseInt(match[3] || '0', 10);
-
-    return hours * 3600 + minutes * 60 + seconds;
-  }
-
-  private static extractArtistFromTitle(title: string, channelTitle: string): string {
-    // Try to extract artist from title patterns like "Artist - Song" or "Song by Artist"
-    const patterns = [
-      /^(.+?)\s*[-–—]\s*(.+)$/, // Artist - Song
-      /^(.+?)\s*by\s+(.+)$/i,   // Song by Artist
-      /^(.+?)\s*\|\s*(.+)$/,    // Artist | Song
-    ];
-
-    for (const pattern of patterns) {
-      const match = title.match(pattern);
-      if (match) {
-        // Assume first part is artist if it's shorter or contains common artist indicators
-        const part1 = match[1].trim();
-        const part2 = match[2].trim();
-        
-        if (part1.length < part2.length || /official|video|lyrics|audio/i.test(part2)) {
-          return part1;
-        } else {
-          return part2;
-        }
-      }
-    }
-
-    // Fallback to channel title, but clean it up
-    return channelTitle
-      .replace(/official|channel|music|records|entertainment/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim() || 'Unknown Artist';
-  }
-
-  public static async searchVideos(
-    query: string,
-    options: { maxResults?: number; pageToken?: string } = {}
-  ): Promise<any[]> {
-    const instance = YouTubeService.getInstance();
-    const { maxResults = 25, pageToken } = options;
-
-    if (!instance.apiKey) {
-      console.error('YouTube API key not configured');
-      throw new Error('YouTube API key not configured');
-    }
-
+  /**
+   * Search videos on YouTube with caching
+   * @param query Search query string
+   * @returns Array of cleaned video objects
+   */
+  async searchVideos(query: string): Promise<CleanVideo[]> {
     try {
-      const cacheKey = `youtube:search:${query}:${maxResults}:${pageToken || 'first'}`;
-      const cached = await redisHelpers.get(cacheKey);
-      if (cached) {
-        return cached;
+      // 1. Normalize Query
+      const normalizedQuery = this.normalizeQuery(query);
+      
+      // 2. Check Redis Cache First
+      const cacheKey = `music:search:yt:${normalizedQuery}`;
+      const cachedResults = await redisHelpers.get(cacheKey);
+      
+      if (cachedResults) {
+        logger.info(`⚡ Cache HIT for YouTube search: "${normalizedQuery}"`);
+        return cachedResults;
       }
 
-      const params: any = {
+      // 3. Cache Miss - Call YouTube API
+      logger.info(`🌐 Cache MISS - Calling YouTube API for: "${normalizedQuery}"`);
+      
+      const response = await this.youtube.search.list({
         part: 'snippet',
-        q: query,
         type: 'video',
-        maxResults,
-        videoCategoryId: '10', // Music category
-        order: 'relevance',
-      };
-
-      if (pageToken) {
-        params.pageToken = pageToken;
-      }
-
-      const response = await instance.client.get<YouTubeSearchResponse>('/search', {
-        params,
+        videoCategoryId: youtubeConfig.videoCategoryId, // Music category
+        maxResults: youtubeConfig.maxResults,
+        regionCode: youtubeConfig.regionCode,
+        q: normalizedQuery
       });
 
-      const videos = response.data.items.map(video => ({
-        id: `youtube:video:${video.id.videoId}`,
-        title: video.snippet.title,
-        artist: YouTubeService.extractArtistFromTitle(
-          video.snippet.title,
-          video.snippet.channelTitle
-        ),
-        channel: video.snippet.channelTitle,
-        duration: 0, // Will be filled by getVideoDetails if needed
-        thumbnail_url: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.medium?.url,
-        external_url: `https://www.youtube.com/watch?v=${video.id.videoId}`,
-        source: 'youtube',
-        published_at: video.snippet.publishedAt,
-        description: video.snippet.description,
-      }));
+      const youtubeResponse: YouTubeSearchResponse = response.data;
+      
+      // 4. Process and Clean Results
+      const cleanedVideos = this.cleanYouTubeResponse(youtubeResponse);
+      
+      // 5. Save to Cache with TTL (48 hours)
+      await redisHelpers.set(cacheKey, cleanedVideos, youtubeConfig.searchCacheTTL);
+      logger.info(`💾 Cached YouTube search results for: "${normalizedQuery}" (${cleanedVideos.length} videos)`);
 
-      // Cache results for 5 minutes
-      await redisHelpers.set(cacheKey, videos, 300);
+      return cleanedVideos;
 
-      return videos;
     } catch (error) {
-      console.error('YouTube search error:', error);
+      logger.error('❌ Error searching YouTube videos:', error);
+      
+      // Handle specific YouTube API errors
+      if (this.isQuotaExceededError(error)) {
+        throw new Error('YouTube API quota exceeded. Please try again later.');
+      }
+      
+      if (this.isInvalidApiKeyError(error)) {
+        throw new Error('Invalid YouTube API key configuration.');
+      }
+      
       throw new Error('Failed to search YouTube videos');
     }
+  }
+
+  private normalizeQuery(query: string): string {
+    // Normalize query string for caching
+    return query.trim().toLowerCase();
+  }
+
+  private cleanYouTubeResponse(response: YouTubeSearchResponse): CleanVideo[] {
+    // Clean and process YouTube API response
+    return response.items.map((item) => {
+      return {
+        id: item.id.videoId,
+        title: item.snippet.title,
+        channel: item.snippet.channelTitle,
+        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+      };
+    });
+  }
+
+  private isQuotaExceededError(error: any): boolean {
+    // Check if error is due to quota exceeded
+    return error.code === 403 && error.errors[0].reason === 'quotaExceeded';
+  }
+
+  private isInvalidApiKeyError(error: any): boolean {
+    // Check if error is due to invalid API key
+    return error.code === 401 && error.errors[0].reason === 'invalidApiKey';
   }
 
   public static async getVideoDetails(videoId: string): Promise<any> {
     const instance = YouTubeService.getInstance();
 
-    if (!instance.apiKey) {
       console.error('YouTube API key not configured');
       throw new Error('YouTube API key not configured');
     }
