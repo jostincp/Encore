@@ -39,7 +39,7 @@ interface AppStore extends AppState {
   
   // Actions para Connection
   setConnectionStatus: (isConnected: boolean) => void;
-  connectWebSocket: (tableNumber?: number) => Promise<void>;
+  connectWebSocket: (tableNumber?: number, barId?: string) => Promise<void>;
   disconnectWebSocket: () => void;
   
   // Computed values
@@ -105,7 +105,7 @@ export const useAppStore = create<AppStore>()(devtools((set, get) => ({
       }
       
       // Conectar WebSocket
-      await get().connectWebSocket(tableNumber);
+      await get().connectWebSocket(tableNumber, barId);
 
       // Unirse a la sala del bar para actualizaciones en tiempo real
       try {
@@ -243,9 +243,9 @@ export const useAppStore = create<AppStore>()(devtools((set, get) => ({
   // Connection actions
   setConnectionStatus: (isConnected) => set({ isConnected }, false, 'setConnectionStatus'),
   
-  connectWebSocket: async (tableNumber) => {
+  connectWebSocket: async (tableNumber, barId) => {
     try {
-      await wsManager.connect(tableNumber);
+      await wsManager.connect(tableNumber, barId);
       set({ isConnected: true }, false, 'connectWebSocket');
     } catch (error) {
       console.error('Failed to connect WebSocket:', error);

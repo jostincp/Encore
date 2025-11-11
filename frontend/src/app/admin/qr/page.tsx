@@ -114,18 +114,14 @@ export default function AdminQRPage() {
       const newQRCodes: GeneratedQR[] = [];
       
       for (let i = 1; i <= totalTables; i++) {
-        const qrDataString = JSON.stringify({
-          b: barId,
-          t: i,
-          v: '1.0',
-          ts: Date.now()
-        });
+        // Generar URL directa en lugar de JSON
+        const qrUrl = `${window.location.origin}/client/music?barId=${barId}&table=${i}`;
         
         newQRCodes.push({
           id: `qr-${i}-${Date.now()}`,
           tableNumber: i,
-          qrData: qrDataString,
-          qrUrl: `${window.location.origin}/client?b=${barId}&t=${i}`,
+          qrData: qrUrl, // URL directa en lugar de JSON
+          qrUrl: qrUrl,
           isActive: true,
           createdAt: new Date(),
           scannedCount: 0

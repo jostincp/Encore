@@ -123,13 +123,8 @@ export default function QRGeneratorCanvas({
       const qrData: QRData = {
         id: `qr-${tableNumber}-${Date.now()}`,
         tableNumber,
-        qrData: JSON.stringify({
-          b: barId,
-          t: tableNumber,
-          v: '1.0',
-          ts: Date.now()
-        }),
-        qrUrl: `${window.location.origin}/client?b=${barId}&t=${tableNumber}`,
+        qrData: `${window.location.origin}/client/music?barId=${barId}&table=${tableNumber}`, // URL directa
+        qrUrl: `${window.location.origin}/client/music?barId=${barId}&table=${tableNumber}`,
         isActive: true,
         createdAt: new Date(),
         scannedCount: 0

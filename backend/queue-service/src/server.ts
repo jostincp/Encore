@@ -3,17 +3,26 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
-import { config } from '../../shared/config';
-import logger from '../../shared/utils/logger';
-import routes from './routes';
-import { initializeSocketIO } from './websocket/socketHandler';
+// import { config } from '../../shared/config';
+// TODO: Fix shared config - temporarily using hardcoded values
+// import logger from '../../shared/utils/logger';
+// TODO: Fix shared logger - temporarily using console
+const logger = {
+  info: (msg: string, ...args: any[]) => console.log(`[INFO] ${msg}`, ...args),
+  error: (msg: string, ...args: any[]) => console.error(`[ERROR] ${msg}`, ...args),
+  debug: (msg: string, ...args: any[]) => console.log(`[DEBUG] ${msg}`, ...args),
+  warn: (msg: string, ...args: any[]) => console.warn(`[WARN] ${msg}`, ...args)
+};
+// import routes from './routes';
+// TODO: Fix routes - temporarily disabled
+import { initializeSocketIO } from './websocket/socketHandlerSimple';
 
 const app = express();
 const server = createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: config.cors.origins,
-    credentials: config.cors.credentials,
+    origin: ['http://localhost:3004', 'http://localhost:3000', 'http://localhost:3001'],
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
   },
   transports: ['websocket', 'polling'],
@@ -37,8 +46,8 @@ app.use(helmet({
 
 // CORS configuration
 app.use(cors({
-  origin: config.cors.origins,
-  credentials: config.cors.credentials,
+  origin: ['http://localhost:3004', 'http://localhost:3000', 'http://localhost:3001'],
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
 }));
@@ -63,7 +72,7 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
-app.use('/api', routes);
+// app.use('/api', routes);
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -84,9 +93,9 @@ async function startServer() {
     const port = parseInt(process.env.PORT || '3003');
     server.listen(port, () => {
       logger.info(`Queue Service started on port ${port}`);
-      logger.info(`Environment: ${config.nodeEnv}`);
+      logger.info(`Environment: development`);
       logger.info(`WebSocket server initialized`);
-      logger.info(`Service: ${config.serviceName}`);
+      logger.info(`Service: queue-service`);
     });
 
   } catch (error) {

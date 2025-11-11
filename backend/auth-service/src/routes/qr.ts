@@ -1,40 +1,79 @@
 import { Router } from 'express';
-import { generateQRCodes, getBarQRCodes, validateQRCode } from '../controllers/qrController';
+import { 
+  generateQRCodes, 
+  generateSingleQR, 
+  downloadQRCodes,
+  validateQRCode,
+  getBarQRCodes
+} from '../controllers/qrController';
 import { authenticate, requireRole } from '../middleware/auth';
 import { UserRole } from '../constants/roles';
 
 const router: Router = Router();
 
+// Todas las rutas requieren autenticación excepto validación
+router.use(authenticate);
+
 /**
  * POST /api/qr/generate
- * Generar códigos QR para las mesas de un bar
+ * Generar múltiples QR codes (devuelve JSON con Base64)
  * 
  * Body:
  * {
  *   "numberOfTables": 10,
  *   "baseUrl": "https://encoreapp.pro",
- *   "generatePDF": false
+ *   "width": 300,
+ *   "errorCorrectionLevel": "M"
  * }
  */
 router.post('/generate', 
-  authenticate,
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   generateQRCodes
 );
 
 /**
+ * POST /api/qr/generate-single
+ * Generar un solo QR code para una mesa específica
+ * 
+ * Body:
+ * {
+ *   "tableNumber": 5,
+ *   "baseUrl": "https://encoreapp.pro"
+ * }
+ */
+router.post('/generate-single', 
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
+  generateSingleQR
+);
+
+/**
+ * POST /api/qr/download
+ * Descargar QR codes como archivos PNG en un ZIP
+ * 
+ * Body:
+ * {
+ *   "numberOfTables": 10,
+ *   "baseUrl": "https://encoreapp.pro",
+ *   "width": 600
+ * }
+ */
+router.post('/download', 
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
+  downloadQRCodes
+);
+
+/**
  * GET /api/qr/bar/:barId
- * Obtener códigos QR existentes de un bar
+ * Obtener QR codes existentes de un bar
  */
 router.get('/bar/:barId', 
-  authenticate,
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   getBarQRCodes
 );
 
 /**
  * GET /api/qr/validate
- * Validar un código QR escaneado
+ * Validar un código QR escaneado (pública, no requiere autenticación)
  * 
  * Query:
  * ?barId=uuid&table=5

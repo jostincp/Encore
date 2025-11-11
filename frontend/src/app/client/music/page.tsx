@@ -137,19 +137,29 @@ export default function ClientMusicPage() {
 
       setIsSearching(true);
       try {
-        const response = await axios.get('http://localhost:3002/api/music/songs/external/youtube/search', {
-          params: { q: debouncedSearch, maxResults: 25 }
+        const response = await axios.get('http://localhost:3002/api/youtube/search', {
+          params: { q: debouncedSearch, maxResults: 25 },
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token') || 'demo-token'}`
+          }
         });
 
         // Transformar respuesta de la API a formato Song
-        const apiSongs: Song[] = response.data.songs.map((item: any) => ({
-          id: item.song_id,
+        const apiSongs: Song[] = response.data.data.videos.map((item: any) => ({
+          id: item.id,
           title: item.title,
-          artist: item.artist,
-          duration: item.duration,
-          thumbnailUrl: item.thumbnailUrl,
+          artist: item.artist || item.channel || 'Unknown Artist',
+          duration: item.duration || '0:00',
+          thumbnailUrl: item.thumbnail,
           genre: 'Unknown', // La API no proporciona género
-          pointsCost: 50 // Costo por defecto
+          previewUrl: '', // YouTube no proporciona preview
+          isExplicit: false,
+          popularity: 0,
+          album: '',
+          externalIds: {
+            youtube: item.id,
+            spotify: ''
+          }
         }));
 
         setSongs(apiSongs);
@@ -242,7 +252,7 @@ export default function ClientMusicPage() {
   const userPoints = 100; // TODO: Obtener puntos reales del usuario
 
   return (
-    <Layout background="dark" animate>
+    <Layout background="gradient" animate>
       <PageContainer className="min-h-screen p-4">
         {/* Header */}
         <motion.div
@@ -256,12 +266,13 @@ export default function ClientMusicPage() {
               variant="ghost"
               size="sm"
               onClick={() => router.back()}
+              className="text-card-foreground hover:text-primary"
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Volver
             </Button>
             <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-bold flex items-center gap-2 text-card-foreground">
               {barInfo?.logo && (
                 <Image 
                   src={barInfo.logo} 
@@ -313,7 +324,7 @@ export default function ClientMusicPage() {
               placeholder="Buscar canciones, artistas o álbumes..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 bg-card text-card-foreground placeholder:text-muted-foreground border-border"
             />
           </div>
           
@@ -351,36 +362,118 @@ export default function ClientMusicPage() {
 
           <TabsContent value="popular" className="mt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {songs
-                .map((song, index) => (
-                <SongCard 
-                  key={song.id} 
-                  song={song} 
-                  index={index}
-                  onRequest={(song) => {
-                    setSelectedSong(song);
-                    setShowPriorityDialog(true);
-                  }}
-                  userPoints={userPoints}
-                />
+              {songs.map((song: any, index: number) => (
+                <motion.div
+                  key={song.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                >
+                  <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer bg-card border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <Image
+                          src={song.thumbnailUrl}
+                          alt={song.title}
+                          width={48}
+                          height={48}
+                          className="w-12 h-12 rounded-lg object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold truncate group-hover:text-primary transition-colors text-card-foreground">
+                            {song.title}
+                          </h3>
+                          <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs bg-secondary text-secondary-foreground border-border">
+                              {song.genre}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDuration(song.duration)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-1">
+                            <Star className="h-3 w-3 text-yellow-500 fill-current" />
+                            <span className="text-xs text-muted-foreground">4.5</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setSelectedSong(song);
+                              setShowPriorityDialog(true);
+                            }}
+                            disabled={userPoints < 50}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-primary-foreground hover:bg-primary/90"
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Pedir
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               ))}
             </div>
           </TabsContent>
 
           <TabsContent value="recent" className="mt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {songs
-                .map((song, index) => (
-                <SongCard 
-                  key={song.id} 
-                  song={song} 
-                  index={index}
-                  onRequest={(song) => {
-                    setSelectedSong(song);
-                    setShowPriorityDialog(true);
-                  }}
-                  userPoints={userPoints}
-                />
+              {songs.slice(0, 6).map((song: any, index: number) => (
+                <motion.div
+                  key={`recent-${song.id}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                >
+                  <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer bg-card border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <Image
+                          src={song.thumbnailUrl}
+                          alt={song.title}
+                          width={48}
+                          height={48}
+                          className="w-12 h-12 rounded-lg object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold truncate group-hover:text-primary transition-colors text-card-foreground">
+                            {song.title}
+                          </h3>
+                          <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs bg-secondary text-secondary-foreground border-border">
+                              {song.genre}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDuration(song.duration)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-1">
+                            <Star className="h-3 w-3 text-yellow-500 fill-current" />
+                            <span className="text-xs text-muted-foreground">4.5</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setSelectedSong(song);
+                              setShowPriorityDialog(true);
+                            }}
+                            disabled={userPoints < 50}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-primary-foreground hover:bg-primary/90"
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Pedir
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               ))}
             </div>
           </TabsContent>
@@ -389,17 +482,60 @@ export default function ClientMusicPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {songs
                 .sort(() => Math.random() - 0.5)
-                .map((song, index) => (
-                <SongCard 
-                  key={song.id} 
-                  song={song} 
-                  index={index}
-                  onRequest={(song) => {
-                    setSelectedSong(song);
-                    setShowPriorityDialog(true);
-                  }}
-                  userPoints={userPoints}
-                />
+                .slice(0, 6)
+                .map((song: any, index: number) => (
+                <motion.div
+                  key={`random-${song.id}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
+                >
+                  <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer bg-card border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-3">
+                        <Image
+                          src={song.thumbnailUrl}
+                          alt={song.title}
+                          width={48}
+                          height={48}
+                          className="w-12 h-12 rounded-lg object-cover group-hover:scale-105 transition-transform"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold truncate group-hover:text-primary transition-colors text-card-foreground">
+                            {song.title}
+                          </h3>
+                          <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs bg-secondary text-secondary-foreground border-border">
+                              {song.genre}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDuration(song.duration)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-1">
+                            <Star className="h-3 w-3 text-yellow-500 fill-current" />
+                            <span className="text-xs text-muted-foreground">4.5</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setSelectedSong(song);
+                              setShowPriorityDialog(true);
+                            }}
+                            disabled={userPoints < 50}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-primary-foreground hover:bg-primary/90"
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            Pedir
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               ))}
             </div>
           </TabsContent>
@@ -464,66 +600,5 @@ export default function ClientMusicPage() {
         </Dialog>
       </PageContainer>
     </Layout>
-  );
-}
-
-// Componente para cada tarjeta de canción
-interface SongCardProps {
-  song: Song;
-  index: number;
-  onRequest: (song: Song) => void;
-  userPoints: number;
-}
-
-function SongCard({ song, index, onRequest, userPoints }: SongCardProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.6, delay: index * 0.1 }}
-    >
-      <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <Image 
-              src={song.thumbnailUrl || '/placeholder-music.jpg'} 
-              alt={song.title}
-              width={48}
-              height={48}
-              className="w-12 h-12 rounded-lg object-cover group-hover:scale-105 transition-transform"
-            />
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold truncate group-hover:text-primary transition-colors">
-                {song.title}
-              </h3>
-              <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <Badge variant="outline" className="text-xs">
-                  {song.genre}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  {formatDuration(song.duration)}
-                </span>
-              </div>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <div className="flex items-center gap-1">
-                <Star className="h-3 w-3 text-yellow-500 fill-current" />
-                <span className="text-xs">4.5</span>
-              </div>
-              <Button
-                size="sm"
-                onClick={() => onRequest(song)}
-                disabled={userPoints < 50}
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <Play className="h-3 w-3 mr-1" />
-                Pedir
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
   );
 }

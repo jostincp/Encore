@@ -6,7 +6,7 @@ class WebSocketManager {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   
-  connect(tableNumber?: number): Promise<Socket> {
+  connect(tableNumber?: number, barId?: string): Promise<Socket> {
     return new Promise((resolve, reject) => {
       try {
         // Resolve server URL from env - standardized to Queue Service
@@ -17,10 +17,15 @@ class WebSocketManager {
           ? window.localStorage.getItem('encore_access_token') || undefined
           : undefined;
         
+        // Build query parameters for our simplified server
+        const query: any = {};
+        if (tableNumber) query.tableNumber = tableNumber.toString();
+        if (barId) query.barId = barId;
+        
         this.socket = io(serverUrl, {
           transports: ['websocket', 'polling'],
           timeout: 10000,
-          query: tableNumber ? { tableNumber: tableNumber.toString() } : undefined,
+          query: query,
           auth: token ? { token } : undefined
         });
         

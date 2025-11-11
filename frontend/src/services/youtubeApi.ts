@@ -2,8 +2,8 @@ import axios from 'axios';
 
 // Base del servicio de música (incluye /api/music)
 const MUSIC_BASE = (typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_MUSIC_API_URL || 'http://localhost:3003')
-  : process.env.NEXT_PUBLIC_MUSIC_API_URL || 'http://localhost:3003');
+  ? (process.env.NEXT_PUBLIC_MUSIC_API_URL || 'http://localhost:3002')
+  : process.env.NEXT_PUBLIC_MUSIC_API_URL || 'http://localhost:3002');
 
 const API_BASE_URL = `${MUSIC_BASE}/api/music`;
 
@@ -98,13 +98,13 @@ class YouTubeApiService {
   // Search videos
   async searchVideos(query: string, maxResults: number = 10): Promise<YouTubeVideo[]> {
     try {
-      // Endpoint real en music-service: /api/music/songs/external/youtube/search
-      const response = await this.axiosInstance.get('/songs/external/youtube/search', {
-        params: { q: query, max_results: maxResults },
+      // Endpoint real en music-service: /api/youtube/search
+      const response = await this.axiosInstance.get('/api/youtube/search', {
+        params: { q: query, maxResults: maxResults },
       });
-      // El backend actual devuelve { success, data: [] }
+      // El backend actual devuelve { success, data: { videos: [] } }
       const data = response.data;
-      return (data.videos || data.data || []) as YouTubeVideo[];
+      return (data.data?.videos || data.videos || []) as YouTubeVideo[];
     } catch (error) {
       console.error('Error searching videos:', error);
       throw error;

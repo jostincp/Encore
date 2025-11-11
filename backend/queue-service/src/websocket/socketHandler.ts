@@ -92,53 +92,70 @@ async function handleQueueEvent(io: SocketIOServer, eventData: any) {
 }
 
 export function initializeSocketIO(io: SocketIOServer) {
-  // Initialize Redis subscriber for queue events
-  const redisSubscriber = new Redis(config.redis.url);
-
-  redisSubscriber.subscribe('queue:events', (err) => {
-    if (err) {
-      logger.error('Failed to subscribe to queue events', err);
-    } else {
-      logger.info('Subscribed to queue events');
-    }
-  });
-
-  redisSubscriber.on('message', async (channel, message) => {
-    if (channel === 'queue:events') {
-      try {
-        const eventData = JSON.parse(message);
-        await handleQueueEvent(io, eventData);
-      } catch (error) {
-        logger.error('Failed to process queue event', error);
-      }
-    }
-  });
-
-  // Authentication middleware
-  io.use(async (socket: AuthenticatedSocket, next) => {
-    try {
-      const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
-      
-      if (!token) {
-        return next(new Error('Authentication token required'));
-      }
-
-      const decoded = jwt.verify(token, config.jwt.secret) as any;
-      
-      socket.userId = decoded.userId;
-      socket.userRole = decoded.role;
-      socket.barId = decoded.barId;
-
-      logger.info(`Socket authenticated for user ${socket.userId} with role ${socket.userRole}`);
-      next();
-    } catch (error) {
-      logger.error('Socket authentication failed:', error);
-      next(new Error('Invalid authentication token'));
-    }
-  });
+  // TODO: Initialize Redis subscriber for queue events when Redis is properly configured
+  // const redisSubscriber = new Redis(config.redis.url);
+  
+  logger.info('Socket.IO handler initialized (Redis temporarily disabled)');
 
   io.on('connection', (socket: AuthenticatedSocket) => {
-    logger.info(`Client connected: ${socket.id}, User: ${socket.userId}, Role: ${socket.userRole}`);
+    logger.info(`Client connected: ${socket.id}`);
+
+    // Handle joining a bar room
+    socket.on('join-bar', async (data: { barId: string; tableNumber?: string }) => {
+      try {
+        const { barId, tableNumber } = data;
+        
+        // Validate bar exists
+        const bar = await BarModel.findById(barId);
+        if (!bar || !bar.is_active) {
+          socket.emit('error', { message: 'Bar not found or inactive' });
+          return;
+        }
+
+        socket.barId = barId;
+        socket.join(`bar-${barId}`);
+        
+        // Add to bar connections
+        if (!barConnections.has(barId)) {
+          barConnections.set(barId, new Set());
+        }
+        barConnections.get(barId)!.add(socket.id);
+
+        socket.emit('joined-bar', { barId, tableNumber });
+        logger.info(`Socket ${socket.id} joined bar ${barId} at table ${tableNumber || 'unknown'}`);
+        
+        // Send current queue
+        const queue = await QueueModel.getQueueByBar(barId);
+        socket.emit('queue-updated', queue);
+        
+      } catch (error) {
+        logger.error('Error joining bar:', error);
+        socket.emit('error', { message: 'Failed to join bar' });
+      }
+    });
+
+    // Authentication middleware
+    io.use(async (socket: AuthenticatedSocket, next) => {
+      try {
+        const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
+        
+        if (!token) {
+          return next(new Error('Authentication token required'));
+        }
+
+        const decoded = jwt.verify(token, config.jwt.secret) as any;
+        
+        socket.userId = decoded.userId;
+        socket.userRole = decoded.role;
+        socket.barId = decoded.barId;
+
+        logger.info(`Socket authenticated for user ${socket.userId} with role ${socket.userRole}`);
+        next();
+      } catch (error) {
+        logger.error('Socket authentication failed:', error);
+        next(new Error('Invalid authentication token'));
+      }
+    });
 
     // Handle joining bar room
     socket.on('join_bar', async (barId: string) => {
