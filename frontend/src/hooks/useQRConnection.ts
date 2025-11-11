@@ -11,10 +11,10 @@ export function useQRConnection() {
   // Detectar parámetros QR desde URL o cookies
   useEffect(() => {
     const checkQRConnection = async () => {
-      // Obtener parámetros desde URL
+      // Obtener parámetros desde URL (formato estándar)
       const urlParams = new URLSearchParams(window.location.search);
-      const urlBarId = urlParams.get('b');
-      const urlTableNumber = urlParams.get('t');
+      const urlBarId = urlParams.get('barId');        // Parámetro estándar
+      const urlTableNumber = urlParams.get('table');  // Parámetro estándar
 
       // Obtener parámetros desde cookies
       const cookies = document.cookie.split(';');

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import authRoutes from './auth';
 import userRoutes from './users';
 import barRoutes from './bars';
+import qrRoutes from './qr';
 import { healthCheck } from '../middleware/healthCheck';
 
 const router: Router = Router();
@@ -15,6 +16,7 @@ router.get('/auth/health', healthCheck);
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/bars', barRoutes);
+router.use('/qr', qrRoutes);
 
 // API info endpoint
 router.get('/', (req, res) => {

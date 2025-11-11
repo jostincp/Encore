@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react';
 import MusicPage from '@/components/MusicPage';
 import { useQRConnection } from '@/hooks/useQRConnection';
+import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   Loader2, AlertCircle, Link, Unlink, ArrowLeft, Music2, Search, 
   TrendingUp, Clock, Shuffle, Play, Zap, Star 
 } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -75,33 +75,58 @@ const mockSongs: Song[] = [
 ];
 
 export default function ClientMusicPage() {
-  const { 
-    user, 
-    currentSong, 
-    queue, 
-    menu, 
-    cart, 
-    isConnected,
-    tableNumber,
-    barId,
-    pointsHistory,
-    addToCart,
-    removeFromCart,
+  const searchParams = useSearchParams();
+  const barId = searchParams?.get('barId');
+  const tableNumber = searchParams?.get('table');
+  
+  const { isConnected, disconnect } = useQRConnection();
+  const router = useRouter();
+  const { success, error } = useToast();
   const [songs, setSongs] = useState<Song[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [showPriorityDialog, setShowPriorityDialog] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [barInfo, setBarInfo] = useState<any>(null);
+  const [selectedGenre, setSelectedGenre] = useState('all');
   
   const debouncedSearch = useDebounce(searchTerm, 300);
 
+  // Obtener información del bar para personalizar experiencia
   useEffect(() => {
-    if (!user) {
+    if (barId) {
+      // Obtener información del bar
+      fetch(`http://localhost:3001/api/bars/${barId}/info`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setBarInfo(data.data);
+            // Aplicar colores personalizados si existen
+            if (data.data.primaryColor) {
+              document.documentElement.style.setProperty('--primary', data.data.primaryColor);
+            }
+            if (data.data.secondaryColor) {
+              document.documentElement.style.setProperty('--secondary', data.data.secondaryColor);
+            }
+          }
+        })
+        .catch(err => console.error('Error fetching bar info:', err));
+      
+      // Guardar en localStorage para persistencia
+      localStorage.setItem('currentBarId', barId);
+      localStorage.setItem('currentTable', tableNumber || '');
+    }
+  }, [barId, tableNumber]);
+
+  useEffect(() => {
+    // TODO: Implementar verificación de usuario
+    // Por ahora, permitimos acceso sin autenticación para probar QR
+    if (false) { // !user
       router.push('/qr');
       return;
     }
-  }, [user, router]);
+  }, [router]);
 
   useEffect(() => {
     const searchSongs = async () => {
@@ -128,8 +153,8 @@ export default function ClientMusicPage() {
         }));
 
         setSongs(apiSongs);
-      } catch (error) {
-        console.error('Error searching songs:', error);
+      } catch (err) {
+        console.error('Error searching songs:', err);
         error('Error al buscar canciones');
         setSongs([]);
       } finally {
@@ -141,21 +166,33 @@ export default function ClientMusicPage() {
   }, [debouncedSearch, error]);
 
   const handleSongRequest = async (song: Song, isPriority = false) => {
-    if (!user) return;
+    // Obtener barId y tableNumber desde localStorage (persistencia QR)
+    const currentBarId = localStorage.getItem('currentBarId') || barId;
+    const currentTable = localStorage.getItem('currentTable') || tableNumber;
+
+    if (!currentBarId) {
+      error('No se ha detectado el bar. Escanea el código QR nuevamente.');
+      return;
+    }
 
     const cost = isPriority ? 100 : 50;
+    const userPoints = 100; // TODO: Obtener puntos reales del usuario
 
-    if (user.points < cost) {
+    // TODO: Implementar verificación de puntos del usuario
+    // Por ahora, asumimos que tiene puntos suficientes
+    if (userPoints < cost) {
       error(`Necesitas ${cost} puntos para solicitar esta canción`);
       return;
     }
 
     try {
       // Llamar a la API para añadir a la cola
-      const response = await axios.post('http://localhost:3003/api/queue/default-bar/add', {
+      const response = await axios.post(`http://localhost:3003/api/queue/${currentBarId}/add`, {
         song_id: song.id,
         priority_play: isPriority,
-        points_used: cost
+        points_used: cost,
+        requested_by: currentTable || 'Cliente', // Mesa o identificador
+        bar_id: currentBarId // Asegurar que se asocia al bar correcto
       });
 
       if (response.data.success) {
@@ -200,7 +237,9 @@ export default function ClientMusicPage() {
 
   const genres = ['all', 'rock', 'pop', 'jazz', 'electronic', 'reggaeton', 'salsa'];
 
-  if (!user) return null;
+  // TODO: Implementar verificación de usuario cuando el sistema de autenticación esté listo
+  // Por ahora, permitimos acceso para probar el flujo QR
+  const userPoints = 100; // TODO: Obtener puntos reales del usuario
 
   return (
     <Layout background="dark" animate>
@@ -223,11 +262,21 @@ export default function ClientMusicPage() {
             </Button>
             <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
+              {barInfo?.logo && (
+                <Image 
+                  src={barInfo.logo} 
+                  alt={barInfo.name}
+                  width={32}
+                  height={32}
+                  className="rounded-md"
+                />
+              )}
               <Music2 className="h-6 w-6 text-primary" />
-              Rockola Digital
+              {barInfo?.name || 'Rockola Digital'}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Puntos disponibles: {formatPoints(user.points)}
+              {barInfo?.description && `${barInfo.description} • `}
+              Mesa {tableNumber || 'N/A'} • Puntos: {100} {/* TODO: user.points */}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -238,22 +287,14 @@ export default function ClientMusicPage() {
               </span>
             </div>
             {barId && (
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${isQRConnected ? 'bg-blue-500' : 'bg-gray-400'}`} />
-                <span className="text-sm text-muted-foreground">
-                  Mesa {tableNumber || 'N/A'}
-                </span>
-                {isQRConnected && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={disconnect}
-                    className="h-6 px-2"
-                  >
-                    <Unlink className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => disconnect()}
+              >
+                <Unlink className="h-4 w-4 mr-2" />
+                Desconectar
+              </Button>
             )}
           </div>
           </div>
@@ -320,7 +361,7 @@ export default function ClientMusicPage() {
                     setSelectedSong(song);
                     setShowPriorityDialog(true);
                   }}
-                  userPoints={user.points}
+                  userPoints={userPoints}
                 />
               ))}
             </div>
@@ -338,7 +379,7 @@ export default function ClientMusicPage() {
                     setSelectedSong(song);
                     setShowPriorityDialog(true);
                   }}
-                  userPoints={user.points}
+                  userPoints={userPoints}
                 />
               ))}
             </div>
@@ -357,7 +398,7 @@ export default function ClientMusicPage() {
                     setSelectedSong(song);
                     setShowPriorityDialog(true);
                   }}
-                  userPoints={user.points}
+                  userPoints={userPoints}
                 />
               ))}
             </div>
@@ -390,7 +431,7 @@ export default function ClientMusicPage() {
                 <div className="space-y-3">
                   <Button
                     onClick={() => handleSongRequest(selectedSong, false)}
-                    disabled={user.points < 50}
+                    disabled={userPoints < 50}
                     className="w-full justify-between"
                     variant="outline"
                   >
@@ -403,7 +444,7 @@ export default function ClientMusicPage() {
                   
                   <Button
                     onClick={() => handleSongRequest(selectedSong, true)}
-                    disabled={user.points < 100}
+                    disabled={userPoints < 100}
                     className="w-full justify-between"
                   >
                     <span className="flex items-center gap-2">

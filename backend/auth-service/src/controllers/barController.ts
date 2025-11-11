@@ -4,6 +4,73 @@ import logger from '../../../shared/utils/logger';
 import { AuthenticatedRequest } from '../../../shared/utils/jwt';
 import { UserRole } from '../../../shared/types/index';
 
+/**
+ * Obtener información de un bar para personalizar la experiencia del cliente
+ */
+export const getBarInfo = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { barId } = req.params;
+
+    if (!barId) {
+      res.status(400).json({
+        success: false,
+        message: 'Se requiere barId'
+      });
+      return;
+    }
+
+    // TODO: Obtener información real de la base de datos
+    // Por ahora, devolvemos datos mock para testing
+    const mockBarInfo = {
+      id: barId,
+      name: 'Rockola Bar Encore',
+      description: 'El mejor bar con música en vivo',
+      logo: 'https://example.com/logo.png',
+      primaryColor: '#f3760b',
+      secondaryColor: '#1e293b',
+      theme: 'dark',
+      settings: {
+        allowSongRequests: true,
+        requireApproval: true,
+        maxQueueLength: 20,
+        pointsPerSong: 50,
+        priorityMultiplier: 2
+      },
+      address: {
+        street: 'Calle de la Música 123',
+        city: 'Madrid',
+        country: 'España'
+      },
+      contact: {
+        phone: '+34 900 123 456',
+        email: 'hola@rockolabar.com'
+      },
+      social: {
+        instagram: '@rockolabar',
+        twitter: '@rockolabar'
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    logger.info(`Bar info requested: ${barId}`);
+
+    res.json({
+      success: true,
+      data: mockBarInfo,
+      message: 'Información del bar obtenida exitosamente'
+    });
+
+  } catch (error) {
+    logger.error('Error fetching bar info:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener información del bar',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
 export class BarController {
   /**
    * Crear un nuevo bar (solo admin)

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { BarController } from '../controllers/barController';
+import { BarController, getBarInfo } from '../controllers/barController';
 import { authenticate } from '../middleware/auth';
 import { rateLimiter as rateLimitBasic, rateLimitStrict } from '../middleware/rateLimiter';
 import { requireRole } from '../middleware/auth';
@@ -85,6 +85,15 @@ router.post('/',
  */
 router.get('/:id',
   BarController.getBarById
+);
+
+/**
+ * @route   GET /api/bars/:barId/info
+ * @desc    Get bar information for client personalization
+ * @access  Public (QR scanning)
+ */
+router.get('/:barId/info',
+  getBarInfo
 );
 
 /**
