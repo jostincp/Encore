@@ -18,7 +18,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Layout, PageContainer } from '@/components/ui/layout';
 import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { useToast } from '@/hooks/useToast';
 import { useDebounce } from '@/hooks/useDebounce';
 import { formatDuration, formatPoints } from '@/utils/format';
@@ -176,9 +175,9 @@ export default function ClientMusicPage() {
   }, [debouncedSearch, error]);
 
   const handleSongRequest = async (song: Song, isPriority = false) => {
-    // Obtener barId y tableNumber desde localStorage (persistencia QR)
-    const currentBarId = localStorage.getItem('currentBarId') || barId;
-    const currentTable = localStorage.getItem('currentTable') || tableNumber;
+    // Obtener barId y tableNumber desde los parámetros URL o Zustand store
+    const currentBarId = barId || 'demo-bar-123'; // Usar valor por defecto para debugging
+    const currentTable = tableNumber?.toString() || '1';
 
     if (!currentBarId) {
       error('No se ha detectado el bar. Escanea el código QR nuevamente.');
@@ -274,7 +273,7 @@ export default function ClientMusicPage() {
             <div>
             <h1 className="text-2xl font-bold flex items-center gap-2 text-card-foreground">
               {barInfo?.logo && (
-                <Image 
+                <img 
                   src={barInfo.logo} 
                   alt={barInfo.name}
                   width={32}
@@ -372,7 +371,7 @@ export default function ClientMusicPage() {
                   <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer bg-card border-border">
                     <CardContent className="p-4">
                       <div className="flex items-center gap-3">
-                        <Image
+                        <img
                           src={song.thumbnailUrl}
                           alt={song.title}
                           width={48}
@@ -431,7 +430,7 @@ export default function ClientMusicPage() {
                   <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer bg-card border-border">
                     <CardContent className="p-4">
                       <div className="flex items-center gap-3">
-                        <Image
+                        <img
                           src={song.thumbnailUrl}
                           alt={song.title}
                           width={48}
@@ -493,7 +492,7 @@ export default function ClientMusicPage() {
                   <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer bg-card border-border">
                     <CardContent className="p-4">
                       <div className="flex items-center gap-3">
-                        <Image
+                        <img
                           src={song.thumbnailUrl}
                           alt={song.title}
                           width={48}

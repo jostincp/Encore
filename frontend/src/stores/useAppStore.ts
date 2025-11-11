@@ -107,9 +107,23 @@ export const useAppStore = create<AppStore>()(devtools((set, get) => ({
       // Conectar WebSocket
       await get().connectWebSocket(tableNumber, barId);
 
+      // Esperar un momento para que la conexión WebSocket se establezca
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       // Unirse a la sala del bar para actualizaciones en tiempo real
       try {
-        wsManager.emit('join_bar', barId);
+        if (wsManager.isConnected()) {
+          wsManager.emit('join_bar', barId);
+          console.log('Joined bar room:', barId);
+        } else {
+          console.warn('WebSocket not connected, retrying join_bar...');
+          // Reintentar después de otro delay
+          setTimeout(() => {
+            if (wsManager.isConnected()) {
+              wsManager.emit('join_bar', barId);
+            }
+          }, 1000);
+        }
       } catch (e) {
         console.warn('No se pudo unirse a la sala del bar:', e);
       }

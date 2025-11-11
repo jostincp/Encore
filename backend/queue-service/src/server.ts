@@ -30,18 +30,10 @@ const io = new SocketIOServer(server, {
   pingInterval: 25000
 });
 
-// Security middleware
+// Security middleware - CSP deshabilitado temporalmente para debugging WebSocket
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "ws:", "wss:"]
-    }
-  }
+  contentSecurityPolicy: false
 }));
 
 // CORS configuration
@@ -69,6 +61,79 @@ app.get('/health', (req, res) => {
       status: 'active'
     }
   });
+});
+
+// Queue endpoints
+app.post('/api/queue/:barId/add', (req, res) => {
+  try {
+    const { barId } = req.params;
+    const { song_id, priority_play, points_used, requested_by } = req.body;
+    
+    logger.info(`Adding song to queue - Bar: ${barId}, Song: ${song_id}, Priority: ${priority_play}`);
+    
+    // TODO: Implementar lógica real de base de datos
+    // Por ahora, simulamos éxito y notificamos via WebSocket
+    
+    // Notificar a todos los clientes del bar sobre la nueva canción
+    io.to(`bar-${barId}`).emit('song-added', {
+      song_id,
+      priority_play,
+      points_used,
+      requested_by,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Actualizar la cola para todos los clientes
+    io.to(`bar-${barId}`).emit('queue-updated', {
+      queue: [], // TODO: Obtener cola real de la DB
+      currentlyPlaying: null,
+      totalCount: 1 // TODO: Calcular total real
+    });
+    
+    res.json({
+      success: true,
+      message: 'Canción agregada a la cola exitosamente',
+      data: {
+        song_id,
+        priority_play,
+        points_used,
+        requested_by,
+        queue_position: priority_play ? 1 : 999 // TODO: Calcular posición real
+      }
+    });
+    
+  } catch (error) {
+    logger.error('Error adding song to queue:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al agregar canción a la cola'
+    });
+  }
+});
+
+// Get queue for a bar
+app.get('/api/queue/:barId', (req, res) => {
+  try {
+    const { barId } = req.params;
+    
+    // TODO: Implementar lógica real de base de datos
+    // Por ahora, devolvemos una cola vacía
+    res.json({
+      success: true,
+      data: {
+        queue: [],
+        currentlyPlaying: null,
+        totalCount: 0
+      }
+    });
+    
+  } catch (error) {
+    logger.error('Error getting queue:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener la cola'
+    });
+  }
 });
 
 // Routes
