@@ -1,18 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import Image from 'next/image';
-import { motion } from 'framer-motion';
-import { 
-  Search, 
-  Play, 
-  Clock, 
-  Star, 
-  ArrowLeft, 
-  Shuffle,
-  TrendingUp,
-  Music2,
-  Zap,
+import { useEffect, useState } from 'react';
+import MusicPage from '@/components/MusicPage';
+import { useAuth } from '@/hooks/use-auth';
+import { Loader2, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
   Link,
   Unlink
 } from 'lucide-react';

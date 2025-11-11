@@ -2,32 +2,102 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
-import config from './config';
-import { redisClient } from './config/redis';
-import routes from './routes';
+import dotenv from 'dotenv';
+import youtubeSimpleRoutes from './routes/youtubeSimple';
+import logger from '../../../shared/utils/logger';
+
+// Cargar variables de entorno
+dotenv.config();
 
 const app = express();
-const PORT = config.server.port;
+const PORT = process.env.PORT || 3002;
 
-// Basic middleware
+// Middleware
 app.use(helmet());
 app.use(cors());
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200 // limit each IP to 200 requests per windowMs
+// Logging de requests
+app.use((req, res, next) => {
+  logger.info(`${req.method} ${req.path}`, {
+    ip: req.ip,
+    userAgent: req.get('User-Agent'),
+    timestamp: new Date().toISOString()
+  });
+  next();
 });
-app.use(limiter);
 
 // Routes
-app.use('/api/music', routes);
+app.use('/api/youtube', youtubeSimpleRoutes);
 
-// Health check endpoint
+// Health check principal
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    service: 'music-service-simple',
+    status: 'healthy',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      youtube: '/api/youtube/*',
+      health: '/health'
+    }
+  });
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    service: 'Encore Music Service (Simple)',
+    status: 'running',
+    message: '🎵 YouTube Music Search API is ready!',
+    endpoints: {
+      search: '/api/youtube/search?q={query}',
+      video: '/api/youtube/video/{videoId}',
+      trending: '/api/youtube/trending?regionCode={code}',
+      health: '/health'
+    }
+  });
+});
+
+// Error handling
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  logger.error('Express error:', err);
+  
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Endpoint not found',
+    availableEndpoints: [
+      '/api/youtube/search?q={query}',
+      '/api/youtube/video/{videoId}',
+      '/api/youtube/trending',
+      '/health'
+    ]
+  });
+});
+
+// Start server
+app.listen(PORT, () => {
+  logger.info(`🎵 Music Service (Simple) started on port ${PORT}`);
+  logger.info(`🔗 YouTube API Key: ${process.env.YOUTUBE_API_KEY ? '✅ Configured' : '❌ Missing'}`);
+  logger.info(`🌐 Server: http://localhost:${PORT}`);
+  logger.info(`📚 Health: http://localhost:${PORT}/health`);
+  logger.info(`🔍 Search: http://localhost:${PORT}/api/youtube/search?q=queen`);
+});
+
+export default app;
 app.get('/health', (req, res) => {
   res.json({
     success: true,
