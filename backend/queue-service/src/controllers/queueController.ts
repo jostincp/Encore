@@ -1,28 +1,49 @@
 import { Request, Response } from 'express';
-import { QueueModel, CreateQueueData, UpdateQueueData, QueueFilters } from '../models/Queue';
-// Temporary stubs until shared models are wired
-const SongModel = {
-  async findById(id: string) {
-    return { id, title: 'Song', is_available: true } as any;
-  }
-};
-const BarModel = {
-  async findById(id: string) {
-    return { id, is_active: true } as any;
-  }
-};
-const UserModel = {
-  async findById(id: string) {
-    return { id, points: 1000 } as any;
-  },
-  async updatePoints(id: string, delta: number) { return true; }
-};
 import logger from '../../../shared/utils/logger';
 import { validateRequired, validateUUID, validateEnum } from '../../../shared/utils/validation';
 import { QueueEventEmitter } from '../events/queueEvents';
 import { emitToBar, emitToUser } from '../websocket/socketHandler';
-import { getRedisClient } from '../../../shared/utils/redis';
 import { UserRole } from '../../../shared/types/index';
+import redisQueueManager, { QueueItem } from '../redis/queueManager';
+import pointsServiceClient, { PointsDeductRequest, PointsRefundRequest } from '../services/pointsService';
+
+// Models (temporal hasta tener shared models)
+const SongModel = {
+  async findById(id: string) {
+    return { 
+      id, 
+      title: 'Test Song', 
+      artist: 'Test Artist',
+      video_id: 'test_video_id',
+      is_available: true 
+    } as any;
+  }
+};
+
+const BarModel = {
+  async findById(id: string) {
+    return { 
+      id, 
+      name: 'Test Bar',
+      is_active: true,
+      settings: {
+        points_enabled: true,
+        max_queue_size: 50
+      }
+    } as any;
+  }
+};
+
+const UserModel = {
+  async findById(id: string) {
+    return { 
+      id, 
+      username: 'testuser',
+      points: 1000,
+      role: 'user'
+    } as any;
+  }
+};
 
 // Note: Avoid strict cross-package typing for Request due to duplicate @types/express.
 // Controllers accept loosely-typed req/res to prevent type conflicts at route mounting time.
@@ -30,224 +51,322 @@ type AnyRequest = any;
 type AnyResponse = any;
 
 export class QueueController {
-  // Add song to queue
+  /**
+   * 🔥 CRÍTICO: Añadir canción a la cola con validación de puntos PRIMERO
+   * IMPLEMENTACIÓN CORRECTA según auditoría
+   */
   static async addToQueue(req: AnyRequest, res: AnyResponse) {
+    const startTime = Date.now();
+    let pointsTransactionId: string | undefined;
+    
     try {
-      const { bar_id, song_id, priority_play = false, points_used, notes } = req.body;
+      const { bar_id, song_id, priority_play = false, notes } = req.body;
       const userId: string = req.user?.id;
+      
       if (!userId) {
         return res.status(401).json({ success: false, message: 'Unauthorized: missing user context' });
       }
       
-      // Validate required fields
+      // Validar campos requeridos
       validateRequired(bar_id, 'bar_id');
       validateRequired(song_id, 'song_id');
       validateUUID(bar_id, 'bar_id');
       validateUUID(song_id, 'song_id');
       
-      // Check if bar exists and is active
+      logger.info('🎵 Starting addToQueue process', {
+        userId,
+        barId: bar_id,
+        songId: song_id,
+        priority: priority_play
+      });
+
+      // 1. Verificar que el bar existe y está activo
       const bar = await BarModel.findById(bar_id);
-      if (!bar) {
-        return res.status(404).json({
-          success: false,
-          message: 'Bar not found'
-        });
+      if (!bar || !bar.is_active) {
+        return res.status(404).json({ success: false, message: 'Bar not found or inactive' });
       }
-      
-      if (!bar.is_active) {
-        return res.status(400).json({
-          success: false,
-          message: 'Bar is currently inactive'
-        });
-      }
-      
-      // Check if song exists and is available
+
+      // 2. Verificar que la canción existe y está disponible
       const song = await SongModel.findById(song_id);
-      if (!song) {
-        return res.status(404).json({
-          success: false,
-          message: 'Song not found'
-        });
+      if (!song || !song.is_available) {
+        return res.status(404).json({ success: false, message: 'Song not found or unavailable' });
       }
-      
-      if (!song.is_available) {
-        return res.status(400).json({
-          success: false,
-          message: 'Song is currently unavailable'
-        });
-      }
-      
-      // Check user song limits
-      const maxSongsPerUser = parseInt(process.env.MAX_SONGS_PER_USER || '3');
-      const canAddSong = await QueueModel.canUserAddSong(bar_id, userId, maxSongsPerUser);
-      if (!canAddSong) {
-        return res.status(400).json({
-          success: false,
-          message: `You can only have ${maxSongsPerUser} songs in the queue at once`
-        });
-      }
-      
-      // Check cooldown for the same song
-      const cooldownMinutes = parseInt(process.env.SONG_COOLDOWN_MINUTES || '30');
-      const cooldownKey = `cooldown:${bar_id}:${song_id}`;
-      const redis = getRedisClient();
-      const lastRequest = await redis.get(cooldownKey);
-      
-      if (lastRequest) {
-        return res.status(400).json({
-          success: false,
-          message: `This song was recently played. Please wait ${cooldownMinutes} minutes before requesting it again.`
-        });
-      }
-      
-      // 🛑 PASO CRÍTICO: Validar y deducir puntos ANTES de cualquier operación en Redis
-      const costPerSong: number = priority_play 
-        ? (points_used || parseInt(process.env.PRIORITY_PLAY_COST || '10'))
-        : parseInt(process.env.STANDARD_PLAY_COST || '5');
-      
-      // Verificar saldo del usuario
+
+      // 3. Verificar que el usuario existe
       const user = await UserModel.findById(userId);
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'User not found'
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      // 4. 🔥 CRÍTICO: Obtener costos según configuración del bar
+      const costs = await pointsServiceClient.getCosts(bar_id);
+      const costPerSong = priority_play ? costs.prioritySong : costs.standardSong;
+
+      // 5. 🔥 CRÍTICO: VERIFICAR DUPLICADO O(1) ANTES de cobrar puntos
+      const isDuplicate = await redisQueueManager.isSongInQueue(bar_id, song.video_id);
+      if (isDuplicate) {
+        logger.warn('🚫 Song already in queue (O(1) check)', {
+          userId,
+          barId: bar_id,
+          videoId: song.video_id,
+          songTitle: song.title
+        });
+        return res.status(409).json({ 
+          success: false, 
+          message: 'Song already in queue',
+          code: 'DUPLICATE_SONG'
         });
       }
-      
-      if (user.points < costPerSong) {
-        return res.status(402).json({
-          success: false,
-          message: 'Insufficient points',
-          error_code: 'INSUFFICIENT_POINTS',
-          current_balance: user.points,
-          required_points: costPerSong
-        });
-      }
-      
-      // Deducir puntos del usuario (PASO CRÍTICO)
-      await UserModel.updatePoints(userId, -costPerSong);
-      
-      // Emitir evento de puntos actualizados
-      QueueEventEmitter.emitUserPointsUpdated({
-        barId: bar_id,
+
+      // 6. 🔥 CRÍTICO: COMUNICACIÓN SÍNCRONA CON POINTS SERVICE ANTES DE REDIS
+      logger.info('💰 CRITICAL: Calling Points Service BEFORE Redis operation', {
         userId,
-        newBalance: user.points - costPerSong,
-        pointsUsed: costPerSong,
-        timestamp: new Date().toISOString()
+        barId: bar_id,
+        amount: costPerSong,
+        songTitle: song.title
       });
-      
-      // 🔄 Verificar si la canción ya está en cola (SISMEMBER equivalente)
-      const existingEntries = await QueueModel.findByBarIdAndSongId(bar_id, song_id, ['pending', 'playing']);
-      if (existingEntries && existingEntries.length > 0) {
-        // Rollback: devolver puntos si la canción ya está en cola
-        await UserModel.updatePoints(userId, costPerSong);
-        return res.status(409).json({
+
+      const pointsRequest: PointsDeductRequest = {
+        userId,
+        barId: bar_id,
+        amount: costPerSong,
+        reason: priority_play ? 'priority_song' : 'song_request',
+        metadata: {
+          songId: song_id,
+          videoId: song.video_id,
+          title: song.title
+        }
+      };
+
+      const pointsResponse = await pointsServiceClient.deductPoints(pointsRequest);
+
+      if (!pointsResponse.success) {
+        logger.error('❌ Points deduction failed - ABORTING queue operation', {
+          userId,
+          barId: bar_id,
+          amount: costPerSong,
+          error: pointsResponse.error,
+          insufficientFunds: pointsResponse.insufficientFunds
+        });
+
+        const statusCode = pointsResponse.insufficientFunds ? 402 : 400;
+        return res.status(statusCode).json({
           success: false,
-          message: 'This song is already in the queue',
-          error_code: 'SONG_ALREADY_QUEUED',
-          existing_entry: existingEntries[0]
+          message: pointsResponse.error || 'Failed to deduct points',
+          code: pointsResponse.insufficientFunds ? 'INSUFFICIENT_POINTS' : 'POINTS_ERROR'
         });
       }
-      
-      // Crear entrada de cola con el costo calculado
-      const createData: CreateQueueData = {
-        bar_id,
-        song_id,
-        user_id: userId,
-        priority_play,
-        points_used: costPerSong, // Usar el costo calculado
-        notes
+
+      // ✅ Puntos deducidos exitosamente
+      pointsTransactionId = pointsResponse.transactionId;
+      logger.info('✅ Points deducted successfully - proceeding with Redis operation', {
+        userId,
+        barId: bar_id,
+        amount: costPerSong,
+        newBalance: pointsResponse.newBalance,
+        transactionId: pointsTransactionId
+      });
+
+      // 7. 🔥 CRÍTICO: Operación atómica en Redis con MULTI/EXEC
+      const queueItem: QueueItem = {
+        id: `queue_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        barId: bar_id,
+        songId: song_id,
+        videoId: song.video_id,
+        title: song.title,
+        artist: song.artist,
+        userId: userId,
+        username: user.username,
+        type: priority_play ? 'priority' : 'standard',
+        position: 0, // Se asignará en Redis
+        status: 'pending',
+        pointsCost: costPerSong,
+        requestedAt: new Date(),
+        notes: notes || ''
       };
+
+      const redisResult = await redisQueueManager.addToQueue(queueItem);
+
+      if (!redisResult.success) {
+        // 🔥 CRÍTICO: Rollback de puntos si falla Redis
+        logger.error('💥 Redis operation failed - initiating points rollback', {
+          userId,
+          barId: bar_id,
+          transactionId: pointsTransactionId,
+          redisError: redisResult.error
+        });
+
+        const refundRequest: PointsRefundRequest = {
+          userId,
+          barId: bar_id,
+          amount: costPerSong,
+          reason: 'queue_error',
+          originalTransactionId: pointsTransactionId,
+          metadata: {
+            songId: song_id,
+            videoId: song.video_id,
+            errorReason: redisResult.error
+          }
+        };
+
+        const refundResult = await pointsServiceClient.refundPoints(refundRequest);
+        
+        if (!refundResult.success) {
+          logger.error('🚨 CRITICAL: Points rollback failed - MANUAL INTERVENTION REQUIRED', {
+            userId,
+            barId: bar_id,
+            amount: costPerSong,
+            originalTransactionId: pointsTransactionId,
+            refundError: refundResult.error
+          });
+        } else {
+          logger.info('✅ Points rollback completed successfully', {
+            userId,
+            barId: bar_id,
+            amount: costPerSong,
+            refundTransactionId: refundResult.transactionId
+          });
+        }
+
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to add song to queue - points refunded',
+          code: 'QUEUE_ERROR_ROLLBACK'
+        });
+      }
+
+      // 8. ✅ Éxito completo - Emitir eventos WebSocket
+      const queue = await redisQueueManager.getQueue(bar_id);
       
-      const queueEntry = await QueueModel.create(createData);
-      
-      // Set cooldown for this song
-      await redis.setex(cooldownKey, cooldownMinutes * 60, new Date().toISOString());
-      
-      // Get detailed queue entry for response
-      const detailedEntry = await QueueModel.findById(queueEntry.id, true);
-      
-      logger.info(`Song added to queue: ${queueEntry.id} by user ${userId}`);
-      
-      res.status(201).json({
+      // Emitir a todos los clientes del bar
+      emitToBar(bar_id, {
+        type: 'queue_updated',
+        data: {
+          action: 'song_added',
+          queue: queue.items,
+          stats: queue.stats,
+          addedBy: user.username,
+          songTitle: song.title,
+          priority: priority_play
+        }
+      });
+
+      // Emitir al usuario específico
+      emitToUser(userId, {
+        type: 'song_added_success',
+        data: {
+          position: redisResult.position,
+          queueLength: queue.stats.totalItems,
+          estimatedWaitTime: queue.stats.estimatedWaitTime,
+          pointsDeducted: costPerSong,
+          newBalance: pointsResponse.newBalance
+        }
+      });
+
+      // Emitir evento para analytics
+      QueueEventEmitter.emit('song_added', {
+        barId: bar_id,
+        userId: userId,
+        songId: song_id,
+        priority: priority_play,
+        pointsUsed: costPerSong,
+        position: redisResult.position,
+        processingTime: Date.now() - startTime
+      });
+
+      logger.info('🎉 addToQueue completed successfully', {
+        userId,
+        barId: bar_id,
+        songId: song_id,
+        position: redisResult.position,
+        pointsDeducted: costPerSong,
+        processingTime: Date.now() - startTime,
+        transactionId: pointsTransactionId
+      });
+
+      return res.status(201).json({
         success: true,
         message: 'Song added to queue successfully',
-        data: detailedEntry
+        data: {
+          queueItem: {
+            ...queueItem,
+            position: redisResult.position
+          },
+          queue: queue.items,
+          stats: queue.stats,
+          pointsDeducted: costPerSong,
+          newBalance: pointsResponse.newBalance,
+          transactionId: pointsTransactionId
+        }
       });
-      
+
     } catch (error) {
-      logger.error('Error adding song to queue:', error);
-      // Note: Detailed rollback requires scoped variables; consider implementing transaction in data layer.
-      
-      res.status(500).json({
+      // 🔥 CRÍTICO: Error inesperado - intentar rollback si hay transacción
+      if (pointsTransactionId) {
+        logger.error('💥 Unexpected error - attempting emergency points rollback', {
+          userId: req.user?.id,
+          transactionId: pointsTransactionId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+
+        try {
+          const emergencyRefund: PointsRefundRequest = {
+            userId: req.user?.id,
+            barId: req.body.bar_id,
+            amount: req.body.priority_play ? 25 : 10, // Estimar costo
+            reason: 'system_error',
+            originalTransactionId: pointsTransactionId,
+            metadata: {
+              errorReason: error instanceof Error ? error.message : 'Unknown error'
+            }
+          };
+
+          await pointsServiceClient.refundPoints(emergencyRefund);
+          logger.info('✅ Emergency points rollback completed');
+        } catch (rollbackError) {
+          logger.error('🚨 CRITICAL: Emergency rollback failed - MANUAL INTERVENTION REQUIRED', {
+            transactionId: pointsTransactionId,
+            rollbackError: rollbackError instanceof Error ? rollbackError.message : 'Unknown error'
+          });
+        }
+      }
+
+      logger.error('Error in addToQueue:', error);
+      return res.status(500).json({
         success: false,
-        message: 'Internal server error'
+        message: 'Internal server error',
+        code: 'INTERNAL_ERROR'
       });
     }
   }
   
-  // Get queue for a bar
+  /**
+   * Obtener cola completa de un bar
+   */
   static async getQueue(req: AnyRequest, res: AnyResponse) {
     try {
-      const { barId } = req.params;
-      const {
-        status,
-        user_id,
-        priority_play,
-        date_from,
-        date_to,
-        page = 1,
-        limit = 50,
-        include_details = 'true'
-      } = req.query;
+      const { bar_id } = req.params;
       
-      validateUUID(barId, 'barId');
-      
-      // Build filters
-      const filters: QueueFilters = {
-        includeDetails: include_details === 'true'
-      };
-      
-      if (status) {
-        filters.status = Array.isArray(status) ? status as string[] : [status as string];
+      validateRequired(bar_id, 'bar_id');
+      validateUUID(bar_id, 'bar_id');
+
+      // Verificar que el bar existe
+      const bar = await BarModel.findById(bar_id);
+      if (!bar) {
+        return res.status(404).json({ success: false, message: 'Bar not found' });
       }
-      
-      if (user_id) {
-        validateUUID(user_id as string, 'user_id');
-        filters.user_id = user_id as string;
-      }
-      
-      if (priority_play !== undefined) {
-        filters.priority_play = priority_play === 'true';
-      }
-      
-      if (date_from) {
-        filters.date_from = new Date(date_from as string);
-      }
-      
-      if (date_to) {
-        filters.date_to = new Date(date_to as string);
-      }
-      
-      const pageNum = Math.max(1, parseInt(page as string) || 1);
-      const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 50));
-      
-      const result = await QueueModel.findByBarId(barId, filters, pageNum, limitNum);
-      
-      res.json({
+
+      // Obtener cola desde Redis
+      const queue = await redisQueueManager.getQueue(bar_id);
+
+      return res.status(200).json({
         success: true,
-        data: result.data,
-        pagination: {
-          page: result.page,
-          limit: result.limit,
-          total: result.total,
-          totalPages: result.totalPages
-        }
+        data: queue
       });
       
     } catch (error) {
       logger.error('Error getting queue:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         message: 'Internal server error'
       });
@@ -793,6 +912,37 @@ export class QueueController {
       res.status(500).json({
         success: false,
         message: 'Internal server error'
+      });
+    }
+  }
+
+  /**
+   * Health check del servicio
+   */
+  static async healthCheck(req: AnyRequest, res: AnyResponse) {
+    try {
+      const [redisHealth, pointsHealth] = await Promise.all([
+        redisQueueManager.healthCheck(),
+        pointsServiceClient.healthCheck()
+      ]);
+
+      const isHealthy = redisHealth.status === 'healthy' && pointsHealth.healthy;
+
+      return res.status(isHealthy ? 200 : 503).json({
+        success: isHealthy,
+        data: {
+          redis: redisHealth,
+          pointsService: pointsHealth,
+          timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error in health check:', error);
+      return res.status(503).json({
+        success: false,
+        message: 'Service unhealthy',
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   }

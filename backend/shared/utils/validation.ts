@@ -411,6 +411,29 @@ export const validateFile = (file: any, allowedTypes: string[], maxSize: number)
   return true;
 };
 
+// ==============================================
+// FUNCIONES LEGACY DE VALIDACIÓN (Compatibilidad)
+// ==============================================
+
+export const validateRequired = (value: any, fieldName: string): void => {
+  if (value === null || value === undefined || value === '') {
+    throw new Error(`${fieldName} is required`);
+  }
+};
+
+export const validateUUID = (value: string, fieldName: string): void => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(value)) {
+    throw new Error(`${fieldName} must be a valid UUID`);
+  }
+};
+
+export const validateEnum = (value: any, allowedValues: string[], fieldName: string): void => {
+  if (!allowedValues.includes(value)) {
+    throw new Error(`${fieldName} must be one of: ${allowedValues.join(', ')}`);
+  }
+};
+
 export default {
   // Esquemas
   registerSchema,
@@ -442,5 +465,10 @@ export default {
   validateEmail,
   validatePassword,
   validateId,
-  validateFile
+  validateFile,
+  
+  // Funciones de validación legacy para compatibilidad
+  validateRequired,
+  validateUUID,
+  validateEnum
 };
