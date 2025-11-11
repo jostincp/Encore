@@ -203,15 +203,14 @@ export default function AdminPage() {
           'Authorization': `Bearer ${token}`
         } as const;
 
-        const [barRes, userRes, metricsRes] = await Promise.all([
+        // Solo cargar datos disponibles - evitar errores de servicios no implementados
+        const [barRes, userRes] = await Promise.all([
           fetch(`${API_ENDPOINTS.base}/api/bars/my`, { headers }),
-          fetch(`${API_ENDPOINTS.base}/api/auth/profile`, { headers }),
-          fetch(`${API_ENDPOINTS.base}/api/v1/analytics/dashboard/overview`, { headers })
+          fetch(`${API_ENDPOINTS.base}/api/auth/profile`, { headers })
         ]);
 
         const barJson = await barRes.json().catch(() => ({}));
         const userJson = await userRes.json().catch(() => ({}));
-        const metricsJson = await metricsRes.json().catch(() => ({}));
 
         if (!barRes.ok) {
           // Si no hay bar asociado (404), no mostrar error - es normal para nuevos usuarios
@@ -237,20 +236,25 @@ export default function AdminPage() {
           setRealUser(u);
         }
 
-        if (metricsRes.ok) {
-          const m = metricsJson?.data || metricsJson;
-          const normalized = {
-            occupiedTables: m?.occupiedTables ?? m?.tablesOccupied ?? null,
-            totalTables: m?.totalTables ?? null,
-            totalRevenue: m?.totalRevenue ?? m?.salesTotal ?? null,
-            totalSongsPlayed: m?.totalSongsPlayed ?? m?.songsPlayed ?? null,
-            totalOrders: m?.totalOrders ?? m?.ordersTotal ?? null,
-            averageOrderValue: m?.averageOrderValue ?? null
-          };
-          setRealMetrics(normalized);
-        }
-      } catch (err: any) {
-        setRealError(err?.message || 'Error de red al cargar datos reales');
+        // TODO: Implementar cuando el servicio analytics esté disponible
+        // const metricsRes = await fetch(`${API_ENDPOINTS.base}/api/v1/analytics/dashboard/overview`, { headers });
+        // if (metricsRes.ok) {
+        //   const metricsJson = await metricsRes.json().catch(() => ({}));
+        //   const m = metricsJson?.data || metricsJson;
+        //   const normalized = {
+        //     occupiedTables: m?.occupiedTables ?? m?.tablesOccupied ?? null,
+        //     totalTables: m?.totalTables ?? null,
+        //     totalRevenue: m?.totalRevenue ?? m?.salesTotal ?? null,
+        //     totalSongsPlayed: m?.totalSongsPlayed ?? m?.songsPlayed ?? null,
+        //     totalOrders: m?.totalOrders ?? m?.ordersTotal ?? null,
+        //     averageOrderValue: m?.averageOrderValue ?? null
+        //   };
+        //   setRealMetrics(normalized);
+        // }
+
+      } catch (error) {
+        console.error('Error fetching real data:', error);
+        setRealError('Error de conexión al cargar datos del dashboard');
       }
     };
 
