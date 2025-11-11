@@ -17,7 +17,7 @@ interface UseWebSocketOptions {
 
 export const useWebSocket = (options: UseWebSocketOptions = {}) => {
   const {
-    url = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001',
+    url = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3003', // Queue Service
     barId,
     onMessage,
     onConnect,

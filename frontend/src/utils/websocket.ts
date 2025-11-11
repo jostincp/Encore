@@ -9,18 +9,8 @@ class WebSocketManager {
   connect(tableNumber?: number): Promise<Socket> {
     return new Promise((resolve, reject) => {
       try {
-        // Resolve server URL from env, accepting old and new variable names
-        const rawUrl =
-          process.env.NEXT_PUBLIC_WEBSOCKET_URL ||
-          process.env.NEXT_PUBLIC_WS_URL ||
-          'http://localhost:3003';
-
-        // Normalize ws:// to http:// for Socket.IO handshake
-        const serverUrl = rawUrl.startsWith('ws://')
-          ? rawUrl.replace(/^ws:\/\//, 'http://')
-          : rawUrl.startsWith('wss://')
-          ? rawUrl.replace(/^wss:\/\//, 'https://')
-          : rawUrl;
+        // Resolve server URL from env - standardized to Queue Service
+        const serverUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3003';
 
         // Try to attach auth token if present (admin/bar-owner flows)
         const token = typeof window !== 'undefined'
@@ -124,21 +114,23 @@ export const useWebSocket = () => {
   };
 };
 
-// Tipos de eventos WebSocket
+// Tipos de eventos WebSocket - Queue Service Events
 export const WS_EVENTS = {
   // Client events
-  JOIN_TABLE: 'join_table',
-  REQUEST_SONG: 'request_song',
-  PRIORITY_REQUEST: 'priority_request',
-  PLACE_ORDER: 'place_order',
+  JOIN_BAR: 'join_bar',
+  LEAVE_BAR: 'leave_bar',
+  GET_QUEUE_POSITION: 'get_queue_position',
+  GET_QUEUE_STATS: 'get_queue_stats',
+  PING: 'ping',
   
-  // Admin events
+  // Admin events (bar_owner, staff, admin)
   APPROVE_SONG: 'approve_song',
   REJECT_SONG: 'reject_song',
   REORDER_QUEUE: 'reorder_queue',
   UPDATE_MENU: 'update_menu',
   
   // Server events
+  QUEUE_STATE: 'queue_state',
   QUEUE_UPDATED: 'queue_updated',
   SONG_APPROVED: 'song_approved',
   SONG_REJECTED: 'song_rejected',
@@ -146,7 +138,15 @@ export const WS_EVENTS = {
   PLAY_NEXT_SONG: 'play_next_song',
   POINTS_UPDATED: 'points_updated',
   ORDER_STATUS: 'order_status',
-  STATS_UPDATED: 'stats_updated'
+  STATS_UPDATED: 'stats_updated',
+  USER_JOINED: 'user_joined',
+  USER_LEFT: 'user_left',
+  USER_DISCONNECTED: 'user_disconnected',
+  TABLE_JOINED: 'table_joined', // For compatibility
+  SONG_REQUESTED: 'song_requested', // For compatibility
+  ORDER_PLACED: 'order_placed', // For compatibility
+  PONG: 'pong',
+  ERROR: 'error'
 } as const;
 
 export type WSEventType = typeof WS_EVENTS[keyof typeof WS_EVENTS];

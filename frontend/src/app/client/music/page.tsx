@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import MusicPage from '@/components/MusicPage';
-import { useAuth } from '@/hooks/use-auth';
-import { Loader2, AlertCircle } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-  Link,
-  Unlink
+import { useQRConnection } from '@/hooks/useQRConnection';
+import { motion } from 'framer-motion';
+import { 
+  Loader2, AlertCircle, Link, Unlink, ArrowLeft, Music2, Search, 
+  TrendingUp, Clock, Shuffle, Play, Zap, Star 
 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Layout, PageContainer } from '@/components/ui/layout';
 import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useToast } from '@/hooks/useToast';
 import { useDebounce } from '@/hooks/useDebounce';
 import { formatDuration, formatPoints } from '@/utils/format';
@@ -85,23 +87,14 @@ export default function ClientMusicPage() {
     pointsHistory,
     addToCart,
     removeFromCart,
-    getCartTotal,
-    connectWebSocket,
-    disconnectWebSocket
-  } = useAppStore();
-  const { success: showSuccess, error: showError } = useToast();
-  const { isConnected: isQRConnected, disconnect } = useQRConnection();
-  const [showCart, setShowCart] = useState(false);
-  const [showUser, setShowUser] = useState(false);
-  const [activeTab, setActiveTab] = useState('queue');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedGenre, setSelectedGenre] = useState('all');
   const [songs, setSongs] = useState<Song[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [showPriorityDialog, setShowPriorityDialog] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-
-  const debouncedSearch = useDebounce(searchTerm, 500);
+  const [isAdding, setIsAdding] = useState(false);
+  
+  const debouncedSearch = useDebounce(searchTerm, 300);
 
   useEffect(() => {
     if (!user) {
@@ -119,7 +112,7 @@ export default function ClientMusicPage() {
 
       setIsSearching(true);
       try {
-        const response = await axios.get('http://localhost:3003/api/music/songs/external/youtube/search', {
+        const response = await axios.get('http://localhost:3002/api/music/songs/external/youtube/search', {
           params: { q: debouncedSearch, maxResults: 25 }
         });
 
@@ -137,7 +130,7 @@ export default function ClientMusicPage() {
         setSongs(apiSongs);
       } catch (error) {
         console.error('Error searching songs:', error);
-        showErrorToast('Error al buscar canciones');
+        error('Error al buscar canciones');
         setSongs([]);
       } finally {
         setIsSearching(false);
@@ -145,7 +138,7 @@ export default function ClientMusicPage() {
     };
 
     searchSongs();
-  }, [debouncedSearch, showErrorToast]);
+  }, [debouncedSearch, error]);
 
   const handleSongRequest = async (song: Song, isPriority = false) => {
     if (!user) return;
@@ -153,20 +146,20 @@ export default function ClientMusicPage() {
     const cost = isPriority ? 100 : 50;
 
     if (user.points < cost) {
-      showErrorToast(`Necesitas ${cost} puntos para solicitar esta canción`);
+      error(`Necesitas ${cost} puntos para solicitar esta canción`);
       return;
     }
 
     try {
       // Llamar a la API para añadir a la cola
-      const response = await axios.post('http://localhost:3003/api/music/queue/default-bar/add', {
+      const response = await axios.post('http://localhost:3003/api/queue/default-bar/add', {
         song_id: song.id,
         priority_play: isPriority,
         points_used: cost
       });
 
       if (response.data.success) {
-        showSuccessToast(
+        success(
           isPriority
             ? `¡${song.title} agregada con Priority Play!`
             : `¡${song.title} agregada a la cola!`
@@ -179,14 +172,14 @@ export default function ClientMusicPage() {
         setSelectedSong(null);
         setShowPriorityDialog(false);
       } else {
-        showErrorToast(response.data.message || 'Error al añadir canción a la cola');
+        error(response.data.message || 'Error al añadir canción a la cola');
       }
     } catch (error: any) {
       console.error('Error adding song to queue:', error);
       
       // Manejar error 402 Payment Required
       if (error.response?.status === 402) {
-        showErrorToast('💰 Saldo insuficiente. Recarga tus puntos para continuar');
+        error('💰 Saldo insuficiente. Recarga tus puntos para continuar');
         // Opcionalmente, redirigir a la página de recarga o mostrar un botón
         setTimeout(() => {
           // router.push('/client/recharge'); // Si existe página de recarga
@@ -196,12 +189,12 @@ export default function ClientMusicPage() {
       
       // Manejar error 409 Conflict (canción duplicada)
       if (error.response?.status === 409) {
-        showErrorToast('🎵 Esta canción ya está en la cola');
+        error('🎵 Esta canción ya está en la cola');
         return;
       }
       
       const errorMessage = error.response?.data?.message || 'Error al añadir canción a la cola';
-      showErrorToast(errorMessage);
+      error(errorMessage);
     }
   };
 

@@ -151,7 +151,7 @@ export default function AdminQueuePage() {
     // Cargar cola inicial
     const loadQueue = async () => {
       try {
-        const response = await axios.get('http://localhost:3003/api/music/queue/default-bar');
+        const response = await axios.get('http://localhost:3003/api/queue/default-bar');
         if (response.data.success) {
           // Transformar datos de la API al formato QueueItem
           const apiQueue: QueueItem[] = response.data.data.map((item: any) => ({
@@ -257,7 +257,7 @@ export default function AdminQueuePage() {
 
   const handleRejectSong = async (id: string) => {
     try {
-      const response = await axios.patch(`http://localhost:3003/api/music/queue/default-bar/${id}/status`, {
+      const response = await axios.patch(`http://localhost:3003/api/queue/default-bar/${id}/status`, {
         status: 'rejected'
       });
       if (response.data.success) {

@@ -92,70 +92,151 @@ Encore resuelve la fragmentación en el consumo de música digital al proporcion
 - PostgreSQL
 - Redis
 
+### ⚙️ Configuración de Variables de Entorno
+
+**📋 IMPORTANTE:** Cada servicio requiere configuración específica de variables de entorno.
+
+#### 1. Configurar Music Service
+```bash
+# Copiar y configurar variables
+cp backend/music-service/.env.example backend/music-service/.env
+# Editar backend/music-service/.env con tus credenciales
+```
+
+**Variables clave para Music Service:**
+```bash
+# YouTube API (requerido)
+YOUTUBE_API_KEY=AIzaSyDmB98_1mo0doDBWwETyd-4iOacHNu3avc
+
+# Base de datos
+DB_HOST=localhost
+DB_PASSWORD=your_db_password
+
+# Redis
+REDIS_HOST=localhost
+```
+
+#### 2. Configurar Queue Service
+```bash
+# Copiar y configurar variables
+cp backend/queue-service/.env.example backend/queue-service/.env
+# Editar backend/queue-service/.env
+```
+
+**Variables clave para Queue Service:**
+```bash
+# JWT
+JWT_SECRET=your_super_secret_jwt_key_here
+
+# Redis (crítico para colas)
+REDIS_HOST=localhost
+REDIS_KEY_PREFIX=encore:queue:
+```
+
+#### 3. Configurar Frontend
+```bash
+# Copiar variables de entorno (ver docs/SETUP/frontend_env_example.md)
+cp docs/SETUP/frontend_env_example.md frontend/.env.local
+```
+
+**Variables clave para Frontend:**
+```bash
+# URLs de APIs
+NEXT_PUBLIC_MUSIC_SERVICE_URL=http://localhost:3002
+NEXT_PUBLIC_QUEUE_SERVICE_URL=http://localhost:3003
+
+# YouTube API
+NEXT_PUBLIC_YOUTUBE_API_KEY=AIzaSyDmB98_1mo0doDBWwETyd-4iOacHNu3avc
+```
+
+### 📖 Documentación Completa de Variables
+
+Para configuración completa por entorno (development/staging/production):
+```bash
+📚 Ver: docs/SETUP/environment_variables_guide.md
+```
+
 ### Instalación
 ```bash
 # Clonar el repositorio
 git clone <repository-url>
 cd encore
 
-# Instalar todas las dependencias
-npm run install:all
+# Configurar variables de entorno (ver sección arriba)
+# Configurar cada servicio según su .env.example
+
+# Instalar dependencias
+npm install
+
+# Iniciar servicios base
+docker-compose up -d postgres redis
+
+# Iniciar desarrollo
+npm run dev:backend   # Todos los microservicios
+npm run dev:frontend  # Next.js application
 ```
 
-### Variables de Entorno
-Crea los archivos `.env` necesarios en cada servicio:
+### 🌐 Acceso a la Aplicación
 
-#### Frontend (.env.local)
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3001
-NEXT_PUBLIC_SOCKET_URL=http://localhost:3002
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
-```
-
-#### Backend Services (.env)
-```env
-# Común para todos los servicios
-DATABASE_URL=postgresql://user:password@localhost:5432/encore
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=your-jwt-secret
-
-# Específicos por servicio
-# music-service
-YOUTUBE_API_KEY=your-youtube-api-key
-SPOTIFY_CLIENT_ID=your-spotify-client-id
-SPOTIFY_CLIENT_SECRET=your-spotify-client-secret
-
-# points-service
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-```
-
-### Desarrollo
+Una vez iniciados los servicios:
 ```bash
-# Ejecutar todo el stack de desarrollo
-npm run dev
-
-# O ejecutar servicios individualmente
-npm run dev:frontend    # Frontend en puerto 3000
-npm run dev:backend     # Todos los microservicios
-
-# Servicios individuales
-npm run dev:auth        # Puerto 3001
-npm run dev:music       # Puerto 3002
-npm run dev:queue       # Puerto 3003
-npm run dev:points      # Puerto 3004
-npm run dev:menu        # Puerto 3005
-npm run dev:analytics   # Puerto 3006
+🌐 Frontend:      http://localhost:3004/client/music-final
+🎵 Music API:     http://localhost:3002/health
+🎵 Queue API:     http://localhost:3003/health
+🔐 Auth API:      http://localhost:3001/health
 ```
 
-### Construcción
-```bash
-# Construir todo el proyecto
-npm run build
+### 📋 Estructura del Proyecto
 
-# Construir solo frontend o backend
-npm run build:frontend
-npm run build:backend
+```
+encore/
+├── frontend/                 # Next.js 15 App Router
+│   ├── src/
+│   │   ├── app/             # Páginas y layouts
+│   │   ├── components/      # Componentes React
+│   │   ├── services/        # API clients
+│   │   └── utils/           # Utilidades
+│   └── .env.local           # Variables de entorno
+├── backend/
+│   ├── music-service/       # Puerto 3002 - YouTube API
+│   ├── queue-service/       # Puerto 3003 - Redis colas
+│   ├── auth-service/        # Puerto 3001 - JWT auth
+│   ├── points-service/      # Puerto 3004 - Stripe pagos
+│   ├── menu-service/        # Puerto 3005 - Menú 3D
+│   ├── analytics-service/   # Puerto 3006 - Métricas
+│   └── shared/              # Código compartido
+├── docs/                    # Documentación completa
+│   ├── ARCHITECTURE/        # Arquitectura técnica
+│   ├── SETUP/               # Guías de configuración
+│   ├── SERVICES/            # Documentación de servicios
+│   └── environment_variables_guide.md  # Variables de entorno
+└── docker-compose.yml       # PostgreSQL + Redis
+```
+
+### 🔧 Scripts Disponibles
+
+```bash
+# Desarrollo
+npm run dev                  # Todo el stack
+npm run dev:frontend         # Solo frontend (puerto 3004)
+npm run dev:backend          # Todos los microservicios
+npm run dev:music            # Music service (3002)
+npm run dev:queue            # Queue service (3003)
+npm run dev:auth             # Auth service (3001)
+
+# Construcción
+npm run build                # Build completo
+npm run build:frontend       # Solo frontend
+npm run build:backend        # Solo backend
+
+# Testing
+npm run test                 # Todas las pruebas
+npm run test:unit            # Unit tests
+npm run test:e2e             # End-to-end tests
+
+# Producción
+npm run start                # Iniciar producción
+npm run deploy               # Despliegue a staging
 ```
 
 ## 📱 Funcionalidades
