@@ -12,7 +12,9 @@ import {
   Shuffle,
   TrendingUp,
   Music2,
-  Zap
+  Zap,
+  Link,
+  Unlink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -78,10 +80,28 @@ const mockSongs: Song[] = [
   }
 ];
 
-export default function MusicPage() {
-  const { user, addToQueue, queue } = useAppStore();
-  const router = useRouter();
-  const { success: showSuccessToast, error: showErrorToast } = useToast();
+export default function ClientMusicPage() {
+  const { 
+    user, 
+    currentSong, 
+    queue, 
+    menu, 
+    cart, 
+    isConnected,
+    tableNumber,
+    barId,
+    pointsHistory,
+    addToCart,
+    removeFromCart,
+    getCartTotal,
+    connectWebSocket,
+    disconnectWebSocket
+  } = useAppStore();
+  const { success: showSuccess, error: showError } = useToast();
+  const { isConnected: isQRConnected, disconnect } = useQRConnection();
+  const [showCart, setShowCart] = useState(false);
+  const [showUser, setShowUser] = useState(false);
+  const [activeTab, setActiveTab] = useState('queue');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('all');
   const [songs, setSongs] = useState<Song[]>([]);
@@ -171,6 +191,23 @@ export default function MusicPage() {
       }
     } catch (error: any) {
       console.error('Error adding song to queue:', error);
+      
+      // Manejar error 402 Payment Required
+      if (error.response?.status === 402) {
+        showErrorToast('💰 Saldo insuficiente. Recarga tus puntos para continuar');
+        // Opcionalmente, redirigir a la página de recarga o mostrar un botón
+        setTimeout(() => {
+          // router.push('/client/recharge'); // Si existe página de recarga
+        }, 3000);
+        return;
+      }
+      
+      // Manejar error 409 Conflict (canción duplicada)
+      if (error.response?.status === 409) {
+        showErrorToast('🎵 Esta canción ya está en la cola');
+        return;
+      }
+      
       const errorMessage = error.response?.data?.message || 'Error al añadir canción a la cola';
       showErrorToast(errorMessage);
     }
@@ -200,14 +237,40 @@ export default function MusicPage() {
               Volver
             </Button>
             <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
-                <Music2 className="h-6 w-6 text-primary" />
-                Rockola Digital
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Puntos disponibles: {formatPoints(user.points)}
-              </p>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Music2 className="h-6 w-6 text-primary" />
+              Rockola Digital
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Puntos disponibles: {formatPoints(user.points)}
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className="text-sm text-muted-foreground">
+                {isConnected ? 'Conectado' : 'Desconectado'}
+              </span>
             </div>
+            {barId && (
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${isQRConnected ? 'bg-blue-500' : 'bg-gray-400'}`} />
+                <span className="text-sm text-muted-foreground">
+                  Mesa {tableNumber || 'N/A'}
+                </span>
+                {isQRConnected && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={disconnect}
+                    className="h-6 px-2"
+                  >
+                    <Unlink className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
           </div>
         </motion.div>
 

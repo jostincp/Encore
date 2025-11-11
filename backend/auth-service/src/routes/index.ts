@@ -8,6 +8,8 @@ const router: Router = Router();
 
 // Health check endpoint
 router.get('/health', healthCheck);
+// Health check under /auth for clients expecting /api/auth/health
+router.get('/auth/health', healthCheck);
 
 // API routes
 router.use('/auth', authRoutes);

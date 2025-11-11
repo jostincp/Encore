@@ -63,13 +63,19 @@ export function PWAInstaller({
         return;
       }
 
-      // Verificar si el service worker está activo
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistration().then((registration) => {
-          if (registration && registration.active) {
-            // PWA está registrada pero no necesariamente instalada
-          }
-        });
+      // Verificar si el service worker está activo de forma segura
+      try {
+        if (typeof window !== 'undefined' && 'serviceWorker' in navigator && document.readyState === 'complete') {
+          navigator.serviceWorker.getRegistration().then((registration) => {
+            if (registration && registration.active) {
+              // PWA está registrada pero no necesariamente instalada
+            }
+          }).catch(() => {
+            // Ignorar errores de estado inválido para ambientes de desarrollo
+          });
+        }
+      } catch {
+        // Evitar lanzar InvalidStateError en desarrollo
       }
     };
 

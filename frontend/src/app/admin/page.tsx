@@ -19,7 +19,8 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle,
-  XCircle
+  XCircle,
+  QrCode
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +30,7 @@ import { Progress } from '@/components/ui/progress';
 import { AdminLayout, PageContainer } from '@/components/ui/layout';
 import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/hooks/useToast';
 import { formatPrice, formatTime, formatDuration } from '@/utils/format';
 import { API_ENDPOINTS } from '@/utils/constants';
 import { BarStats, Order } from '@/types';
@@ -141,8 +143,9 @@ const mockCurrentQueue = [
   }
 ];
 
-export default function AdminDashboard() {
-  const { user } = useAppStore();
+export default function AdminPage() {
+  const { user, currentSong, queue, barStats, isConnected } = useAppStore();
+  const { success: showSuccess, error: showError } = useToast();
   const router = useRouter();
   const [stats] = useState(mockStats);
   const [activeOrders] = useState(mockActiveOrders);
@@ -211,8 +214,13 @@ export default function AdminDashboard() {
         const metricsJson = await metricsRes.json().catch(() => ({}));
 
         if (!barRes.ok) {
-          const msg = barJson?.message || barJson?.error || barJson?.data?.message || `Error al cargar el bar (${barRes.status})`;
-          setRealError(msg);
+          // Si no hay bar asociado (404), no mostrar error - es normal para nuevos usuarios
+          if (barRes.status === 404) {
+            setRealBar(null); // Usuario no tiene bar asociado aún
+          } else {
+            const msg = barJson?.message || barJson?.error || barJson?.data?.message || `Error al cargar el bar (${barRes.status})`;
+            setRealError(msg);
+          }
         } else {
           // La respuesta es { success, message, data: { bars: [...] } }
           const barsArr = barJson?.data?.bars || barJson?.bars;
@@ -335,6 +343,13 @@ export default function AdminDashboard() {
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Actualizar
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => router.push('/admin/qr')}
+            >
+              <QrCode className="h-4 w-4 mr-2" />
+              Generar QR
             </Button>
             <Button
               variant="outline"

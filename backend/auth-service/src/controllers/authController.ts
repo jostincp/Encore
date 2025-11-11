@@ -5,7 +5,7 @@ import { RefreshTokenModel, RefreshToken } from '../models/RefreshToken';
 import { BarModel, Bar } from '../models/Bar';
 import { generateAccessToken, generateRefreshToken, verifyToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSuccess, sendError } from '../utils/response';
-import { ValidationError, UnauthorizedError, ConflictError, NotFoundError, BadRequestError } from '../utils/errors';
+import { ValidationError, UnauthorizedError, ConflictError, NotFoundError, BadRequestError, ServiceUnavailableError } from '../utils/errors';
 import { RequestWithUser } from '../types';
 import { logger } from '../utils/logger';
 import { asyncHandler } from '../middleware/asyncHandler';
@@ -78,7 +78,8 @@ export const registerGuest = asyncHandler(async (req: Request, res: Response) =>
   // Generate access token for guest (no refresh token for guests)
   const accessToken = generateAccessToken({
     userId: guestUser.id,
-    role: guestUser.role
+    email: guestUser.email,
+    role: guestUser.role as UserRole
   });
 
   logger.info('Guest user registered', { userId: guestUser.id });
@@ -158,7 +159,7 @@ export const registerUser = asyncHandler(async (req: RequestWithUser, res: Respo
   }
 
   // Generar nuevos tokens para usuario
-  const accessToken = generateAccessToken({ userId: updatedUser.id, role: updatedUser.role });
+  const accessToken = generateAccessToken({ userId: updatedUser.id, email: updatedUser.email, role: updatedUser.role as UserRole });
   const refreshTokenExpiresAt = new Date(Date.now() +
     (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );
@@ -264,7 +265,7 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
   });
 
   // Generate tokens
-  const accessToken = generateAccessToken({ userId: user.id, role: user.role });
+  const accessToken = generateAccessToken({ userId: user.id, email: user.email, role: user.role as UserRole });
   const refreshTokenExpiresAt = new Date(Date.now() +
     (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );
@@ -396,7 +397,16 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Find user with password
-  const user = await UserModel.findByEmailWithPassword(sanitizedEmail);
+  let user: (User & { password_hash: string }) | null = null;
+  try {
+    user = await UserModel.findByEmailWithPassword(sanitizedEmail);
+  } catch (dbErr: any) {
+    // Si la base de datos no está inicializada, devolver 503 con mensaje claro
+    if (/Database not initialized/i.test(dbErr?.message) || /connect ECONNREFUSED/i.test(dbErr?.message)) {
+      throw new ServiceUnavailableError('Servicio de autenticación no disponible. Intente nuevamente más tarde.');
+    }
+    throw dbErr;
+  }
   if (!user) {
     // Intento fallido: incrementar contador y aplicar bloqueo si corresponde
     const attempts = await redis.incr(attemptsKey);
@@ -462,7 +472,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Generate tokens con configuración segura
-  const accessToken = generateAccessToken({ userId: user.id, role: user.role });
+  const accessToken = generateAccessToken({ userId: user.id, email: user.email, role: user.role as UserRole });
   const refreshTokenExpiresAt = new Date(Date.now() + 
     (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );
@@ -517,7 +527,7 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
   }
 
   // Generate new access token
-  const accessToken = generateAccessToken({ userId: user.id, role: user.role });
+  const accessToken = generateAccessToken({ userId: user.id, email: user.email, role: user.role as UserRole });
 
   // Optionally rotate refresh token (create new one)
   const newRefreshTokenData = await RefreshTokenModel.rotate(

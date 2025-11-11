@@ -1,33 +1,11 @@
 import { Request } from 'express';
-
-/**
- * JWT Payload interface
- */
-export interface JWTPayload {
-  userId: string;
-  email?: string;
-  role: 'guest' | 'user' | 'staff' | 'bar_owner' | 'admin';
-  barId?: string;
-  iat?: number;
-  exp?: number;
-}
+import { JwtPayload } from '../../../shared/types/auth';
 
 /**
  * Extended Request interface with user information
  */
 export interface RequestWithUser extends Request {
-  user?: JWTPayload;
-}
-
-/**
- * User roles enum
- */
-export enum UserRole {
-  ADMIN = 'admin',
-  BAR_OWNER = 'bar_owner',
-  STAFF = 'staff',
-  USER = 'user',
-  GUEST = 'guest'
+  user?: JwtPayload;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { query as dbQuery, getPool } from '../../../shared/database';
-import { logger } from '../../../shared/utils/logger';
+import logger from '../../../shared/utils/logger';
 import { validateRequired, validateUUID, validateEnum } from '../../../shared/utils/validation';
 import { QueueEventEmitter } from '../events/queueEvents';
 import { getRedisClient } from '../../../shared/utils/redis';
@@ -101,6 +101,31 @@ export interface PaginatedQueueResult {
 }
 
 export class QueueModel {
+  // Find queue entries by bar ID and song ID with specific statuses
+  static async findByBarIdAndSongId(
+    barId: string,
+    songId: string,
+    statuses: string[] = ['pending', 'playing']
+  ): Promise<QueueData[]> {
+    try {
+      validateUUID(barId, 'barId');
+      validateUUID(songId, 'songId');
+
+      const placeholders = statuses.map((_, index) => `$${index + 3}`).join(', ');
+      const query = `
+        SELECT * FROM queue 
+        WHERE bar_id = $1 AND song_id = $2 AND status IN (${placeholders})
+        ORDER BY position ASC
+      `;
+
+      const result = await dbQuery(query, [barId, songId, ...statuses]);
+      return result.rows.map(row => this.formatQueueData(row));
+
+    } catch (error) {
+      logger.error('Error finding queue entries by bar ID and song ID:', error);
+      throw error;
+    }
+  }
   // Create a new queue entry
   static async create(data: CreateQueueData): Promise<QueueData> {
     const client = await getPool().connect();
@@ -332,7 +357,6 @@ export class QueueModel {
       };
       
       // Cache result
-      const redis = getRedisClient();
       await redis.setex(cacheKey, 60, JSON.stringify(result)); // Cache for 1 minute
       
       return result;
@@ -515,7 +539,6 @@ export class QueueModel {
       const currentSong = this.formatQueueData(result.rows[0], true);
       
       // Cache for 30 seconds
-      const redis = getRedisClient();
       await redis.setex(cacheKey, 30, JSON.stringify(currentSong));
       
       return currentSong;
@@ -746,7 +769,6 @@ export class QueueModel {
       };
       
       // Cache for 5 minutes
-      const redis = getRedisClient();
       await redis.setex(cacheKey, 300, JSON.stringify(result));
       
       return result;
@@ -870,7 +892,6 @@ export class QueueModel {
       }
       
       // Also clear current song cache
-    const redis = getRedisClient();
     await redis.del(`queue:current:${barId}`);
       
     } catch (error) {

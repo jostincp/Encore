@@ -122,6 +122,7 @@ export interface AppState {
   barStats: BarStats;
   isConnected: boolean;
   tableNumber: number | null;
+  barId: string | null;
 }
 
 // Props de componentes

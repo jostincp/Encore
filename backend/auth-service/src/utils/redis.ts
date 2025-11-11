@@ -190,10 +190,12 @@ export const initRedis = async (): Promise<Redis> => {
  * Get Redis client instance
  */
 export const getRedisClient = (): Redis => {
-  if (redisClient) {
+  // Fallback explícito a memoria si se indica deshabilitar Redis
+  const disableRedis = process.env.DISABLE_REDIS === 'true';
+  if (redisClient && !disableRedis) {
     return redisClient;
   }
-  if (usingMemoryFallback) {
+  if (usingMemoryFallback || disableRedis) {
     // @ts-ignore - satisfy Redis type in our wrapper
     return new MemoryRedisClient() as unknown as Redis;
   }

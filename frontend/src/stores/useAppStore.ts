@@ -9,6 +9,11 @@ interface AppStore extends AppState {
   updateUserPoints: (points: number) => void;
   setTableNumber: (tableNumber: number | null) => void;
   
+  // Actions para Bar Connection
+  setBarId: (barId: string | null) => void;
+  connectToBar: (barId: string, tableNumber: number) => Promise<void>;
+  disconnectFromBar: () => void;
+  
   // Actions para Music & Queue
   setCurrentSong: (song: Song | null) => void;
   setQueue: (queue: QueueItem[]) => void;
@@ -61,6 +66,7 @@ export const useAppStore = create<AppStore>()(devtools((set, get) => ({
   },
   isConnected: false,
   tableNumber: null,
+  barId: null,
   
   // User actions
   setUser: (user) => set({ user }, false, 'setUser'),
@@ -70,6 +76,74 @@ export const useAppStore = create<AppStore>()(devtools((set, get) => ({
   }), false, 'updateUserPoints'),
   
   setTableNumber: (tableNumber) => set({ tableNumber }, false, 'setTableNumber'),
+  
+  // Bar Connection actions
+  setBarId: (barId) => set({ barId }, false, 'setBarId'),
+  
+  connectToBar: async (barId: string, tableNumber: number) => {
+    try {
+      // Guardar en localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('encore_bar_id', barId);
+        localStorage.setItem('encore_table_number', tableNumber.toString());
+      }
+      
+      // Actualizar estado
+      set({ barId, tableNumber }, false, 'connectToBar');
+      
+      // Crear usuario temporal si no existe
+      const { user } = get();
+      if (!user) {
+        const userId = `client_${Date.now()}`;
+        get().setUser({
+          id: userId,
+          role: 'client',
+          tableNumber,
+          points: 100, // Puntos iniciales
+          sessionId: `session_${Date.now()}`
+        });
+      }
+      
+      // Conectar WebSocket
+      await get().connectWebSocket(tableNumber);
+
+      // Unirse a la sala del bar para actualizaciones en tiempo real
+      try {
+        wsManager.emit('join_bar', barId);
+      } catch (e) {
+        console.warn('No se pudo unirse a la sala del bar:', e);
+      }
+      
+    } catch (error) {
+      console.error('Error connecting to bar:', error);
+      throw error;
+    }
+  },
+  
+  disconnectFromBar: () => {
+    const currentBarId = get().barId;
+
+    // Salir de la sala del bar antes de desconectar
+    if (currentBarId) {
+      try {
+        wsManager.emit('leave_bar', currentBarId);
+      } catch (e) {
+        console.warn('No se pudo salir de la sala del bar:', e);
+      }
+    }
+
+    // Limpiar localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('encore_bar_id');
+      localStorage.removeItem('encore_table_number');
+    }
+    
+    // Limpiar estado
+    set({ barId: null, tableNumber: null }, false, 'disconnectFromBar');
+    
+    // Desconectar WebSocket
+    get().disconnectWebSocket();
+  },
   
   // Music & Queue actions
   setCurrentSong: (currentSong) => set({ currentSong }, false, 'setCurrentSong'),
@@ -221,3 +295,4 @@ export const useCart = () => useAppStore(state => state.cart);
 export const usePointsHistory = () => useAppStore(state => state.pointsHistory);
 export const useBarStats = () => useAppStore(state => state.barStats);
 export const useConnectionStatus = () => useAppStore(state => state.isConnected);
+export const useBarConnection = () => useAppStore(state => ({ barId: state.barId, tableNumber: state.tableNumber }));

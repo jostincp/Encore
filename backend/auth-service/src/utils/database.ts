@@ -7,34 +7,50 @@ import { Request } from 'express';
 let pool: Pool | null = null;
 
 export const initializeDatabase = async () => {
-  try {
-    // Log configuration used for DB connection (excluding password for security)
-    logger.info('Initializing DB connection', {
-      host: config.database.host,
-      port: config.database.port,
-      database: config.database.name,
-      user: config.database.user,
-      ssl: config.database.ssl
-    });
+  const maxAttempts = 5;
+  let attempt = 0;
+  let lastError: any = null;
 
-    pool = new Pool({
-      host: config.database.host,
-      port: config.database.port,
-      database: config.database.name,
-      user: config.database.user,
-      password: config.database.password
-    });
+  // Log configuration used for DB connection (excluding password for security)
+  logger.info('Initializing DB connection', {
+    host: config.database.host,
+    port: config.database.port,
+    database: config.database.name,
+    user: config.database.user,
+    ssl: config.database.ssl
+  });
 
-    // Test the connection
-    const client = await pool.connect();
-    await client.query('SELECT NOW()');
-    client.release();
-    
-    logger.info('Database connected successfully');
-  } catch (error) {
-    logger.error('Failed to connect to database:', error);
-    throw error;
+  while (attempt < maxAttempts) {
+    attempt++;
+    try {
+      pool = new Pool({
+        host: config.database.host,
+        port: config.database.port,
+        database: config.database.name,
+        user: config.database.user,
+        password: config.database.password
+      });
+
+      // Test the connection
+      const client = await pool.connect();
+      await client.query('SELECT NOW()');
+      client.release();
+      
+      logger.info('Database connected successfully');
+      return; // success
+    } catch (error) {
+      lastError = error;
+      const msg = (error as Error)?.message || String(error);
+      logger.warn(`DB connection attempt ${attempt}/${maxAttempts} failed`, { message: msg });
+      // incremental backoff: 0.5s, 1s, 2s, 3s, 5s
+      const delays = [500, 1000, 2000, 3000, 5000];
+      const delay = delays[Math.min(attempt - 1, delays.length - 1)];
+      await new Promise(res => setTimeout(res, delay));
+    }
   }
+
+  logger.error('Failed to connect to database after retries:', lastError);
+  throw lastError;
 };
 
 export const runMigrations = async () => {
@@ -161,8 +177,28 @@ export const query = async <T extends QueryResultRow = any>(
     sensitive?: boolean;
   }
 ) => {
-  const pool = getPool();
-  const client = await pool.connect();
+  // Ensure database pool is initialized (lazy init on first query if needed)
+  let dbPool: Pool;
+  try {
+    dbPool = getPool();
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    if (/Database not initialized/i.test(msg)) {
+      // Attempt to initialize DB dynamically to avoid 503 in development
+      try {
+        await initializeDatabase();
+        logger.info('Database lazily initialized on first query');
+        dbPool = getPool();
+      } catch (initErr) {
+        // Re-throw original error if initialization fails
+        throw e;
+      }
+    } else {
+      throw e;
+    }
+  }
+
+  const client = await dbPool.connect();
   const startTime = Date.now();
 
   try {

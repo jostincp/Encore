@@ -24,20 +24,20 @@ import { emitToBar, emitToUser } from '../websocket/socketHandler';
 import { getRedisClient } from '../../../shared/utils/redis';
 import { UserRole } from '../../../shared/types/index';
 
-interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    role: string;
-    barId?: string;
-  };
-}
+// Note: Avoid strict cross-package typing for Request due to duplicate @types/express.
+// Controllers accept loosely-typed req/res to prevent type conflicts at route mounting time.
+type AnyRequest = any;
+type AnyResponse = any;
 
 export class QueueController {
   // Add song to queue
-  static async addToQueue(req: AuthenticatedRequest, res: Response) {
+  static async addToQueue(req: AnyRequest, res: AnyResponse) {
     try {
       const { bar_id, song_id, priority_play = false, points_used, notes } = req.body;
-      const userId = req.user!.id;
+      const userId: string = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ success: false, message: 'Unauthorized: missing user context' });
+      }
       
       // Validate required fields
       validateRequired(bar_id, 'bar_id');
@@ -100,44 +100,62 @@ export class QueueController {
         });
       }
       
-      // Validate priority play and points
-      if (priority_play) {
-        if (!points_used || points_used < parseInt(process.env.PRIORITY_PLAY_COST || '10')) {
-          return res.status(400).json({
-            success: false,
-            message: `Priority play requires at least ${process.env.PRIORITY_PLAY_COST || '10'} points`
-          });
-        }
-        
-        // Check user's point balance
-        const user = await UserModel.findById(userId);
-        if (!user || user.points < points_used) {
-          return res.status(400).json({
-            success: false,
-            message: 'Insufficient points for priority play'
-          });
-        }
-        
-        // Deduct points from user
-        await UserModel.updatePoints(userId, -points_used);
-        
-        // Emit points updated event
-        QueueEventEmitter.emitUserPointsUpdated({
-          barId: bar_id,
-          userId,
-          newBalance: user.points - points_used,
-          pointsUsed: points_used,
-          timestamp: new Date().toISOString()
+      // 🛑 PASO CRÍTICO: Validar y deducir puntos ANTES de cualquier operación en Redis
+      const costPerSong: number = priority_play 
+        ? (points_used || parseInt(process.env.PRIORITY_PLAY_COST || '10'))
+        : parseInt(process.env.STANDARD_PLAY_COST || '5');
+      
+      // Verificar saldo del usuario
+      const user = await UserModel.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
         });
       }
       
-      // Create queue entry
+      if (user.points < costPerSong) {
+        return res.status(402).json({
+          success: false,
+          message: 'Insufficient points',
+          error_code: 'INSUFFICIENT_POINTS',
+          current_balance: user.points,
+          required_points: costPerSong
+        });
+      }
+      
+      // Deducir puntos del usuario (PASO CRÍTICO)
+      await UserModel.updatePoints(userId, -costPerSong);
+      
+      // Emitir evento de puntos actualizados
+      QueueEventEmitter.emitUserPointsUpdated({
+        barId: bar_id,
+        userId,
+        newBalance: user.points - costPerSong,
+        pointsUsed: costPerSong,
+        timestamp: new Date().toISOString()
+      });
+      
+      // 🔄 Verificar si la canción ya está en cola (SISMEMBER equivalente)
+      const existingEntries = await QueueModel.findByBarIdAndSongId(bar_id, song_id, ['pending', 'playing']);
+      if (existingEntries && existingEntries.length > 0) {
+        // Rollback: devolver puntos si la canción ya está en cola
+        await UserModel.updatePoints(userId, costPerSong);
+        return res.status(409).json({
+          success: false,
+          message: 'This song is already in the queue',
+          error_code: 'SONG_ALREADY_QUEUED',
+          existing_entry: existingEntries[0]
+        });
+      }
+      
+      // Crear entrada de cola con el costo calculado
       const createData: CreateQueueData = {
         bar_id,
         song_id,
         user_id: userId,
         priority_play,
-        points_used,
+        points_used: costPerSong, // Usar el costo calculado
         notes
       };
       
@@ -159,6 +177,8 @@ export class QueueController {
       
     } catch (error) {
       logger.error('Error adding song to queue:', error);
+      // Note: Detailed rollback requires scoped variables; consider implementing transaction in data layer.
+      
       res.status(500).json({
         success: false,
         message: 'Internal server error'
@@ -167,7 +187,7 @@ export class QueueController {
   }
   
   // Get queue for a bar
-  static async getQueue(req: Request, res: Response) {
+  static async getQueue(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       const {
@@ -235,7 +255,7 @@ export class QueueController {
   }
   
   // Get currently playing song
-  static async getCurrentlyPlaying(req: Request, res: Response) {
+  static async getCurrentlyPlaying(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       validateUUID(barId, 'barId');
@@ -257,7 +277,7 @@ export class QueueController {
   }
   
   // Get next song in queue
-  static async getNextInQueue(req: Request, res: Response) {
+  static async getNextInQueue(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       validateUUID(barId, 'barId');
@@ -279,7 +299,7 @@ export class QueueController {
   }
   
   // Update queue entry (admin/bar owner only)
-  static async updateQueueEntry(req: AuthenticatedRequest, res: Response) {
+  static async updateQueueEntry(req: AnyRequest, res: AnyResponse) {
     try {
       const { id } = req.params;
       const { status, position, notes, rejection_reason } = req.body;
@@ -358,7 +378,7 @@ export class QueueController {
   }
   
   // Remove song from queue
-  static async removeFromQueue(req: AuthenticatedRequest, res: Response) {
+  static async removeFromQueue(req: AnyRequest, res: AnyResponse) {
     try {
       const { id } = req.params;
       const userId = req.user!.id;
@@ -415,7 +435,7 @@ export class QueueController {
   }
   
   // Reorder queue (admin/bar owner only)
-  static async reorderQueue(req: AuthenticatedRequest, res: Response) {
+  static async reorderQueue(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       const { queue_ids } = req.body;
@@ -473,7 +493,7 @@ export class QueueController {
   }
   
   // Clear queue (admin/bar owner only)
-  static async clearQueue(req: AuthenticatedRequest, res: Response) {
+  static async clearQueue(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       const { status } = req.body;
@@ -517,7 +537,7 @@ export class QueueController {
   }
   
   // Get queue statistics (admin/bar owner only)
-  static async getQueueStats(req: AuthenticatedRequest, res: Response) {
+  static async getQueueStats(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       const { date_from, date_to } = req.query;
@@ -561,7 +581,7 @@ export class QueueController {
   }
   
   // Get user's queue position
-  static async getUserQueuePosition(req: AuthenticatedRequest, res: Response) {
+  static async getUserQueuePosition(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       const userId = req.user!.id;
@@ -589,7 +609,7 @@ export class QueueController {
   }
   
   // Get user's queue entries for a bar
-  static async getUserQueue(req: AuthenticatedRequest, res: Response) {
+  static async getUserQueue(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       const { status, page = 1, limit = 20 } = req.query;
@@ -632,7 +652,7 @@ export class QueueController {
   }
   
   // Skip current song (admin/bar owner only)
-  static async skipCurrentSong(req: AuthenticatedRequest, res: Response) {
+  static async skipCurrentSong(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       const { reason } = req.body;
@@ -709,7 +729,7 @@ export class QueueController {
   }
   
   // Play next song (admin/bar owner only)
-  static async playNextSong(req: AuthenticatedRequest, res: Response) {
+  static async playNextSong(req: AnyRequest, res: AnyResponse) {
     try {
       const { barId } = req.params;
       const userRole = req.user!.role;

@@ -61,6 +61,21 @@ const nextConfig = {
       },
     },
   },
+  async rewrites() {
+    // Proxy de API en desarrollo para evitar CORS y mixed content
+    const isDev = process.env.NODE_ENV !== 'production';
+    if (!isDev) return [];
+    return [
+      {
+        source: '/api/auth/:path*',
+        destination: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/,'') + '/api/auth/:path*',
+      },
+      {
+        source: '/api/health',
+        destination: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/,'') + '/api/health',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

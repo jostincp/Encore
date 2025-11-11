@@ -2,65 +2,82 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { QrCode, Camera, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { QrCode, Camera, AlertCircle, CheckCircle, ArrowLeft, Link, Unlink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Layout, PageContainer } from '@/components/ui/layout';
-import { useToast } from '@/hooks/useToast';
+import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/useAppStore';
+import { useToast } from '@/hooks/useToast';
+import { useQRConnection } from '@/hooks/useQRConnection';
+import { QRScanner } from '@/components/QRScanner';
 import { useRouter } from 'next/navigation';
 import { validateTableNumber } from '@/utils/validation';
+import BackButton from '@/components/ui/back-button';
+import { Layout, PageContainer } from '@/components/ui/layout';
 
-export default function QRPage() {
+export default function QRAccessPage() {
   const [isScanning, setIsScanning] = useState(false);
   const [manualTable, setManualTable] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const { error: showErrorToast, success: showSuccessToast } = useToast();
   const { setUser, setTableNumber, connectWebSocket } = useAppStore();
   const router = useRouter();
+  const { isConnected, barId, disconnect, connectManually } = useQRConnection();
 
-  const handleQRScan = async (tableNumber: string) => {
-    const tableNum = parseInt(tableNumber);
-    if (isNaN(tableNum) || !validateTableNumber(tableNum)) {
-      showErrorToast('Número de mesa inválido');
-      return;
-    }
-
-    setIsConnecting(true);
+  const handleQRScan = async (qrData: string) => {
     try {
-      // Simular conexión a la mesa
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Parsear datos del QR
+      const qrInfo = JSON.parse(qrData);
       
-      // Configurar usuario y mesa
-      const userId = `client_${Date.now()}`;
-      setUser({
-        id: userId,
-        role: 'client',
-        tableNumber: tableNum,
-        points: 100, // Puntos iniciales
-        sessionId: `session_${Date.now()}`
-      });
-      setTableNumber(tableNum);
-      
-      // Conectar WebSocket
-      connectWebSocket();
-      
-      showSuccessToast(`¡Conectado a la Mesa ${tableNum}!`);
-      
-      // Redirigir al hub del cliente
-      setTimeout(() => {
-        router.push('/client');
-      }, 1000);
-      
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 
-                          typeof error === 'string' ? error :
-                          'Error al conectar con la mesa';
-      showErrorToast(errorMessage);
-    } finally {
-      setIsConnecting(false);
+      if (qrInfo.b && qrInfo.t) {
+        const tableNum = parseInt(qrInfo.t);
+        if (isNaN(tableNum) || !validateTableNumber(tableNum)) {
+          showErrorToast('Número de mesa inválido');
+          return;
+        }
+
+        setIsConnecting(true);
+        try {
+          // Usar el hook de conexión QR para conectar automáticamente
+          await connectManually(qrInfo.b, tableNum);
+          
+          // Configurar usuario y mesa
+          const userId = `client_${Date.now()}`;
+          setUser({
+            id: userId,
+            role: 'client',
+            tableNumber: tableNum,
+            points: 100, // Puntos iniciales
+            sessionId: `session_${Date.now()}`
+          });
+          setTableNumber(tableNum);
+          
+          // Conectar WebSocket
+          connectWebSocket();
+          
+          showSuccessToast(`¡Conectado a la Mesa ${tableNum}!`);
+          
+          // Redirigir al hub del cliente
+          setTimeout(() => {
+            router.push('/client');
+          }, 1000);
+          
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : 
+                              typeof error === 'string' ? error :
+                              'Error al conectar con la mesa';
+          showErrorToast(errorMessage);
+        } finally {
+          setIsConnecting(false);
+        }
+      } else {
+        showErrorToast('Código QR inválido');
+      }
+    } catch (error) {
+      showErrorToast('Error al leer el código QR');
     }
   };
 
@@ -69,7 +86,26 @@ export default function QRPage() {
       showErrorToast('Por favor ingresa un número de mesa');
       return;
     }
-    handleQRScan(manualTable.trim());
+
+    const tableNum = parseInt(manualTable.trim(), 10);
+    if (isNaN(tableNum) || !validateTableNumber(tableNum)) {
+      showErrorToast('Número de mesa inválido');
+      return;
+    }
+
+    if (!barId) {
+      showErrorToast('No se detectó el Bar ID. Abre el enlace desde el QR del bar o asegúrate de tener parámetros válidos.');
+      return;
+    }
+
+    const qrData = JSON.stringify({
+      b: barId,
+      t: tableNum,
+      v: '1.0',
+      ts: Date.now()
+    });
+
+    handleQRScan(qrData);
   };
 
   const startQRScanner = () => {
@@ -77,12 +113,20 @@ export default function QRPage() {
     // Simular escaneo exitoso después de 3 segundos
     setTimeout(() => {
       const mockTableNumber = Math.floor(Math.random() * 20) + 1;
+      const mockBarId = barId || 'dev-bar';
+      const qrData = JSON.stringify({
+        b: mockBarId,
+        t: mockTableNumber,
+        v: '1.0',
+        ts: Date.now()
+      });
       setIsScanning(false);
-      handleQRScan(mockTableNumber.toString());
+      handleQRScan(qrData);
     }, 3000);
   };
 
   return (
+    <>
     <Layout background="gradient" animate>
       <PageContainer className="flex items-center justify-center min-h-screen p-4">
         <div className="w-full max-w-md mx-auto">
@@ -129,7 +173,7 @@ export default function QRPage() {
                       </p>
                     </div>
                     <Button 
-                      onClick={startQRScanner}
+                      onClick={() => setShowScanner(true)}
                       disabled={isConnecting}
                       className="w-full"
                     >
@@ -229,6 +273,12 @@ export default function QRPage() {
         </div>
       </PageContainer>
     </Layout>
+    {/* QR Scanner Modal */}
+    <QRScanner
+      isOpen={showScanner}
+      onClose={() => setShowScanner(false)}
+      onScan={handleQRScan}
+    />
+    </>
   );
 }
-import BackButton from '@/components/ui/back-button';

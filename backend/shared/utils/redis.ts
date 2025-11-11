@@ -29,6 +29,13 @@ export const initRedis = async (): Promise<Redis | MemoryCache> => {
   }
 
   try {
+    // Si no hay URL de Redis configurada, usar caché en memoria directamente
+    if (!config.redis?.url) {
+      usingMemoryCache = true;
+      logWarn('REDIS_URL not set, using in-memory cache');
+      return memoryCache;
+    }
+
     redisClient = new Redis(config.redis.url, REDIS_CONFIG);
 
     redisClient.on('connect', () => {
@@ -66,7 +73,10 @@ export const getRedisClient = (): Redis | MemoryCache => {
     return memoryCache;
   }
   if (!redisClient) {
-    throw new Error('Redis client not initialized. Call initRedis() first.');
+    // Fallback gracefully to memory cache if Redis not initialized yet
+    usingMemoryCache = true;
+    logWarn('Redis client not initialized; using in-memory cache temporarily');
+    return memoryCache;
   }
   return redisClient;
 };

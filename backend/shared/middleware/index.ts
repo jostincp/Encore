@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
-import mongoose from 'mongoose';
+// Removed mongoose dependency; using UUID validation for Bar/Table IDs
 import { config } from '../config';
 import { getRateLimitService } from '../utils/redis';
 import { logInfo, logWarn, requestLogger } from '../utils/logger';
@@ -234,14 +234,15 @@ export const validateApiKey = (req: Request, res: Response, next: NextFunction) 
 
 // Middleware de validación de Bar ID
 export const validateBarId = (req: Request, res: Response, next: NextFunction) => {
-  const barId = req.params.barId || req.headers['x-bar-id'] || req.body.barId;
+  const barId = (req.params as any).barId || (req.headers as any)['x-bar-id'] || (req.body as any).barId;
   
   if (!barId) {
     return sendError(res, 'Bar ID is required', 400);
   }
 
-  // Validate ObjectId format
-  if (!mongoose.Types.ObjectId.isValid(barId)) {
+  // Validate UUID format
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(barId)) {
     return sendError(res, 'Invalid Bar ID format', 400);
   }
 
@@ -252,7 +253,7 @@ export const validateBarId = (req: Request, res: Response, next: NextFunction) =
 
 // Middleware de validación de Table ID
 export const validateTableId = (req: Request, res: Response, next: NextFunction) => {
-  const tableId = req.params.tableId || req.headers['x-table-id'] || req.body.tableId;
+  const tableId = (req.params as any).tableId || (req.headers as any)['x-table-id'] || (req.body as any).tableId;
   
   if (!tableId) {
     return sendError(res, 'Table ID is required', 400);

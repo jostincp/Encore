@@ -1,30 +1,49 @@
-import { Router, RequestHandler } from 'express';
-import { body, param, query } from 'express-validator';
+import { Router } from 'express';
+import { body, param, query, validationResult } from 'express-validator';
 import { QueueController } from '../controllers/queueController';
-import { authenticateToken as authenticateTokenFn } from '../../../shared/middleware/auth';
+import { NextTrackController } from '../controllers/nextTrackController';
+import { EnhancedQueueController } from '../controllers/enhancedQueueController';
+import { authenticateToken as authenticateTokenFn } from '../../../shared/utils/jwt';
 import { rateLimitMiddleware } from '../../../shared/middleware/rateLimit';
-import { validateRequest as validateRequestFn } from '../../../shared/middleware/validation';
 
 const router = Router();
 
-// Type-safe wrappers to satisfy Express RequestHandler typing
-const authenticateToken: RequestHandler = (req, res, next) => (authenticateTokenFn as any)(req, res, next);
-const validateRequest: RequestHandler = (req, res, next) => (validateRequestFn as any)(req, res, next);
+// Wrap shared authenticate to avoid type conflicts across duplicated @types/express
+const authenticateToken = (req: any, res: any, next: any) => (authenticateTokenFn as any)(req, res, next);
+// Normalize req.user to include id alias expected by controllers
+const normalizeUser = (req: any, res: any, next: any) => {
+  if (req.user && req.user.userId && !req.user.id) {
+    req.user.id = req.user.userId;
+  }
+  next();
+};
+// Handle express-validator errors
+const validateRequest = (req: any, res: any, next: any) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array()
+    });
+  }
+  next();
+};
 
 // Rate limiting configurations
-const queueRateLimit: RequestHandler = rateLimitMiddleware({
+const queueRateLimit: any = rateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   message: 'Too many queue requests, please try again later'
 });
 
-const addSongRateLimit: RequestHandler = rateLimitMiddleware({
+const addSongRateLimit: any = rateLimitMiddleware({
   windowMs: 5 * 60 * 1000, // 5 minutes
   max: 10, // 10 song additions per window
   message: 'Too many song additions, please try again later'
 });
 
-const adminRateLimit: RequestHandler = rateLimitMiddleware({
+const adminRateLimit: any = rateLimitMiddleware({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200, // 200 admin requests per window
   message: 'Too many admin requests, please try again later'
@@ -186,12 +205,49 @@ const skipSongValidation = [
  * @access Private (authenticated users)
  * @rateLimit 10 requests per 5 minutes
  */
+/**
+ * @route POST /add
+ * @desc Add a song to a bar's queue
+ * @access Private (authenticated users)
+ * @rateLimit 10 requests per 5 minutes
+ */
 router.post('/add',
   addSongRateLimit,
   authenticateToken,
+  normalizeUser,
   addToQueueValidation,
   validateRequest,
-  QueueController.addToQueue
+  QueueController.addToQueue as any
+);
+
+/**
+ * @route POST /api/queue/enhanced-add
+ * @desc Add song to queue with enhanced validation (points, duplicates, limits)
+ * @access Private
+ * @rateLimit 10 requests per 5 minutes
+ */
+router.post('/enhanced-add',
+  addSongRateLimit,
+  authenticateToken,
+  normalizeUser,
+  addToQueueValidation,
+  validateRequest,
+  EnhancedQueueController.addToQueue as any
+);
+
+/**
+ * @route GET /api/queue/bars/:barId/check-limit
+ * @desc Check if user can add more songs to queue
+ * @access Private
+ * @rateLimit 100 requests per 15 minutes
+ */
+router.get('/bars/:barId/check-limit',
+  queueRateLimit,
+  authenticateToken,
+  normalizeUser,
+  barIdValidation,
+  validateRequest,
+  EnhancedQueueController.checkUserLimit as any
 );
 
 /**
@@ -203,12 +259,13 @@ router.post('/add',
 router.get('/bars/:barId/user',
   queueRateLimit,
   authenticateToken,
+  normalizeUser,
   barIdValidation,
   query('status').optional(),
   query('page').optional().isInt({ min: 1 }),
   query('limit').optional().isInt({ min: 1, max: 50 }),
   validateRequest,
-  QueueController.getUserQueue
+  QueueController.getUserQueue as any
 );
 
 /**
@@ -220,9 +277,10 @@ router.get('/bars/:barId/user',
 router.get('/bars/:barId/user/position',
   queueRateLimit,
   authenticateToken,
+  normalizeUser,
   barIdValidation,
   validateRequest,
-  QueueController.getUserQueuePosition
+  QueueController.getUserQueuePosition as any
 );
 
 /**
@@ -234,9 +292,10 @@ router.get('/bars/:barId/user/position',
 router.delete('/:id/user',
   queueRateLimit,
   authenticateToken,
+  normalizeUser,
   queueIdValidation,
   validateRequest,
-  QueueController.removeFromQueue
+  QueueController.removeFromQueue as any
 );
 
 // Public routes - anyone can view queue information
@@ -251,7 +310,7 @@ router.get('/bars/:barId',
   queueRateLimit,
   queueQueryValidation,
   validateRequest,
-  QueueController.getQueue
+  QueueController.getQueue as any
 );
 
 /**
@@ -264,7 +323,7 @@ router.get('/bars/:barId/current',
   queueRateLimit,
   barIdValidation,
   validateRequest,
-  QueueController.getCurrentlyPlaying
+  QueueController.getCurrentlyPlaying as any
 );
 
 /**
@@ -277,7 +336,7 @@ router.get('/bars/:barId/next',
   queueRateLimit,
   barIdValidation,
   validateRequest,
-  QueueController.getNextInQueue
+  QueueController.getNextInQueue as any
 );
 
 // Admin/Bar Owner routes - require elevated permissions
@@ -291,9 +350,10 @@ router.get('/bars/:barId/next',
 router.put('/:id',
   adminRateLimit,
   authenticateToken,
+  normalizeUser,
   updateQueueValidation,
   validateRequest,
-  QueueController.updateQueueEntry
+  QueueController.updateQueueEntry as any
 );
 
 /**
@@ -305,9 +365,10 @@ router.put('/:id',
 router.delete('/:id',
   adminRateLimit,
   authenticateToken,
+  normalizeUser,
   queueIdValidation,
   validateRequest,
-  QueueController.removeFromQueue
+  QueueController.removeFromQueue as any
 );
 
 /**
@@ -319,9 +380,10 @@ router.delete('/:id',
 router.patch('/bars/:barId/reorder',
   adminRateLimit,
   authenticateToken,
+  normalizeUser,
   reorderQueueValidation,
   validateRequest,
-  QueueController.reorderQueue
+  QueueController.reorderQueue as any
 );
 
 /**
@@ -333,9 +395,10 @@ router.patch('/bars/:barId/reorder',
 router.delete('/bars/:barId/clear',
   adminRateLimit,
   authenticateToken,
+  normalizeUser,
   clearQueueValidation,
   validateRequest,
-  QueueController.clearQueue
+  QueueController.clearQueue as any
 );
 
 /**
@@ -347,9 +410,10 @@ router.delete('/bars/:barId/clear',
 router.get('/bars/:barId/stats',
   adminRateLimit,
   authenticateToken,
+  normalizeUser,
   statsQueryValidation,
   validateRequest,
-  QueueController.getQueueStats
+  QueueController.getQueueStats as any
 );
 
 /**
@@ -361,9 +425,10 @@ router.get('/bars/:barId/stats',
 router.patch('/bars/:barId/skip',
   adminRateLimit,
   authenticateToken,
+  normalizeUser,
   skipSongValidation,
   validateRequest,
-  QueueController.skipCurrentSong
+  QueueController.skipCurrentSong as any
 );
 
 /**
@@ -375,9 +440,64 @@ router.patch('/bars/:barId/skip',
 router.patch('/bars/:barId/next',
   adminRateLimit,
   authenticateToken,
+  normalizeUser,
   barIdValidation,
   validateRequest,
-  QueueController.playNextSong
+  QueueController.playNextSong as any
+);
+
+/**
+ * @route GET /bars/:barId/state
+ * @desc Get current queue state (current, priority, standard queues)
+ * @access Public
+ * @rateLimit 100 requests per 15 minutes
+ */
+router.get('/bars/:barId/state',
+  queueRateLimit,
+  barIdValidation,
+  validateRequest,
+  NextTrackController.getQueueState as any
+);
+
+/**
+ * @route GET /bars/:barId/next-track
+ * @desc Get next track using the priority algorithm
+ * @access Public
+ * @rateLimit 100 requests per 15 minutes
+ */
+router.get('/bars/:barId/next-track',
+  queueRateLimit,
+  barIdValidation,
+  validateRequest,
+  NextTrackController.getNextTrack as any
+);
+
+/**
+ * @route PATCH /bars/:barId/skip-track
+ * @desc Skip current track and get next (admin only)
+ * @access Private (admin/bar owner)
+ * @rateLimit 200 requests per 15 minutes
+ */
+router.patch('/bars/:barId/skip-track',
+  adminRateLimit,
+  authenticateToken,
+  normalizeUser,
+  skipSongValidation,
+  validateRequest,
+  NextTrackController.skipTrack as any
+);
+
+/**
+ * @route GET /bars/:barId/queue-stats
+ * @desc Get queue statistics
+ * @access Public
+ * @rateLimit 100 requests per 15 minutes
+ */
+router.get('/bars/:barId/queue-stats',
+  queueRateLimit,
+  barIdValidation,
+  validateRequest,
+  NextTrackController.getQueueStats as any
 );
 
 export default router;

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import songRoutes from './songs';
 import queueRoutes from './queue';
 import recommendationRoutes from './recommendations';
+import musicRoutes from './music';
 import { Request, Response } from 'express';
 
 const router = Router();
@@ -140,5 +141,6 @@ router.get('/info', (req: Request, res: Response) => {
 router.use('/songs', songRoutes);
 router.use('/queue', queueRoutes);
 router.use('/recommendations', recommendationRoutes);
+router.use('/music', musicRoutes);
 
 export default router;

@@ -1,14 +1,15 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import { config } from '../config';
-import { JWTPayload, RequestWithUser } from '../types';
+import { RequestWithUser } from '../types';
+import { JwtPayload } from '../../../shared/types/auth';
 import { UnauthorizedError, ForbiddenError } from './errors';
 import { logger } from './logger';
 
 /**
  * Generate JWT token
  */
-export const generateToken = (payload: Omit<JWTPayload, 'iat' | 'exp'>): string => {
+export const generateToken = (payload: Omit<JwtPayload, 'iat' | 'exp'>): string => {
   return jwt.sign(payload, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
     issuer: config.jwt.issuer,
@@ -19,14 +20,14 @@ export const generateToken = (payload: Omit<JWTPayload, 'iat' | 'exp'>): string 
 /**
  * Generate access token (alias for generateToken)
  */
-export const generateAccessToken = (payload: Omit<JWTPayload, 'iat' | 'exp'>): string => {
+export const generateAccessToken = (payload: Omit<JwtPayload, 'iat' | 'exp'>): string => {
   return generateToken(payload);
 };
 
 /**
  * Generate refresh token
  */
-export const generateRefreshToken = (payload: JWTPayload): string => {
+export const generateRefreshToken = (payload: JwtPayload): string => {
   return jwt.sign(payload, config.jwt.refreshSecret, {
     expiresIn: config.jwt.refreshExpiresIn,
     issuer: config.jwt.issuer,
@@ -37,12 +38,12 @@ export const generateRefreshToken = (payload: JWTPayload): string => {
 /**
  * Verify JWT token
  */
-export const verifyToken = (token: string): JWTPayload => {
+export const verifyToken = (token: string): JwtPayload => {
   try {
     return jwt.verify(token, config.jwt.secret, {
       issuer: config.jwt.issuer,
       audience: config.jwt.audience
-    }) as JWTPayload;
+    }) as JwtPayload;
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       throw new UnauthorizedError('Token expirado');
@@ -57,12 +58,12 @@ export const verifyToken = (token: string): JWTPayload => {
 /**
  * Verify refresh token
  */
-export const verifyRefreshToken = (token: string): JWTPayload => {
+export const verifyRefreshToken = (token: string): JwtPayload => {
   try {
     return jwt.verify(token, config.jwt.refreshSecret, {
       issuer: config.jwt.issuer,
       audience: config.jwt.audience
-    }) as JWTPayload;
+    }) as JwtPayload;
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       throw new UnauthorizedError('Refresh token expirado');

@@ -418,5 +418,14 @@ describe('Auth Service API Integration Tests', () => {
       expect(response.body.timestamp).toBeDefined();
       expect(response.body.version).toBeDefined();
     });
+
+    it('should also respond on /api/health', async () => {
+      const response = await request(app)
+        .get('/api/health')
+        .expect(200);
+
+      expect(response.body.status).toBeDefined();
+      expect(response.body.service).toBe('auth-service');
+    });
   });
 });

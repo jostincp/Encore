@@ -1,10 +1,22 @@
 import { Router } from 'express';
-import { body, param, query } from 'express-validator';
-import { authenticateToken } from '../middleware/auth';
-import { handleValidationErrors } from '../middleware/validation';
+import { body, param, query, validationResult } from 'express-validator';
+import { authenticateToken } from '../../../shared/utils/jwt';
 import YouTubePlaylistController from '../controllers/YouTubePlaylistController';
 
 const router = Router();
+
+// Simple validation error handler compatible with express-validator
+function handleValidationErrors(req: any, res: any, next: any) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array()
+    });
+  }
+  next();
+}
 
 // Validation schemas
 const createPlaylistValidation = [

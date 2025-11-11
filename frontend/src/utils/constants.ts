@@ -9,9 +9,19 @@ export const APP_CONFIG = {
 } as const;
 
 // URLs y endpoints
+// Normaliza NEXT_PUBLIC_API_URL para evitar que incluya "/api" y barras finales.
+const normalizeBaseUrl = (urlEnv?: string): string => {
+  const raw = (urlEnv || 'http://localhost:3001').trim();
+  // Quitar barra final
+  let u = raw.replace(/\/$/, '');
+  // Quitar sufijo "/api" si viene configurado así
+  u = u.replace(/\/api$/i, '');
+  return u;
+};
+
 export const API_ENDPOINTS = {
-  // Base de autenticación sin /api; las rutas añaden /api/... en el código
-  base: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
+  // Base de autenticación SIN "/api"; las rutas añaden /api/... en el código
+  base: normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL),
   websocket: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001',
   auth: '/api/auth',
   // Base completa del servicio de música para llamadas directas desde componentes

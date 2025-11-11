@@ -123,6 +123,62 @@ class MemoryCache {
     item.expiry = Date.now() + (seconds * 1000);
     return 1;
   }
+
+  // --- Set operations (Redis compatibility) ---
+  private getSet(key: string): Set<string> | null {
+    const item = this.cache.get(key);
+    if (!item) return null;
+    if (item.expiry < Date.now()) {
+      this.cache.delete(key);
+      return null;
+    }
+    const value = item.value;
+    if (value instanceof Set) return value as Set<string>;
+    // If value stored as array, convert to Set
+    if (Array.isArray(value)) return new Set(value as string[]);
+    return null;
+  }
+
+  private ensureSet(key: string, ttl: number): Set<string> {
+    let set = this.getSet(key);
+    if (!set) {
+      set = new Set<string>();
+    }
+    // Persist with TTL
+    this.cache.set(key, { value: set, expiry: Date.now() + (ttl * 1000) });
+    return set;
+  }
+
+  async sadd(key: string, member: string, ttl: number = 3600): Promise<number> {
+    const set = this.getSet(key) ?? new Set<string>();
+    const beforeSize = set.size;
+    set.add(member);
+    this.cache.set(key, { value: set, expiry: Date.now() + (ttl * 1000) });
+    return set.size > beforeSize ? 1 : 0;
+  }
+
+  async srem(key: string, member: string): Promise<number> {
+    const set = this.getSet(key);
+    if (!set) return 0;
+    const removed = set.delete(member) ? 1 : 0;
+    // Keep existing TTL
+    const item = this.cache.get(key);
+    if (item) {
+      this.cache.set(key, { value: set, expiry: item.expiry });
+    }
+    return removed;
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    const set = this.getSet(key);
+    return set ? Array.from(set.values()) : [];
+  }
+
+  async sismember(key: string, member: string): Promise<number> {
+    const set = this.getSet(key);
+    if (!set) return 0;
+    return set.has(member) ? 1 : 0;
+  }
 }
 
 export const memoryCache = new MemoryCache();

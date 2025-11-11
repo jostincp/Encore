@@ -4,14 +4,33 @@ import { initializeDatabase, runMigrations } from './utils/database';
 import { initRedis } from './utils/redis';
 import { AppError, NotFoundError } from './utils/errors';
 import routes from './routes';
-import {
-  corsOptions,
-  helmetOptions,
-  rateLimiters,
-  securityMiddleware
-} from '../../shared/security';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+
+// Configuración CORS simple para desarrollo
+const corsOptions = {
+  origin: ['http://localhost:3000', 'http://localhost:3004', 'http://localhost:5173'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
+};
+
+// Configuración de Helmet mínima para desarrollo
+const helmetOptions = {
+  contentSecurityPolicy: false
+};
+
+// Rate limiters
+const rateLimiters = {
+  auth: rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 5, // límite de 5 intentos por ventana
+    message: { error: 'Demasiados intentos de autenticación. Intenta más tarde.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+};
 
 // Configuración de puerto vía variables de entorno para evitar conflictos
 const app: express.Application = express();

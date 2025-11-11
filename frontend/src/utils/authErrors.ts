@@ -49,6 +49,9 @@ export function getLoginErrorMessage(input: ApiErrorPayload | Error | string): s
   }
 
   // Errores del servidor
+  if (status === 503) {
+    return 'Servicio de autenticación no disponible. Intente más tarde.';
+  }
   if (status && status >= 500) {
     return 'Error interno del servidor. Intente más tarde.';
   }

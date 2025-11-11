@@ -1,466 +1,508 @@
 import { Request, Response } from 'express';
-import { RequestWithUser } from '../types';
-import { asyncHandler } from '../middleware/asyncHandler';
-import { sendSuccess, sendError } from '../utils/response';
-import { 
-  ValidationError, 
-  NotFoundError, 
-  ForbiddenError,
-  BadRequestError
-} from '../utils/errors';
+import { getPool } from '../../../shared/database';
+import logger from '../../../shared/utils/logger';
+import { AuthenticatedRequest } from '../../../shared/utils/jwt';
+import { UserRole } from '../../../shared/types/index';
 
-import { validateBarCreation, validateNonEmptyString } from '../utils/validation';
-import { BarModel } from '../models/Bar';
-import { UserModel } from '../models/User';
-import { logger } from '../utils/logger';
-import { Bar, BarSettings } from '../types/models';
+export class BarController {
+  /**
+   * Crear un nuevo bar (solo admin)
+   */
+  static async createBar(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { name, description, address, phone, email, settings } = req.body;
+      const ownerId = req.user!.userId;
 
-/**
- * Create a new bar (bar_owner or admin only)
- */
-export const createBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
-  const { name, address, city, country, phone, description, email, websiteUrl, logoUrl, coverImageUrl, timezone, ownerId } = req.body;
+      // Verificar permisos
+      if (req.user!.role !== UserRole.ADMIN && req.user!.role !== UserRole.BAR_OWNER) {
+        res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para crear bares'
+        });
+        return;
+      }
 
-  if (!userId) {
-    throw new BadRequestError('Usuario no autenticado');
-  }
+      const pool = getPool();
+      const result = await pool.query(`
+        INSERT INTO bars (name, description, address, phone, email, owner_id, settings, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+        RETURNING id, name, description, address, phone, email, owner_id, settings, created_at
+      `, [name, description, address, phone, email, ownerId, JSON.stringify(settings || {})]);
 
-  // Determine the actual owner ID
-  let actualOwnerId = userId;
-  
-  // If admin is creating a bar for someone else
-  if (userRole === 'admin' && ownerId) {
-    const owner = await UserModel.findById(ownerId);
-    if (!owner) {
-      throw new NotFoundError('Propietario no encontrado');
-    }
-    if (owner.role !== 'bar_owner') {
-      throw new ValidationError('El propietario debe tener rol de bar_owner');
-    }
-    actualOwnerId = ownerId;
-  } else if (userRole !== 'bar_owner' && userRole !== 'admin') {
-    throw new ForbiddenError('Solo los propietarios de bares y administradores pueden crear bares');
-  }
+      const bar = result.rows[0];
 
-  // Validate input
-  const validation = validateBarCreation({ name, address, city, country, ownerId: actualOwnerId });
-  if (!validation.isValid) {
-    throw new ValidationError('Datos del bar inválidos', validation.errors);
-  }
+      logger.info(`Bar created: ${bar.id} by user ${ownerId}`);
 
-  const bar = await BarModel.create({
-    name,
-    address,
-    city,
-    country,
-    phone,
-    description,
-    email,
-    websiteUrl,
-    logoUrl,
-    coverImageUrl,
-    timezone,
-    ownerId: actualOwnerId
-  });
+      res.status(201).json({
+        success: true,
+        data: bar,
+        message: 'Bar creado exitosamente'
+      });
 
-  logger.info('Bar created', { barId: bar.id, ownerId: actualOwnerId, createdBy: userId });
-
-  sendSuccess(res, { bar }, 'Bar creado exitosamente', 201);
-});
-
-/**
- * Get all bars
- */
-export const getBars = asyncHandler(async (req: Request, res: Response) => {
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-  const offset = (page - 1) * limit;
-  const search = req.query.search as string;
-  const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
-  const city = req.query.city as string;
-
-  const result = await BarModel.findMany({
-    limit,
-    offset,
-    search,
-    isActive,
-    city
-  });
-
-  sendSuccess(res, {
-    bars: result.bars,
-    pagination: {
-      page,
-      limit,
-      total: result.total,
-      totalPages: Math.ceil(result.total / limit)
-    }
-  }, 'Bares obtenidos exitosamente');
-});
-
-/**
- * Get bar by ID
- */
-export const getBarById = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const includeSettings = req.query.includeSettings === 'true';
-
-  if (!id) {
-    throw new BadRequestError('ID del bar requerido');
-  }
-
-  let bar;
-  if (includeSettings) {
-    bar = await BarModel.findByIdWithSettings(id);
-  } else {
-    bar = await BarModel.findById(id);
-  }
-
-  if (!bar) {
-    throw new NotFoundError('Bar no encontrado');
-  }
-
-  sendSuccess(res, { bar }, 'Bar obtenido exitosamente');
-});
-
-/**
- * Update bar
- */
-export const updateBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { id } = req.params;
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
-  const { name, address, city, country, phone, email, description, websiteUrl, logoUrl, coverImageUrl, timezone } = req.body;
-
-  if (!id) {
-    throw new BadRequestError('ID del bar requerido');
-  }
-
-  if (!userId) {
-    throw new BadRequestError('Usuario no autenticado');
-  }
-
-  // Check if user can update this bar
-  if (userRole !== 'admin') {
-    const isOwner = await BarModel.isOwner(id, userId);
-    if (!isOwner) {
-      throw new ForbiddenError('Solo el propietario o un administrador pueden actualizar este bar');
+    } catch (error) {
+      logger.error('Error creating bar:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
     }
   }
 
-  // Validate input
-  const updateData: any = {};
+  /**
+   * Obtener todos los bares
+   */
+  static async getBars(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { page = 1, limit = 20, search } = req.query;
+      const userId = req.user!.userId;
+      const userRole = req.user!.role;
 
-  if (name !== undefined) {
-    if (!validateNonEmptyString(name)) {
-      throw new ValidationError('Nombre del bar inválido');
-    }
-    updateData.name = name;
-  }
+      const pool = getPool();
+      let query = `
+        SELECT id, name, description, address, phone, email, owner_id, settings, is_active, created_at, updated_at
+        FROM bars
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let paramIndex = 1;
 
-  if (address !== undefined) {
-    if (!validateNonEmptyString(address)) {
-      throw new ValidationError('Dirección inválida');
-    }
-    updateData.address = address;
-  }
+      // Filtros de búsqueda
+      if (search) {
+        query += ` AND (name ILIKE $${paramIndex} OR description ILIKE $${paramIndex} OR address ILIKE $${paramIndex})`;
+        params.push(`%${search}%`);
+        paramIndex++;
+      }
 
-  if (city !== undefined) {
-    if (!validateNonEmptyString(city)) {
-      throw new ValidationError('Ciudad inválida');
-    }
-    updateData.city = city;
-  }
+      // Si no es admin, solo mostrar bares propios o activos
+      if (userRole !== UserRole.ADMIN) {
+        if (userRole === UserRole.BAR_OWNER) {
+          query += ` AND (owner_id = $${paramIndex} OR is_active = true)`;
+          params.push(userId);
+        } else {
+          query += ` AND is_active = true`;
+        }
+        paramIndex++;
+      }
 
-  if (country !== undefined) {
-    if (!validateNonEmptyString(country)) {
-      throw new ValidationError('País inválido');
-    }
-    updateData.country = country;
-  }
+      // Paginación
+      const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+      query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(parseInt(limit as string), offset);
 
-  if (phone !== undefined) {
-    updateData.phone = phone; // Allow empty string to clear
-  }
+      const result = await pool.query(query, params);
 
-  if (email !== undefined) {
-    updateData.email = email; // Allow empty string to clear
-  }
+      // Contar total
+      let countQuery = 'SELECT COUNT(*) FROM bars WHERE 1=1';
+      const countParams: any[] = [];
+      let countParamIndex = 1;
 
-  if (description !== undefined) {
-    updateData.description = description; // Allow empty string to clear
-  }
+      if (search) {
+        countQuery += ` AND (name ILIKE $${countParamIndex} OR description ILIKE $${countParamIndex} OR address ILIKE $${countParamIndex})`;
+        countParams.push(`%${search}%`);
+        countParamIndex++;
+      }
 
-  if (websiteUrl !== undefined) {
-    updateData.websiteUrl = websiteUrl; // Allow empty string to clear
-  }
+      if (userRole !== UserRole.ADMIN) {
+        if (userRole === UserRole.BAR_OWNER) {
+          countQuery += ` AND (owner_id = $${countParamIndex} OR is_active = true)`;
+          countParams.push(userId);
+        } else {
+          countQuery += ` AND is_active = true`;
+        }
+      }
 
-  if (logoUrl !== undefined) {
-    updateData.logoUrl = logoUrl; // Allow empty string to clear
-  }
+      const countResult = await pool.query(countQuery, countParams);
+      const total = parseInt(countResult.rows[0].count);
 
-  if (coverImageUrl !== undefined) {
-    updateData.coverImageUrl = coverImageUrl; // Allow empty string to clear
-  }
+      res.json({
+        success: true,
+        data: result.rows,
+        pagination: {
+          page: parseInt(page as string),
+          limit: parseInt(limit as string),
+          total,
+          totalPages: Math.ceil(total / parseInt(limit as string))
+        }
+      });
 
-  if (timezone !== undefined) {
-    updateData.timezone = timezone; // Allow empty string to clear
-  }
-
-  if (Object.keys(updateData).length === 0) {
-    throw new BadRequestError('No hay datos para actualizar');
-  }
-
-  const updatedBar = await BarModel.update(id, updateData);
-  if (!updatedBar) {
-    throw new NotFoundError('Bar no encontrado');
-  }
-
-  logger.info('Bar updated', { barId: id, updatedBy: userId });
-
-  sendSuccess(res, { bar: updatedBar }, 'Bar actualizado exitosamente');
-});
-
-/**
- * Get bars owned by user
- */
-export const getMyBars = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
-
-  if (!userId) {
-    throw new BadRequestError('Usuario no autenticado');
-  }
-
-  if (userRole !== 'bar_owner' && userRole !== 'admin') {
-    throw new ForbiddenError('Acceso denegado');
-  }
-
-  const bars = await BarModel.findByOwnerId(userId);
-
-  sendSuccess(res, { bars }, 'Bares obtenidos exitosamente');
-});
-
-/**
- * Deactivate bar
- */
-export const deactivateBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { id } = req.params;
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
-
-  if (!id) {
-    throw new BadRequestError('ID del bar requerido');
-  }
-
-  if (!userId) {
-    throw new BadRequestError('Usuario no autenticado');
-  }
-
-  // Check if user can deactivate this bar
-  if (userRole !== 'admin') {
-    const isOwner = await BarModel.isOwner(id, userId);
-    if (!isOwner) {
-      throw new ForbiddenError('Solo el propietario o un administrador pueden desactivar este bar');
+    } catch (error) {
+      logger.error('Error getting bars:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
     }
   }
 
-  const success = await BarModel.deactivate(id);
-  if (!success) {
-    throw new NotFoundError('Bar no encontrado');
-  }
+  /**
+   * Obtener bar por ID
+   */
+  static async getBarById(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.userId;
+      const userRole = req.user!.role;
 
-  logger.info('Bar deactivated', { barId: id, deactivatedBy: userId });
+      const pool = getPool();
+      const result = await pool.query(`
+        SELECT id, name, description, address, phone, email, owner_id, settings, is_active, created_at, updated_at
+        FROM bars
+        WHERE id = $1
+      `, [id]);
 
-  sendSuccess(res, null, 'Bar desactivado exitosamente');
-});
+      if (result.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          message: 'Bar no encontrado'
+        });
+        return;
+      }
 
-/**
- * Activate bar (admin only)
- */
-export const activateBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { id } = req.params;
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
+      const bar = result.rows[0];
 
-  if (!id) {
-    throw new BadRequestError('ID del bar requerido');
-  }
+      // Verificar permisos
+      if (userRole !== UserRole.ADMIN && bar.owner_id !== userId && !bar.is_active) {
+        res.status(403).json({
+          success: false,
+          message: 'No tienes acceso a este bar'
+        });
+        return;
+      }
 
-  if (userRole !== 'admin') {
-    throw new ForbiddenError('Solo los administradores pueden activar bares');
-  }
+      res.json({
+        success: true,
+        data: bar
+      });
 
-  const updatedBar = await BarModel.update(id, { isActive: true });
-  if (!updatedBar) {
-    throw new NotFoundError('Bar no encontrado');
-  }
-
-  logger.info('Bar activated', { barId: id, activatedBy: userId });
-
-  sendSuccess(res, { bar: updatedBar }, 'Bar activado exitosamente');
-});
-
-/**
- * Delete bar (admin only)
- */
-export const deleteBar = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { id } = req.params;
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
-
-  if (!id) {
-    throw new BadRequestError('ID del bar requerido');
-  }
-
-  if (userRole !== 'admin') {
-    throw new ForbiddenError('Solo los administradores pueden eliminar bares');
-  }
-
-  const success = await BarModel.delete(id);
-  if (!success) {
-    throw new NotFoundError('Bar no encontrado');
-  }
-
-  logger.info('Bar deleted', { barId: id, deletedBy: userId });
-
-  sendSuccess(res, null, 'Bar eliminado exitosamente');
-});
-
-/**
- * Get bar settings
- */
-export const getBarSettings = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { id } = req.params;
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
-
-  if (!id) {
-    throw new BadRequestError('ID del bar requerido');
-  }
-
-  if (!userId) {
-    throw new BadRequestError('Usuario no autenticado');
-  }
-
-  // Check if user can access bar settings
-  if (userRole !== 'admin') {
-    const isOwner = await BarModel.isOwner(id, userId);
-    if (!isOwner) {
-      throw new ForbiddenError('Solo el propietario o un administrador pueden ver la configuración del bar');
+    } catch (error) {
+      logger.error('Error getting bar by ID:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
     }
   }
 
-  const settings = await BarModel.getSettings(id);
-  if (!settings) {
-    throw new NotFoundError('Configuración del bar no encontrada');
-  }
+  /**
+   * Actualizar bar
+   */
+  static async updateBar(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const { name, description, address, phone, email, settings, is_active } = req.body;
+      const userId = req.user!.userId;
+      const userRole = req.user!.role;
 
-  sendSuccess(res, { settings }, 'Configuración del bar obtenida exitosamente');
-});
+      const pool = getPool();
 
-/**
- * Update bar settings
- */
-export const updateBarSettings = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { id } = req.params;
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
-  const settingsData = req.body;
+      // Verificar que el bar existe y obtener propietario
+      const barResult = await pool.query(
+        'SELECT owner_id FROM bars WHERE id = $1',
+        [id]
+      );
 
-  if (!id) {
-    throw new BadRequestError('ID del bar requerido');
-  }
+      if (barResult.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          message: 'Bar no encontrado'
+        });
+        return;
+      }
 
-  if (!userId) {
-    throw new BadRequestError('Usuario no autenticado');
-  }
+      // Verificar permisos
+      if (userRole !== UserRole.ADMIN && barResult.rows[0].owner_id !== userId) {
+        res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para actualizar este bar'
+        });
+        return;
+      }
 
-  // Check if user can update bar settings
-  if (userRole !== 'admin') {
-    const isOwner = await BarModel.isOwner(id, userId);
-    if (!isOwner) {
-      throw new ForbiddenError('Solo el propietario o un administrador pueden actualizar la configuración del bar');
+      // Construir query de actualización
+      const updates: string[] = [];
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (name !== undefined) {
+        updates.push(`name = $${paramIndex}`);
+        params.push(name);
+        paramIndex++;
+      }
+
+      if (description !== undefined) {
+        updates.push(`description = $${paramIndex}`);
+        params.push(description);
+        paramIndex++;
+      }
+
+      if (address !== undefined) {
+        updates.push(`address = $${paramIndex}`);
+        params.push(address);
+        paramIndex++;
+      }
+
+      if (phone !== undefined) {
+        updates.push(`phone = $${paramIndex}`);
+        params.push(phone);
+        paramIndex++;
+      }
+
+      if (email !== undefined) {
+        updates.push(`email = $${paramIndex}`);
+        params.push(email);
+        paramIndex++;
+      }
+
+      if (settings !== undefined) {
+        updates.push(`settings = $${paramIndex}`);
+        params.push(JSON.stringify(settings));
+        paramIndex++;
+      }
+
+      if (is_active !== undefined && userRole === UserRole.ADMIN) {
+        updates.push(`is_active = $${paramIndex}`);
+        params.push(is_active);
+        paramIndex++;
+      }
+
+      if (updates.length === 0) {
+        res.status(400).json({
+          success: false,
+          message: 'No hay campos para actualizar'
+        });
+        return;
+      }
+
+      updates.push(`updated_at = NOW()`);
+
+      const query = `
+        UPDATE bars
+        SET ${updates.join(', ')}
+        WHERE id = $${paramIndex}
+        RETURNING id, name, description, address, phone, email, owner_id, settings, is_active, updated_at
+      `;
+      params.push(id);
+
+      const result = await pool.query(query, params);
+      const updatedBar = result.rows[0];
+
+      logger.info(`Bar updated: ${id} by user ${userId}`);
+
+      res.json({
+        success: true,
+        data: updatedBar,
+        message: 'Bar actualizado exitosamente'
+      });
+
+    } catch (error) {
+      logger.error('Error updating bar:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
     }
   }
 
-  // Validate settings data
-  const allowedSettings = [
-    'maxSongsPerUser', 'songRequestCooldown', 'priorityPlayCost',
-    'autoApproveRequests', 'allowExplicitContent', 'maxQueueSize',
-    'pointsPerVisit', 'pointsPerPurchase', 'enableLoyaltyProgram',
-    'openTime', 'closeTime', 'timezone'
-  ];
+  /**
+   * Crear mesa para un bar
+   */
+  static async createTable(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { barId } = req.params;
+      const { table_number, capacity, is_active = true } = req.body;
+      const userId = req.user!.userId;
+      const userRole = req.user!.role;
 
-  const updateData: any = {};
-  for (const [key, value] of Object.entries(settingsData)) {
-    if (allowedSettings.includes(key)) {
-      updateData[key] = value;
+      const pool = getPool();
+
+      // Verificar que el bar existe y el usuario tiene permisos
+      const barResult = await pool.query(
+        'SELECT owner_id FROM bars WHERE id = $1',
+        [barId]
+      );
+
+      if (barResult.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          message: 'Bar no encontrado'
+        });
+        return;
+      }
+
+      if (userRole !== UserRole.ADMIN && barResult.rows[0].owner_id !== userId) {
+        res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para gestionar mesas en este bar'
+        });
+        return;
+      }
+
+      // Verificar que el número de mesa no existe
+      const existingTable = await pool.query(
+        'SELECT id FROM tables WHERE bar_id = $1 AND table_number = $2',
+        [barId, table_number]
+      );
+
+      if (existingTable.rows.length > 0) {
+        res.status(409).json({
+          success: false,
+          message: 'Ya existe una mesa con este número'
+        });
+        return;
+      }
+
+      // Crear mesa
+      const result = await pool.query(`
+        INSERT INTO tables (bar_id, table_number, capacity, is_active, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, NOW(), NOW())
+        RETURNING id, bar_id, table_number, capacity, is_active, created_at
+      `, [barId, table_number, capacity, is_active]);
+
+      const table = result.rows[0];
+
+      logger.info(`Table created: ${table.id} for bar ${barId} by user ${userId}`);
+
+      res.status(201).json({
+        success: true,
+        data: table,
+        message: 'Mesa creada exitosamente'
+      });
+
+    } catch (error) {
+      logger.error('Error creating table:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
     }
   }
 
-  if (Object.keys(updateData).length === 0) {
-    throw new BadRequestError('No hay configuraciones válidas para actualizar');
-  }
+  /**
+   * Generar código QR para una mesa
+   */
+  static async generateTableQR(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { barId, tableId } = req.params;
+      const userId = req.user!.userId;
+      const userRole = req.user!.role;
 
-  const updatedSettings = await BarModel.updateSettings(id, updateData);
-  if (!updatedSettings) {
-    throw new NotFoundError('Bar no encontrado');
-  }
+      const pool = getPool();
 
-  logger.info('Bar settings updated', { barId: id, updatedBy: userId });
+      // Verificar permisos
+      const barResult = await pool.query(
+        'SELECT owner_id FROM bars WHERE id = $1',
+        [barId]
+      );
 
-  sendSuccess(res, { settings: updatedSettings }, 'Configuración del bar actualizada exitosamente');
-});
+      if (barResult.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          message: 'Bar no encontrado'
+        });
+        return;
+      }
 
-/**
- * Get bar statistics (owner or admin only)
- */
-export const getBarStats = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const userId = req.user?.userId;
-  const userRole = req.user?.role;
+      if (userRole !== UserRole.ADMIN && barResult.rows[0].owner_id !== userId) {
+        res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para generar códigos QR en este bar'
+        });
+        return;
+      }
 
-  if (!userId) {
-    throw new BadRequestError('Usuario no autenticado');
-  }
+      // Verificar que la mesa existe
+      const tableResult = await pool.query(
+        'SELECT table_number FROM tables WHERE id = $1 AND bar_id = $2',
+        [tableId, barId]
+      );
 
-  let ownerId: string | undefined;
-  
-  // Si no es ADMIN, solo mostrar estadísticas de los bares del dueño
-  if (userRole !== 'admin') {
-  if (userRole !== 'bar_owner') {
-      throw new ForbiddenError('Acceso denegado');
+      if (tableResult.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          message: 'Mesa no encontrada'
+        });
+        return;
+      }
+
+      // Generar URL del QR
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const qrUrl = `${baseUrl}/client/music?b=${barId}&t=${tableId}`;
+
+      // Aquí se podría integrar una librería de QR como qrcode.js
+      // Por ahora, devolver la URL que será usada para generar el QR en el frontend
+
+      res.json({
+        success: true,
+        data: {
+          barId,
+          tableId,
+          tableNumber: tableResult.rows[0].table_number,
+          qrUrl,
+          qrData: qrUrl // Datos que se usarán para generar el código QR
+        },
+        message: 'Código QR generado exitosamente'
+      });
+
+    } catch (error) {
+      logger.error('Error generating table QR:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
     }
-    ownerId = userId;
   }
 
-  const activeResult = await BarModel.findMany({ 
-    limit: 1, 
-    offset: 0,
-    ownerId,
-    isActive: true
-  });
-  
-  const inactiveResult = await BarModel.findMany({ 
-    limit: 1, 
-    offset: 0,
-    ownerId,
-    isActive: false
-  });
+  /**
+   * Obtener mesas de un bar
+   */
+  static async getBarTables(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { barId } = req.params;
+      const userId = req.user!.userId;
+      const userRole = req.user!.role;
 
-  const totalResult = await BarModel.findMany({ 
-    limit: 1, 
-    offset: 0,
-    ownerId
-  });
+      const pool = getPool();
 
-  sendSuccess(res, {
-    stats: {
-      total: totalResult.total,
-      active: activeResult.total,
-      inactive: inactiveResult.total
+      // Verificar permisos
+      const barResult = await pool.query(
+        'SELECT owner_id FROM bars WHERE id = $1',
+        [barId]
+      );
+
+      if (barResult.rows.length === 0) {
+        res.status(404).json({
+          success: false,
+          message: 'Bar no encontrado'
+        });
+        return;
+      }
+
+      if (userRole !== UserRole.ADMIN && barResult.rows[0].owner_id !== userId) {
+        res.status(403).json({
+          success: false,
+          message: 'No tienes permisos para ver las mesas de este bar'
+        });
+        return;
+      }
+
+      const result = await pool.query(`
+        SELECT id, bar_id, table_number, capacity, is_active, created_at, updated_at
+        FROM tables
+        WHERE bar_id = $1
+        ORDER BY table_number
+      `, [barId]);
+
+      res.json({
+        success: true,
+        data: result.rows
+      });
+
+    } catch (error) {
+      logger.error('Error getting bar tables:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
     }
-  }, 'Estadísticas de bares obtenidas exitosamente');
-});
+  }
+}
