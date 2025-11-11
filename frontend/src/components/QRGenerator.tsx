@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import QRCode from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 import { motion } from 'framer-motion';
 import { Download, Copy, Settings, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -147,7 +147,7 @@ export default function QRGenerator({ barId, onGenerate }: QRGeneratorProps) {
           >
             <div className="text-center">
               <div className="inline-block p-4 bg-white rounded-lg border">
-                <QRCode
+                <QRCodeSVG
                   value={generatedQR}
                   size={qrSize}
                   level="H"

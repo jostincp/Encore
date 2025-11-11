@@ -2,23 +2,38 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { QrCode, Settings, Download, Eye, Printer } from 'lucide-react';
+import { QrCode, Settings, Download, Eye, Printer, Copy, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AdminLayout, PageContainer } from '@/components/ui/layout';
-import QRGenerator from '@/components/QRGenerator';
+import QRGeneratorCanvas from '@/components/QRGeneratorCanvas';
 import { useAppStore } from '@/stores/useAppStore';
 import { useToast } from '@/hooks/useToast';
 import { API_ENDPOINTS } from '@/utils/constants';
 
 interface GeneratedQR {
+  id: string;
   tableNumber: number;
   qrData: string;
-  timestamp: Date;
+  qrUrl: string;
+  isActive: boolean;
+  createdAt: Date;
+  scannedCount?: number;
+  lastScanned?: Date;
+}
+
+interface QRConfig {
+  size: number;
+  margin: number;
+  level: 'L' | 'M' | 'Q' | 'H';
+  includeMargin: boolean;
+  bgColor: string;
+  fgColor: string;
 }
 
 export default function AdminQRPage() {
@@ -26,8 +41,17 @@ export default function AdminQRPage() {
   const { success: showSuccessToast, error: showErrorToast } = useToast();
   const [generatedQRCodes, setGeneratedQRCodes] = useState<GeneratedQR[]>([]);
   const [barId, setBarId] = useState<string>('');
+  const [barName, setBarName] = useState<string>('Encore Bar');
   const [totalTables, setTotalTables] = useState<number>(20);
   const [isGeneratingAll, setIsGeneratingAll] = useState<boolean>(false);
+  const [qrConfig, setQRConfig] = useState<QRConfig>({
+    size: 256,
+    margin: 4,
+    level: 'H',
+    includeMargin: true,
+    bgColor: '#ffffff',
+    fgColor: '#000000'
+  });
 
   // Obtener el barId del usuario/admin
   useEffect(() => {
@@ -52,35 +76,32 @@ export default function AdminQRPage() {
           if (Array.isArray(bars) && bars.length > 0) {
             const bar = bars[0];
             setBarId(bar.id || bar._id);
+            setBarName(bar.name || 'Encore Bar');
             if (bar.totalTables) {
               setTotalTables(bar.totalTables);
             }
           }
         } else {
           // Si no hay bar, usar un ID temporal para desarrollo
-          setBarId('temp-bar-' + Date.now());
+          setBarId('demo-bar-' + Date.now());
+          setBarName('Demo Bar');
         }
       } catch (error) {
         console.error('Error fetching bar data:', error);
         // Usar ID temporal para desarrollo
-        setBarId('temp-bar-' + Date.now());
+        setBarId('demo-bar-' + Date.now());
+        setBarName('Demo Bar');
       }
     };
 
     fetchBarData();
   }, []);
 
-  const handleGenerateQR = (tableNumber: number, qrData: string) => {
-    const newQR: GeneratedQR = {
-      tableNumber,
-      qrData,
-      timestamp: new Date()
-    };
-    
+  const handleGenerateQR = (tableNumber: number, qrData: GeneratedQR) => {
     setGeneratedQRCodes(prev => {
       // Reemplazar si ya existe para esa mesa
       const filtered = prev.filter(qr => qr.tableNumber !== tableNumber);
-      return [...filtered, newQR].sort((a, b) => a.tableNumber - b.tableNumber);
+      return [...filtered, qrData].sort((a, b) => a.tableNumber - b.tableNumber);
     });
     
     showSuccessToast(`QR generado para Mesa ${tableNumber}`);
@@ -93,7 +114,7 @@ export default function AdminQRPage() {
       const newQRCodes: GeneratedQR[] = [];
       
       for (let i = 1; i <= totalTables; i++) {
-        const qrData = JSON.stringify({
+        const qrDataString = JSON.stringify({
           b: barId,
           t: i,
           v: '1.0',
@@ -101,9 +122,13 @@ export default function AdminQRPage() {
         });
         
         newQRCodes.push({
+          id: `qr-${i}-${Date.now()}`,
           tableNumber: i,
-          qrData,
-          timestamp: new Date()
+          qrData: qrDataString,
+          qrUrl: `${window.location.origin}/client?b=${barId}&t=${i}`,
+          isActive: true,
+          createdAt: new Date(),
+          scannedCount: 0
         });
         
         // Pequeña pausa para no sobrecargar
@@ -141,7 +166,7 @@ export default function AdminQRPage() {
         </style>
       </head>
       <body>
-        <h1>Códigos QR - ${barId}</h1>
+        <h1>Códigos QR - ${barName}</h1>
         <p>Total de mesas: ${generatedQRCodes.length}</p>
         ${generatedQRCodes.map(qr => `
           <div class="qr-container">
@@ -149,7 +174,7 @@ export default function AdminQRPage() {
             <div class="qr-code">
               <img src="https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(qr.qrData)}" alt="QR Mesa ${qr.tableNumber}">
             </div>
-            <div class="bar-info">${barId}</div>
+            <div class="bar-info">${barName}</div>
           </div>
         `).join('')}
       </body>
@@ -160,7 +185,7 @@ export default function AdminQRPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `qr-codes-${barId}.html`;
+    link.download = `qr-codes-${barName.replace(/\s+/g, '-')}.html`;
     link.click();
     URL.revokeObjectURL(url);
 
@@ -197,7 +222,7 @@ export default function AdminQRPage() {
             </p>
             {barId && (
               <Badge variant="outline" className="mt-2">
-                Bar ID: {barId}
+                {barName} - ID: {barId}
               </Badge>
             )}
           </div>
@@ -242,7 +267,12 @@ export default function AdminQRPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
             >
-              <QRGenerator barId={barId} onGenerate={handleGenerateQR} />
+              <QRGeneratorCanvas 
+                barId={barId} 
+                barName={barName}
+                onGenerate={handleGenerateQR}
+                maxTables={totalTables}
+              />
             </motion.div>
           </TabsContent>
 
@@ -327,7 +357,7 @@ export default function AdminQRPage() {
                           </div>
                           <Badge variant="outline">Mesa {qr.tableNumber}</Badge>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(qr.timestamp).toLocaleTimeString()}
+                            {new Date(qr.createdAt).toLocaleTimeString()}
                           </p>
                         </div>
                       ))}
