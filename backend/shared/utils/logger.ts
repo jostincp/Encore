@@ -3,11 +3,11 @@
  * Sistema de logging avanzado con Winston y soporte para ELK Stack
  */
 
-import winston from 'winston';
+import * as winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 import { format } from 'logform';
-import path from 'path';
-import os from 'os';
+import * as path from 'path';
+import * as os from 'os';
 
 // Configuración de niveles de log personalizados
 const customLevels = {

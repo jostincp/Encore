@@ -1,32 +1,6 @@
-import logger from '../../../shared/utils/logger';
-import { getRedisClient } from '../../../shared/utils/redis';
-
-// TODO: Install googleapis package
-// import { google } from 'googleapis';
-const google = {
-  youtube: (config: any) => ({
-    search: {
-      list: async (params: any) => {
-        // Mock implementation - replace with actual YouTube API call
-        return {
-          data: {
-            items: []
-          }
-        };
-      }
-    },
-    videos: {
-      list: async (params: any) => {
-        // Mock implementation - replace with actual YouTube API call
-        return {
-          data: {
-            items: []
-          }
-        };
-      }
-    }
-  })
-};
+import logger from '@shared/utils/logger';
+import { getRedisClient } from '@shared/utils/redis';
+import { google } from 'googleapis';
 
 export interface YouTubeSearchResult {
   videoId: string;
@@ -143,8 +117,8 @@ export class EnhancedYouTubeService {
           videoId: item.id.videoId,
           title: item.snippet.title,
           thumbnail: item.snippet.thumbnails?.default?.url ||
-                    item.snippet.thumbnails?.medium?.url ||
-                    item.snippet.thumbnails?.high?.url || '',
+            item.snippet.thumbnails?.medium?.url ||
+            item.snippet.thumbnails?.high?.url || '',
           duration: details?.duration || 0,
           channelTitle: item.snippet.channelTitle,
           publishedAt: item.snippet.publishedAt,
@@ -201,9 +175,9 @@ export class EnhancedYouTubeService {
         title: item.snippet.title,
         description: item.snippet.description,
         thumbnail: item.snippet.thumbnails?.maxres?.url ||
-                  item.snippet.thumbnails?.high?.url ||
-                  item.snippet.thumbnails?.medium?.url ||
-                  item.snippet.thumbnails?.default?.url || '',
+          item.snippet.thumbnails?.high?.url ||
+          item.snippet.thumbnails?.medium?.url ||
+          item.snippet.thumbnails?.default?.url || '',
         duration: this.parseDuration(item.contentDetails.duration),
         channelTitle: item.snippet.channelTitle,
         channelId: item.snippet.channelId,
@@ -239,9 +213,9 @@ export class EnhancedYouTubeService {
       });
 
       const available = response.data.items &&
-                       response.data.items.length > 0 &&
-                       response.data.items[0].status.privacyStatus !== 'private' &&
-                       !response.data.items[0].status.embeddable === false;
+        response.data.items.length > 0 &&
+        response.data.items[0].status.privacyStatus !== 'private' &&
+        !response.data.items[0].status.embeddable === false;
 
       // Cachear por 1 hora
       await this.redis.setex(cacheKey, 3600, available ? 'true' : 'false');

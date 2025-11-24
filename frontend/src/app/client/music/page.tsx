@@ -23,6 +23,7 @@ import { useDebounce } from '@/hooks/useDebounce';
 import { formatDuration, formatPoints } from '@/utils/format';
 import { Song } from '@/types';
 import axios from 'axios';
+import Image from 'next/image';
 
 // Mock data para el catálogo musical
 const mockSongs: Song[] = [
@@ -95,26 +96,32 @@ export default function ClientMusicPage() {
   // Obtener información del bar para personalizar experiencia
   useEffect(() => {
     if (barId) {
-      // Obtener información del bar
-      fetch(`http://localhost:3001/api/bars/${barId}/info`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            setBarInfo(data.data);
-            // Aplicar colores personalizados si existen
-            if (data.data.primaryColor) {
-              document.documentElement.style.setProperty('--primary', data.data.primaryColor);
-            }
-            if (data.data.secondaryColor) {
-              document.documentElement.style.setProperty('--secondary', data.data.secondaryColor);
-            }
-          }
-        })
-        .catch(err => console.error('Error fetching bar info:', err));
-      
       // Guardar en localStorage para persistencia
       localStorage.setItem('currentBarId', barId);
       localStorage.setItem('currentTable', tableNumber || '');
+
+      // Fallback de información de bar en modo guest (sin auth-service)
+      (async () => {
+        try {
+          const res = await fetch(`http://localhost:3001/api/bars/${barId}/info`, { method: 'GET' });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              setBarInfo(data.data);
+              if (data.data.primaryColor) {
+                document.documentElement.style.setProperty('--primary', data.data.primaryColor);
+              }
+              if (data.data.secondaryColor) {
+                document.documentElement.style.setProperty('--secondary', data.data.secondaryColor);
+              }
+              return;
+            }
+          }
+        } catch (err) {
+          // auth-service no disponible: usar valores por defecto
+        }
+        setBarInfo({ name: 'Rockola Digital', description: 'Bar de prueba', primaryColor: undefined, secondaryColor: undefined });
+      })();
     }
   }, [barId, tableNumber]);
 
@@ -195,16 +202,13 @@ export default function ClientMusicPage() {
     }
 
     try {
-      // Llamar a la API para añadir a la cola
-      const response = await axios.post(`http://localhost:3003/api/queue/${currentBarId}/add`, {
-        song_id: song.id,
-        priority_play: isPriority,
-        points_used: cost,
-        requested_by: currentTable || 'Cliente', // Mesa o identificador
-        bar_id: currentBarId // Asegurar que se asocia al bar correcto
-      });
-
-      if (response.data.success) {
+      const url = `http://localhost:3002/guest/${currentBarId}/request?videoId=${encodeURIComponent(song.id)}`;
+      const res = await fetch(url);
+      if (res.status === 409) {
+        error('🎵 Esta canción ya está en la cola');
+        return;
+      }
+      if (res.ok) {
         success(
           isPriority
             ? `¡${song.title} agregada con Priority Play!`
@@ -218,7 +222,7 @@ export default function ClientMusicPage() {
         setSelectedSong(null);
         setShowPriorityDialog(false);
       } else {
-        error(response.data.message || 'Error al añadir canción a la cola');
+        error('Error al añadir canción a la cola');
       }
     } catch (error: any) {
       console.error('Error adding song to queue:', error);
@@ -233,11 +237,7 @@ export default function ClientMusicPage() {
         return;
       }
       
-      // Manejar error 409 Conflict (canción duplicada)
-      if (error.response?.status === 409) {
-        error('🎵 Esta canción ya está en la cola');
-        return;
-      }
+      // Manejar duplicado ya controlado arriba
       
       const errorMessage = error.response?.data?.message || 'Error al añadir canción a la cola';
       error(errorMessage);

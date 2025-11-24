@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import youtubeSimpleRoutes from './routes/youtubeSimple';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 // Cargar variables de entorno
 dotenv.config();

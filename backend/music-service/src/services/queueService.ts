@@ -1,6 +1,6 @@
 import { QueueModel, QueueData, CreateQueueData, UpdateQueueData, QueueFilters, QueueStats } from '../models/Queue';
 import { CacheService, CacheKeys, CacheTags } from './cacheService';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 export class QueueService {
   /**

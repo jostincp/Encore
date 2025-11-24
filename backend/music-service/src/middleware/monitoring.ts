@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 import { performance } from 'perf_hooks';
-import { getRedisClient } from '../../../shared/utils/redis';
+import { getRedisClient } from '@shared/utils/redis';
 
 // Performance metrics interface
 interface PerformanceMetrics {

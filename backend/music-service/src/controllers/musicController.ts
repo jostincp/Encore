@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { enhancedYouTubeService, YouTubeSearchResult } from '../services/enhancedYouTubeService';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 export class MusicController {
   /**

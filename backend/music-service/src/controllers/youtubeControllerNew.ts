@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { youtubeService } from '../services/youtubeServiceNew';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 export class YouTubeController {
   /**

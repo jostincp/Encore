@@ -1,7 +1,7 @@
-import { query } from '../../../shared/database';
-import logger from '../../../shared/utils/logger';
-import { validateUUID } from '../../../shared/utils/validation';
-import { Bar } from '../../../shared/types';
+import { query } from '@shared/database';
+import logger from '@shared/utils/logger';
+import { validateUUID } from '@shared/utils/validation';
+import { Bar } from '@shared/models/Bar';
 
 export interface BarSettings {
   max_songs_per_user?: number;

@@ -67,7 +67,7 @@ ________________________________________
 Arquitectura Detallada por Capas
 1. Frontend (La Interfaz de Usuario)
 Aquí es donde viven la aplicación del cliente (móvil-first) y el dashboard del administrador (responsive).
-•	Framework Principal: React 18 con Next.js 14.
+•	Framework Principal: React 19 con Next.js 15.
 •	Por qué: Renderizado del lado del servidor (SSR) para velocidad, generación de sitios estáticos (SSG) para landing pages, y la mejor experiencia de desarrollo con su App Router. Es el estándar de oro para aplicaciones web modernas.
 •	Diseño y UI:
 •	Styling: Tailwind CSS. Para un desarrollo de UI ultra-rápido y consistente.

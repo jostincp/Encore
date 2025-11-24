@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
-import { getRedisClient } from '../../../shared/utils/redis';
-import logger from '../../../shared/utils/logger';
+import { getRedisClient } from '@shared/utils/redis';
+import logger from '@shared/utils/logger';
 
 export class QueueEventService {
   private static instance: QueueEventService;

@@ -1,7 +1,7 @@
-import { query, dbOperations } from '../../../shared/database';
-import logger from '../../../shared/utils/logger';
-import { ValidationError, NotFoundError } from '../../../shared/utils/errors';
-import { validateId, validateEmail } from '../../../shared/utils/validation';
+import { query, dbOperations } from '@shared/database';
+import logger from '@shared/utils/logger';
+import { ValidationError, NotFoundError } from '@shared/utils/errors';
+import { validateId, validateEmail } from '@shared/utils/validation';
 
 // User roles enumeration (unificados)
 export enum UserRole {

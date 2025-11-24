@@ -1,4 +1,5 @@
-import jwt, { SignOptions, VerifyOptions } from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
+import { SignOptions, VerifyOptions } from 'jsonwebtoken';
 import { StringValue } from 'ms';
 import { Request, Response, NextFunction } from 'express';
 import { UnauthorizedError, ForbiddenError } from './errors';
@@ -61,7 +62,7 @@ export const verifyToken = (token: string): JwtPayload => {
       audience: 'encore-client'
     };
     const decoded = jwt.verify(token, JWT_SECRET, options) as JwtPayload;
-    
+
     return decoded;
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
@@ -106,7 +107,7 @@ export const requireRole = (roles: string | string[]) => {
       }
 
       const allowedRoles = Array.isArray(roles) ? roles : [roles];
-      
+
       if (!allowedRoles.includes(req.user.role)) {
         throw new ForbiddenError(`Access denied. Required roles: ${allowedRoles.join(', ')}`);
       }
@@ -126,7 +127,7 @@ export const requireBarAccess = (req: Request, res: Response, next: NextFunction
     }
 
     const barId = req.params.barId || req.body.barId || req.query.barId;
-    
+
     if (!barId) {
       throw new ForbiddenError('Bar ID required');
     }
@@ -203,11 +204,11 @@ export const generateTableSessionToken = (tableId: string, barId: string): strin
 export const verifyTableSessionToken = (token: string): { tableId: string; barId: string } => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
-    
+
     if (decoded.type !== 'table_session') {
       throw new UnauthorizedError('Invalid session token');
     }
-    
+
     return {
       tableId: decoded.tableId,
       barId: decoded.barId
@@ -221,13 +222,13 @@ export const verifyTableSessionToken = (token: string): { tableId: string; barId
 export const authenticateTableSession = (req: Request, res: Response, next: NextFunction): void => {
   try {
     const token = extractToken(req);
-    
+
     if (!token) {
       throw new UnauthorizedError('Session token required');
     }
 
     const sessionData = verifyTableSessionToken(token);
-    
+
     // Agregar datos de sesión al request
     req.user = {
       userId: `table_${sessionData.tableId}`,
@@ -235,9 +236,9 @@ export const authenticateTableSession = (req: Request, res: Response, next: Next
       role: UserRole.USER,
       barId: sessionData.barId
     };
-    
+
     (req as any).tableSession = sessionData;
-    
+
     next();
   } catch (error) {
     next(error);
@@ -254,11 +255,11 @@ export const isTokenExpiringSoon = (token: string, minutesThreshold: number = 15
   try {
     const decoded = jwt.decode(token) as any;
     if (!decoded || !decoded.exp) return false;
-    
+
     const expirationTime = decoded.exp * 1000; // Convertir a milliseconds
     const currentTime = Date.now();
     const thresholdTime = minutesThreshold * 60 * 1000;
-    
+
     return (expirationTime - currentTime) < thresholdTime;
   } catch (error) {
     return true; // Si hay error, asumir que está expirando

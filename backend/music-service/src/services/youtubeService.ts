@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import { redisHelpers } from '../config/redis';
 import { youtubeConfig } from '../config';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 // YouTube API response interfaces
 interface YouTubeVideo {
@@ -68,11 +68,11 @@ export class YouTubeService {
     try {
       // 1. Normalize Query
       const normalizedQuery = this.normalizeQuery(query);
-      
+
       // 2. Check Redis Cache First
       const cacheKey = `music:search:yt:${normalizedQuery}`;
       const cachedResults = await redisHelpers.get(cacheKey);
-      
+
       if (cachedResults) {
         logger.info(`⚡ Cache HIT for YouTube search: "${normalizedQuery}"`);
         return cachedResults;
@@ -80,7 +80,7 @@ export class YouTubeService {
 
       // 3. Cache Miss - Call YouTube API
       logger.info(`🌐 Cache MISS - Calling YouTube API for: "${normalizedQuery}"`);
-      
+
       const response = await this.youtube.search.list({
         part: 'snippet',
         type: 'video',
@@ -91,10 +91,10 @@ export class YouTubeService {
       });
 
       const youtubeResponse: YouTubeSearchResponse = response.data;
-      
+
       // 4. Process and Clean Results
       const cleanedVideos = this.cleanYouTubeResponse(youtubeResponse);
-      
+
       // 5. Save to Cache with TTL (48 hours)
       await redisHelpers.set(cacheKey, cleanedVideos, youtubeConfig.searchCacheTTL);
       logger.info(`💾 Cached YouTube search results for: "${normalizedQuery}" (${cleanedVideos.length} videos)`);
@@ -103,16 +103,16 @@ export class YouTubeService {
 
     } catch (error) {
       logger.error('❌ Error searching YouTube videos:', error);
-      
+
       // Handle specific YouTube API errors
       if (this.isQuotaExceededError(error)) {
         throw new Error('YouTube API quota exceeded. Please try again later.');
       }
-      
+
       if (this.isInvalidApiKeyError(error)) {
         throw new Error('Invalid YouTube API key configuration.');
       }
-      
+
       throw new Error('Failed to search YouTube videos');
     }
   }
@@ -129,7 +129,7 @@ export class YouTubeService {
         id: item.id.videoId,
         title: item.snippet.title,
         channel: item.snippet.channelTitle,
-        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url,
+        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || '',
       };
     });
   }
@@ -147,10 +147,6 @@ export class YouTubeService {
   public static async getVideoDetails(videoId: string): Promise<any> {
     const instance = YouTubeService.getInstance();
 
-      console.error('YouTube API key not configured');
-      throw new Error('YouTube API key not configured');
-    }
-
     try {
       const cacheKey = `youtube:video:${videoId}`;
       const cached = await redisHelpers.get(cacheKey);
@@ -158,14 +154,12 @@ export class YouTubeService {
         return cached;
       }
 
-      const response = await instance.client.get<YouTubeVideoDetailsResponse>('/videos', {
-        params: {
-          part: 'snippet,contentDetails,statistics',
-          id: videoId,
-        },
+      const response = await instance.youtube.videos.list({
+        part: 'snippet,contentDetails,statistics',
+        id: videoId,
       });
 
-      if (!response.data.items.length) {
+      if (!response.data.items || response.data.items.length === 0) {
         throw new Error('Video not found');
       }
 
@@ -186,8 +180,8 @@ export class YouTubeService {
         source: 'youtube',
         published_at: video.snippet.publishedAt,
         description: video.snippet.description,
-        view_count: parseInt(video.statistics.viewCount, 10),
-        like_count: parseInt(video.statistics.likeCount, 10),
+        view_count: parseInt(video.statistics.viewCount || '0', 10),
+        like_count: parseInt(video.statistics.likeCount || '0', 10),
       };
 
       // Cache for 1 hour
@@ -195,7 +189,7 @@ export class YouTubeService {
 
       return videoDetails;
     } catch (error) {
-      console.error('YouTube video details error:', error);
+      logger.error('YouTube video details error:', error);
       throw new Error('Failed to get YouTube video details');
     }
   }
@@ -206,11 +200,6 @@ export class YouTubeService {
     const instance = YouTubeService.getInstance();
     const { maxResults = 25, regionCode = 'US' } = options;
 
-    if (!instance.apiKey) {
-      console.error('YouTube API key not configured');
-      throw new Error('YouTube API key not configured');
-    }
-
     try {
       const cacheKey = `youtube:trending:${maxResults}:${regionCode}`;
       const cached = await redisHelpers.get(cacheKey);
@@ -218,19 +207,17 @@ export class YouTubeService {
         return cached;
       }
 
-      const response = await instance.client.get('/videos', {
-        params: {
-          part: 'snippet,contentDetails,statistics',
-          chart: 'mostPopular',
-          videoCategoryId: '10', // Music category
-          regionCode,
-          maxResults,
-        },
+      const response = await instance.youtube.videos.list({
+        part: 'snippet,contentDetails,statistics',
+        chart: 'mostPopular',
+        videoCategoryId: '10', // Music category
+        regionCode,
+        maxResults,
       });
 
       const videos = response.data.items.map((video: any) => {
         const duration = YouTubeService.parseDuration(video.contentDetails.duration);
-        
+
         return {
           id: `youtube:video:${video.id}`,
           title: video.snippet.title,
@@ -244,8 +231,8 @@ export class YouTubeService {
           external_url: `https://www.youtube.com/watch?v=${video.id}`,
           source: 'youtube',
           published_at: video.snippet.publishedAt,
-          view_count: parseInt(video.statistics.viewCount, 10),
-          like_count: parseInt(video.statistics.likeCount, 10),
+          view_count: parseInt(video.statistics.viewCount || '0', 10),
+          like_count: parseInt(video.statistics.likeCount || '0', 10),
         };
       });
 
@@ -254,7 +241,7 @@ export class YouTubeService {
 
       return videos;
     } catch (error) {
-      console.error('YouTube trending videos error:', error);
+      logger.error('YouTube trending videos error:', error);
       throw new Error('Failed to get YouTube trending videos');
     }
   }
@@ -265,11 +252,6 @@ export class YouTubeService {
   ): Promise<any[]> {
     const instance = YouTubeService.getInstance();
     const { maxResults = 25, pageToken } = options;
-
-    if (!instance.apiKey) {
-      console.error('YouTube API key not configured');
-      throw new Error('YouTube API key not configured');
-    }
 
     try {
       const cacheKey = `youtube:playlist:${playlistId}:${maxResults}:${pageToken || 'first'}`;
@@ -288,9 +270,7 @@ export class YouTubeService {
         params.pageToken = pageToken;
       }
 
-      const response = await instance.client.get('/playlistItems', {
-        params,
-      });
+      const response = await instance.youtube.playlistItems.list(params);
 
       const videos = response.data.items
         .filter((item: any) => item.snippet.resourceId.kind === 'youtube#video')
@@ -315,9 +295,26 @@ export class YouTubeService {
 
       return videos;
     } catch (error) {
-      console.error('YouTube playlist videos error:', error);
+      logger.error('YouTube playlist videos error:', error);
       throw new Error('Failed to get YouTube playlist videos');
     }
+  }
+
+  private static parseDuration(duration: string): number {
+    const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+    if (!match) return 0;
+    const hours = parseInt(match[1]?.replace('H', '') || '0');
+    const minutes = parseInt(match[2]?.replace('M', '') || '0');
+    const seconds = parseInt(match[3]?.replace('S', '') || '0');
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  private static extractArtistFromTitle(title: string, channelTitle: string): string {
+    if (title.includes('-')) {
+      const parts = title.split('-');
+      return parts[0].trim();
+    }
+    return channelTitle;
   }
 }
 

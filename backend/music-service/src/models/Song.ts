@@ -1,8 +1,8 @@
-import { query, findById, findByField, findOne, update, deleteById } from '../../../shared/database';
-import logger from '../../../shared/utils/logger';
-import { ValidationError, NotFoundError } from '../../../shared/utils/errors';
-import { validateRequired, validateString, validateNumber, validateUrl } from '../../../shared/utils/validation';
-import { ID, Timestamp } from '../../../shared/types';
+import { query, findById, findByField, findOne, update, deleteById } from '@shared/database';
+import logger from '@shared/utils/logger';
+import { ValidationError, NotFoundError } from '@shared/utils/errors';
+import { validateRequired, validateString, validateNumber, validateUrl } from '@shared/utils/validation';
+import { ID, Timestamp } from '@shared/types';
 
 export interface SongData {
   id: ID;

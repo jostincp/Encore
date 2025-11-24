@@ -472,3 +472,25 @@ export default {
   validateUUID,
   validateEnum
 };
+// ==============================================
+// VALIDACIÓN DE PAGINACIÓN
+// ==============================================
+
+/**
+ * Valida y normaliza parámetros de paginación
+ * @param page - Número de página (base 1)
+ * @param limit - Cantidad de elementos por página
+ * @param maxLimit - Límite máximo permitido (opcional, default: 100)
+ * @returns Objeto con offset y validatedLimit
+ */
+export const validatePaginationParams = (
+  page: number = 1,
+  limit: number = 25,
+  maxLimit: number = 100
+): { offset: number; validatedLimit: number } => {
+  const validatedPage = Math.max(1, Math.floor(page) || 1);
+  const validatedLimit = Math.min(Math.max(1, Math.floor(limit) || 25), maxLimit);
+  const offset = (validatedPage - 1) * validatedLimit;
+  return { offset, validatedLimit };
+};
+

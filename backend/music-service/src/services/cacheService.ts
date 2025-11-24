@@ -1,5 +1,5 @@
 import { redisHelpers } from '../config/redis';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 interface CacheOptions {
   ttl?: number; // Time to live in seconds

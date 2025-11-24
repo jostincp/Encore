@@ -176,6 +176,167 @@ app.post('/api/youtube/search', async (req, res) => {
   }
 });
 
+app.get('/api/youtube/video/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const response = await axios.get(`${YOUTUBE_API_BASE_URL}/videos`, {
+      params: {
+        key: YOUTUBE_API_KEY,
+        part: 'snippet,contentDetails',
+        id: videoId
+      }
+    });
+
+    if (!response.data.items || response.data.items.length === 0) {
+      return res.status(404).json({ success: false, message: 'Video not found' });
+    }
+
+    const video = response.data.items[0];
+    const details = {
+      id: video.id,
+      title: video.snippet.title,
+      artist: extractArtist(video.snippet.title),
+      thumbnail: video.snippet.thumbnails?.high?.url || video.snippet.thumbnails?.medium?.url,
+      channelTitle: video.snippet.channelTitle,
+      publishedAt: video.snippet.publishedAt,
+      duration: video.contentDetails?.duration
+    };
+
+    return res.json({ success: true, data: details });
+  } catch (error) {
+    logger.error('Error getting video details:', error.response?.data || error.message);
+    return res.status(500).json({ success: false, message: 'Failed to get video details' });
+  }
+});
+
+// In-memory queue (development fallback)
+const devQueue = {};
+
+app.post('/api/queue/:barId/add', (req, res) => {
+  const barId = req.params.barId;
+  const { song_id, priority_play = false, points_used = 0 } = req.body || {};
+  if (!song_id || typeof song_id !== 'string') {
+    return res.status(400).json({ success: false, message: 'song_id is required' });
+  }
+  if (!devQueue[barId]) devQueue[barId] = [];
+  // Duplicate prevention: pending entry with same song_id
+  const exists = devQueue[barId].some(e => e.song_id === song_id && e.status === 'pending');
+  if (exists) {
+    return res.status(409).json({ success: false, message: 'Song already in queue' });
+  }
+  const entry = {
+    id: String(Date.now()),
+    bar_id: barId,
+    song_id,
+    priority_play: !!priority_play,
+    points_used: Number(points_used) || 0,
+    status: 'pending',
+    requested_at: new Date().toISOString()
+  };
+  devQueue[barId].push(entry);
+  return res.status(201).json({ success: true, data: entry });
+});
+
+app.get('/api/queue/bars/:barId', (req, res) => {
+  const barId = req.params.barId;
+  const items = devQueue[barId] || [];
+  return res.json({ success: true, data: items, total: items.length });
+});
+
+// Guest testing endpoints
+const TEST_BARS = new Set(['test-bar', 'bar-demo']);
+
+app.get('/guest/:barId', (req, res) => {
+  const barId = req.params.barId;
+  if (!TEST_BARS.has(barId)) {
+    return res.status(404).json({ success: false, message: 'Bar not enabled for guest testing' });
+  }
+  return res.json({
+    success: true,
+    barId,
+    endpoints: {
+      search: '/api/youtube/search?q={query}',
+      request_get: `/guest/${barId}/request?videoId={youtubeVideoId}`,
+      request_post: `/api/queue/${barId}/add`,
+      queue_list: `/api/queue/bars/${barId}`
+    }
+  });
+});
+
+app.get('/guest/:barId/request', (req, res) => {
+  const barId = req.params.barId;
+  if (!TEST_BARS.has(barId)) {
+    return res.status(404).json({ success: false, message: 'Bar not enabled for guest testing' });
+  }
+  const videoId = (req.query.videoId || '').toString();
+  if (!videoId) {
+    return res.status(400).json({ success: false, message: 'videoId is required' });
+  }
+  if (!devQueue[barId]) devQueue[barId] = [];
+  const exists = devQueue[barId].some(e => e.song_id === videoId && e.status === 'pending');
+  if (exists) {
+    return res.status(409).json({ success: false, message: 'Song already in queue' });
+  }
+  const entry = {
+    id: String(Date.now()),
+    bar_id: barId,
+    song_id: videoId,
+    priority_play: false,
+    points_used: 0,
+    status: 'pending',
+    requested_at: new Date().toISOString()
+  };
+  devQueue[barId].push(entry);
+  return res.status(201).json({ success: true, data: entry });
+});
+
+app.get('/guest/:barId/find-and-request', async (req, res) => {
+  const barId = req.params.barId;
+  if (!TEST_BARS.has(barId)) {
+    return res.status(404).json({ success: false, message: 'Bar not enabled for guest testing' });
+  }
+  const q = (req.query.q || '').toString();
+  const maxResults = parseInt((req.query.maxResults || '5').toString());
+  if (!q) {
+    return res.status(400).json({ success: false, message: 'q is required' });
+  }
+  try {
+    const searchRes = await searchYouTube(q, maxResults);
+    const first = searchRes?.data?.videos?.[0];
+    if (!first || !first.id) {
+      return res.status(404).json({ success: false, message: 'No results' });
+    }
+    if (!devQueue[barId]) devQueue[barId] = [];
+    const exists = devQueue[barId].some(e => e.song_id === first.id && e.status === 'pending');
+    if (exists) {
+      return res.status(409).json({ success: false, message: 'Song already in queue', data: { selected: first, query: q } });
+    }
+    const entry = {
+      id: String(Date.now()),
+      bar_id: barId,
+      song_id: first.id,
+      priority_play: false,
+      points_used: 0,
+      status: 'pending',
+      requested_at: new Date().toISOString()
+    };
+    devQueue[barId].push(entry);
+    return res.status(201).json({ success: true, data: { queued: entry, selected: first, query: q } });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Failed to find and request' });
+  }
+});
+
+app.get('/guest/:barId/ui', (req, res) => {
+  const barId = req.params.barId;
+  if (!TEST_BARS.has(barId)) {
+    return res.status(404).json({ success: false, message: 'Bar not enabled for guest testing' });
+  }
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>Guest ${barId}</title><style>body{font-family:system-ui,Segoe UI,Arial;padding:24px;background:#0b0b0b;color:#eaeaea}a,button{background:#1f2937;color:#fff;padding:8px 12px;border-radius:6px;text-decoration:none;margin-right:8px;border:none;cursor:pointer}input{padding:8px;border-radius:6px;border:1px solid #374151;background:#111827;color:#eaeaea}section{margin-bottom:20px}code{background:#111827;padding:4px 6px;border-radius:4px}</style></head><body><h1>Guest bar: ${barId}</h1><section><h2>Acciones rápidas</h2><div><a href="/api/youtube/search?q=queen&maxResults=3" target="_blank">Buscar: queen</a><a href="/guest/${barId}/request?videoId=fJ9rUzIMcZQ" target="_blank">Pedir: Bohemian Rhapsody</a><a href="/api/queue/bars/${barId}" target="_blank">Ver cola</a></div></section><section><h2>Buscar y pedir</h2><form action="/guest/${barId}/find-and-request" method="get" target="_blank"><input type="text" name="q" placeholder="consulta (ej: queen)" required /><input type="number" name="maxResults" value="5" min="1" max="50" /><button type="submit">Buscar y pedir primera</button></form></section><section><h2>Pedir por ID de YouTube</h2><form action="/guest/${barId}/request" method="get" target="_blank"><input type="text" name="videoId" placeholder="videoId (ej: HgzGwKwLmgM)" required /><button type="submit">Pedir canción</button></form></section><section><h2>Endpoints</h2><div><code>GET /api/youtube/search?q={query}</code></div><div><code>GET /guest/${barId}/request?videoId={youtubeVideoId}</code></div><div><code>GET /guest/${barId}/find-and-request?q={query}&maxResults=5</code></div><div><code>GET /api/queue/bars/${barId}</code></div></section></body></html>`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.send(html);
+});
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { enhancedYouTubeService, YouTubeError, YouTubeRateLimitError, YouTubeQuotaExceededError } from '../services/enhancedYouTubeService';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 export class YouTubeController {
   /**

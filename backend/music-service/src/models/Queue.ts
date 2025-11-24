@@ -1,7 +1,7 @@
-import { query, findById, update, deleteById } from '../../../shared/database';
-import logger from '../../../shared/utils/logger';
-import { ValidationError, NotFoundError } from '../../../shared/utils/errors';
-import { validateRequired, validateUUID, validatePositiveInteger } from '../../../shared/utils/validation';
+import { query, findById, update, deleteById } from '@shared/database';
+import logger from '@shared/utils/logger';
+import { ValidationError, NotFoundError } from '@shared/utils/errors';
+import { validateRequired, validateUUID, validatePositiveInteger } from '@shared/utils/validation';
 
 export interface QueueData {
   id: string;

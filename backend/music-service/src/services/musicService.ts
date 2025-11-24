@@ -3,7 +3,7 @@ import { YouTubeService } from './youtubeService';
 import { CacheService, CacheKeys, CacheTags } from './cacheService';
 import { Song } from '../models/Song';
 import { Queue } from '../models/Queue';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 interface SearchOptions {
   limit?: number;

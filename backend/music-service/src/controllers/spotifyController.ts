@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { enhancedSpotifyService, SpotifyError, SpotifyRateLimitError, SpotifyAuthError } from '../services/enhancedSpotifyService';
 import { getSpotifyRateLimitStats } from '../middleware/spotifyRateLimiter';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 export class SpotifyController {
   /**

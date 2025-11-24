@@ -1,6 +1,6 @@
 import express from 'express';
 import axios from 'axios';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 const router = express.Router();
 

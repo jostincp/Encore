@@ -1,6 +1,6 @@
-import dotenv from 'dotenv';
-import path from 'path';
-import fs from 'fs';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+import * as fs from 'fs';
 import { getSecretsManager } from '../utils/secrets';
 
 // Cargar variables de entorno, intentando primero en backend/.env y luego en repo root/.env
@@ -14,7 +14,7 @@ export interface Config {
   port: number;
   nodeEnv: string;
   serviceName: string;
-  
+
   // Base de datos
   database: {
     url: string;
@@ -24,32 +24,32 @@ export interface Config {
       max: number;
     };
   };
-  
+
   // Redis
   redis: {
     url: string;
     password?: string;
     db: number;
   };
-  
+
   // JWT y Seguridad
   jwt: {
     secret: string;
     expiresIn: string;
     refreshExpiresIn: string;
   };
-  
+
   // Encriptación
   bcrypt: {
     rounds: number;
   };
-  
+
   // CORS
   cors: {
     origins: string[];
     credentials: boolean;
   };
-  
+
   // Rate Limiting
   rateLimit: {
     windowMs: number;
@@ -57,7 +57,7 @@ export interface Config {
     authWindowMs: number;
     authMaxRequests: number;
   };
-  
+
   // APIs externas
   external: {
     youtube: {
@@ -75,13 +75,13 @@ export interface Config {
       webhookSecret?: string;
     };
   };
-  
+
   // WebSockets
   websocket: {
     corsOrigins: string[];
     transports: string[];
   };
-  
+
   // Microservicios
   services: {
     auth: { port: number; url: string; };
@@ -91,7 +91,7 @@ export interface Config {
     analytics: { port: number; url: string; };
     menu: { port: number; url: string; };
   };
-  
+
   // Logging y Monitoreo
   logging: {
     level: string;
@@ -99,13 +99,13 @@ export interface Config {
     maxSize?: string;
     maxFiles?: number;
   };
-  
+
   // Desarrollo y Testing
   development: {
     enableApiDocs: boolean;
     apiDocsPath: string;
   };
-  
+
   // Monitoreo
   monitoring: {
     sentryDsn?: string;
@@ -141,7 +141,7 @@ const getConfig = (): Config => {
     port: parseInt(process.env.PORT || '3000'),
     nodeEnv: process.env.NODE_ENV || 'development',
     serviceName: process.env.SERVICE_NAME || 'encore-service',
-    
+
     // Base de datos
     database: {
       url: process.env.DATABASE_URL!,
@@ -151,26 +151,26 @@ const getConfig = (): Config => {
         max: parseInt(process.env.DATABASE_POOL_MAX || '10')
       }
     },
-    
+
     // Redis
     redis: {
       url: process.env.REDIS_URL!,
       password: process.env.REDIS_PASSWORD || undefined,
       db: parseInt(process.env.REDIS_DB || '0')
     },
-    
+
     // JWT y Seguridad
     jwt: {
       secret: process.env.JWT_SECRET!,
       expiresIn: process.env.JWT_EXPIRES_IN || '24h',
       refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
     },
-    
+
     // Encriptación
     bcrypt: {
       rounds: parseInt(process.env.BCRYPT_ROUNDS || '12')
     },
-    
+
     // CORS
     cors: {
       origins: process.env.CORS_ORIGIN
@@ -178,7 +178,7 @@ const getConfig = (): Config => {
         : ['http://localhost:3000', 'http://localhost:3003', 'http://localhost:3004'],
       credentials: process.env.CORS_CREDENTIALS === 'true'
     },
-    
+
     // Rate Limiting
     rateLimit: {
       windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutos
@@ -186,7 +186,7 @@ const getConfig = (): Config => {
       authWindowMs: 15 * 60 * 1000, // 15 minutos para auth
       authMaxRequests: 5 // 5 intentos de auth por IP
     },
-    
+
     // APIs externas
     external: {
       youtube: {
@@ -204,17 +204,17 @@ const getConfig = (): Config => {
         webhookSecret: process.env.STRIPE_WEBHOOK_SECRET
       }
     },
-    
+
     // WebSockets
     websocket: {
-      corsOrigins: process.env.SOCKET_IO_CORS_ORIGIN ? 
-        process.env.SOCKET_IO_CORS_ORIGIN.split(',').map(o => o.trim()) : 
+      corsOrigins: process.env.SOCKET_IO_CORS_ORIGIN ?
+        process.env.SOCKET_IO_CORS_ORIGIN.split(',').map(o => o.trim()) :
         ['http://localhost:3000'],
-      transports: process.env.SOCKET_IO_TRANSPORTS ? 
-        process.env.SOCKET_IO_TRANSPORTS.split(',').map(t => t.trim()) : 
+      transports: process.env.SOCKET_IO_TRANSPORTS ?
+        process.env.SOCKET_IO_TRANSPORTS.split(',').map(t => t.trim()) :
         ['websocket', 'polling']
     },
-    
+
     // Microservicios
     services: {
       auth: {
@@ -242,7 +242,7 @@ const getConfig = (): Config => {
         url: process.env.MENU_SERVICE_URL || 'http://localhost:3006'
       }
     },
-    
+
     // Logging y Monitoreo
     logging: {
       level: process.env.LOG_LEVEL || 'info',
@@ -250,13 +250,13 @@ const getConfig = (): Config => {
       maxSize: process.env.LOG_MAX_SIZE,
       maxFiles: process.env.LOG_MAX_FILES ? parseInt(process.env.LOG_MAX_FILES) : undefined
     },
-    
+
     // Desarrollo y Testing
     development: {
       enableApiDocs: process.env.ENABLE_API_DOCS === 'true',
       apiDocsPath: process.env.API_DOCS_PATH || '/api/docs'
     },
-    
+
     // Monitoreo
     monitoring: {
       sentryDsn: process.env.SENTRY_DSN
@@ -338,13 +338,13 @@ export const validateServiceConfig = (serviceName: string): void => {
         throw new Error('Music service requires either YOUTUBE_API_KEY or SPOTIFY_CLIENT_ID');
       }
       break;
-      
+
     case 'points-service':
       if (!config.external.stripe.secretKey) {
         console.warn('Points service: STRIPE_SECRET_KEY not configured, payment features will be disabled');
       }
       break;
-      
+
     default:
       // No validación específica requerida
       break;

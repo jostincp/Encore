@@ -1,8 +1,8 @@
 # 🎵 Encore - Plataforma de Gestión Musical
 
 <div align="center">
-  <img src="https://img.shields.io/badge/React-18.x-blue?style=for-the-badge&logo=react" alt="React">
-  <img src="https://img.shields.io/badge/Node.js-18.x-green?style=for-the-badge&logo=node.js" alt="Node.js">
+  <img src="https://img.shields.io/badge/React-19.x-blue?style=for-the-badge&logo=react" alt="React">
+  <img src="https://img.shields.io/badge/Node.js-20.x-green?style=for-the-badge&logo=node.js" alt="Node.js">
   <img src="https://img.shields.io/badge/TypeScript-5.x-blue?style=for-the-badge&logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/PostgreSQL-14.x-blue?style=for-the-badge&logo=postgresql" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/Docker-Ready-blue?style=for-the-badge&logo=docker" alt="Docker">
@@ -58,7 +58,7 @@ Encore resuelve la fragmentación en el consumo de música digital al proporcion
 ## 🏗️ Arquitectura
 
 ### Frontend
-- **Framework**: React 18 + Next.js 14
+- **Framework**: React 19 + Next.js 15
 - **Lenguaje**: TypeScript
 - **Estilos**: Tailwind CSS + Shadcn UI
 - **3D**: Three.js + React Three Fiber
@@ -261,8 +261,8 @@ npm run deploy               # Despliegue a staging
 ## 🛠️ Tecnologías
 
 ### Frontend
-- React 18
-- Next.js 14
+- React 19
+- Next.js 15
 - TypeScript
 - Tailwind CSS
 - Shadcn UI / Radix UI
@@ -298,7 +298,7 @@ npm run deploy               # Despliegue a staging
 encore/
 ├── frontend/                 # Aplicación Next.js
 │   ├── src/
-│   │   ├── app/             # App Router de Next.js 14
+│   │   ├── app/             # App Router de Next.js 15
 │   │   ├── components/      # Componentes React
 │   │   ├── lib/            # Utilidades y configuración
 │   │   ├── stores/         # Estados de Zustand

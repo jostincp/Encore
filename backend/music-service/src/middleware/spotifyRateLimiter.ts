@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { enhancedSpotifyService } from '../services/enhancedSpotifyService';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 // Rate limiter específico para Spotify API
 export class SpotifyAPIRateLimiter {

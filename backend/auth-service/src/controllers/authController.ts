@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcrypt';
 import { UserModel, User } from '../models/User';
 import { RefreshTokenModel, RefreshToken } from '../models/RefreshToken';
-import { BarModel, Bar } from '../models/Bar';
+import { BarModel, Bar } from '../../../shared/models/Bar';
 import { generateAccessToken, generateRefreshToken, verifyToken, verifyRefreshToken } from '../utils/jwt';
 import { sendSuccess, sendError } from '../utils/response';
 import { ValidationError, UnauthorizedError, ConflictError, NotFoundError, BadRequestError, ServiceUnavailableError } from '../utils/errors';
@@ -30,7 +30,7 @@ const sanitizeInput = (input: string): string => {
 // Validation functions mejoradas
 const validateUserRegistration = (data: any) => {
   const errors: string[] = [];
-  
+
   // Sanitizar inputs
   const sanitizedData = {
     email: sanitizeInput(data.email),
@@ -38,23 +38,23 @@ const validateUserRegistration = (data: any) => {
     lastName: sanitizeInput(data.lastName),
     password: data.password // No sanitizar password
   };
-  
+
   if (!sanitizedData.email || !validateEmail(sanitizedData.email)) {
     errors.push('Email válido es requerido');
   }
-  
+
   if (!data.password || !validatePassword(data.password)) {
     errors.push('Contraseña debe tener al menos 8 caracteres, incluir mayúsculas, minúsculas, números y símbolos');
   }
-  
+
   if (!sanitizedData.firstName || !validateUsername(sanitizedData.firstName)) {
     errors.push('Nombre debe tener entre 2 y 50 caracteres y solo contener letras, números y espacios');
   }
-  
+
   if (!sanitizedData.lastName || !validateUsername(sanitizedData.lastName)) {
     errors.push('Apellido debe tener entre 2 y 50 caracteres y solo contener letras, números y espacios');
   }
-  
+
   return {
     isValid: errors.length === 0,
     errors,
@@ -372,7 +372,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   // Sanitizar email
   const sanitizedEmail = sanitizeInput(email);
-  
+
   if (!validateEmail(sanitizedEmail)) {
     throw new ValidationError('Email inválido');
   }
@@ -473,7 +473,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   // Generate tokens con configuración segura
   const accessToken = generateAccessToken({ userId: user.id, email: user.email, role: user.role as UserRole });
-  const refreshTokenExpiresAt = new Date(Date.now() + 
+  const refreshTokenExpiresAt = new Date(Date.now() +
     (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );
   const refreshTokenData = await RefreshTokenModel.create(user.id, refreshTokenExpiresAt);
@@ -639,7 +639,7 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
   // In a real implementation, you would verify the token and get the user ID
   // For now, we'll assume the token contains the user ID (this should be properly implemented)
   // This is a simplified version - in production, use proper email verification tokens
-  
+
   try {
     const decoded = verifyToken(token) as any;
     const userId = decoded.userId;
@@ -791,7 +791,7 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
 
   // Generate reset token (implement this in your UserModel)
   // const resetToken = await UserModel.generatePasswordResetToken(user.id);
-  
+
   // Send email (implement email service)
   // await EmailService.sendPasswordResetEmail(user.email, resetToken);
 

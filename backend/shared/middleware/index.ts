@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
-import cors from 'cors';
-import compression from 'compression';
+import * as cors from 'cors';
+import * as compression from 'compression';
 // Removed mongoose dependency; using UUID validation for Bar/Table IDs
 import { config } from '../config';
 import { getRateLimitService } from '../utils/redis';
@@ -32,11 +32,11 @@ export const corsMiddleware = cors({
   origin: (origin, callback) => {
     // Permitir requests sin origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
+
     if (config.cors.origins.includes(origin) || config.cors.origins.includes('*')) {
       return callback(null, true);
     }
-    
+
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -88,7 +88,7 @@ export const basicRateLimit: RequestHandler = rateLimit({
       url: req.url,
       method: req.method
     });
-    
+
     res.status(429).json({
       error: 'Too many requests',
       message: 'Too many requests from this IP, please try again later.',
@@ -144,9 +144,9 @@ export const advancedRateLimit = (options: {
 
       // Middleware para limpiar rate limit en caso de éxito/fallo
       const originalSend = res.send;
-      res.send = function(data) {
+      res.send = function (data) {
         const statusCode = res.statusCode;
-        
+
         if (key) {
           if (skipSuccessfulRequests && statusCode < 400) {
             getRateLimitService().clearRateLimit(key);
@@ -154,7 +154,7 @@ export const advancedRateLimit = (options: {
             getRateLimitService().clearRateLimit(key);
           }
         }
-        
+
         return originalSend.call(this, data);
       };
 
@@ -201,13 +201,13 @@ export const validateContentType = (allowedTypes: string[]) => {
     }
 
     const contentType = req.headers['content-type'];
-    
+
     if (!contentType) {
       return sendError(res, 'Content-Type header is required', 400);
     }
 
     const isAllowed = allowedTypes.some(type => contentType.includes(type));
-    
+
     if (!isAllowed) {
       return sendError(res, `Invalid Content-Type. Allowed types: ${allowedTypes.join(', ')}`, 400);
     }
@@ -235,7 +235,7 @@ export const validateApiKey = (req: Request, res: Response, next: NextFunction) 
 // Middleware de validación de Bar ID
 export const validateBarId = (req: Request, res: Response, next: NextFunction) => {
   const barId = (req.params as any).barId || (req.headers as any)['x-bar-id'] || (req.body as any).barId;
-  
+
   if (!barId) {
     return sendError(res, 'Bar ID is required', 400);
   }
@@ -254,7 +254,7 @@ export const validateBarId = (req: Request, res: Response, next: NextFunction) =
 // Middleware de validación de Table ID
 export const validateTableId = (req: Request, res: Response, next: NextFunction) => {
   const tableId = (req.params as any).tableId || (req.headers as any)['x-table-id'] || (req.body as any).tableId;
-  
+
   if (!tableId) {
     return sendError(res, 'Table ID is required', 400);
   }
@@ -333,7 +333,7 @@ export const validateJsonMiddleware = (req: Request, res: Response, next: NextFu
   }
 
   const contentType = req.headers['content-type'];
-  
+
   if (contentType && contentType.includes('application/json')) {
     if (Object.keys(req.body).length === 0) {
       return sendError(res, 'Request body cannot be empty', 400);

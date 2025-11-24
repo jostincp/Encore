@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
 import { QueueModel, CreateQueueData, UpdateQueueData, QueueFilters } from '../models/Queue';
 import { SongModel } from '../models/Song';
-import { asyncHandler } from '../../../shared/utils/errors';
-import logger from '../../../shared/utils/logger';
-import { validatePaginationParams } from '../../../shared/utils/validation';
-import { AuthenticatedRequest } from '../../../shared/types/auth';
+import { asyncHandler } from '@shared/utils/errors';
+import logger from '@shared/utils/logger';
+import { validatePaginationParams } from '@shared/utils/validation';
+import { AuthenticatedRequest } from '@shared/types/auth';
+import { BarModel } from '@shared/models/Bar';
 import { BarService } from '../services/barService';
 import { queueEventService } from '../services/queueEventService';
 
@@ -14,7 +15,7 @@ export class QueueController {
     try {
       const { bar_id, song_id, priority_play, points_used } = req.body;
       const user_id = req.user!.userId;
-      
+
       // Validate bar exists and is active
       const bar = await BarService.findById(bar_id);
       if (!bar) {
@@ -24,7 +25,7 @@ export class QueueController {
         });
         return;
       }
-      
+
       if (!bar.isActive) {
         res.status(400).json({
           success: false,
@@ -32,7 +33,7 @@ export class QueueController {
         });
         return;
       }
-      
+
       // Validate song exists and is available
       const song = await SongModel.findById(song_id);
       if (!song) {
@@ -42,7 +43,7 @@ export class QueueController {
         });
         return;
       }
-      
+
       if (!song.is_available) {
         res.status(400).json({
           success: false,
@@ -50,11 +51,11 @@ export class QueueController {
         });
         return;
       }
-      
+
       // Get bar settings to check limits
       const barSettings = await BarService.getSettings(bar_id);
       const maxSongsPerUser = barSettings?.max_songs_per_user || 3;
-      
+
       // Check if user can add more songs
       const canAddResult = await QueueModel.canUserAddSong(bar_id, user_id, maxSongsPerUser);
       if (!canAddResult.canAdd) {
@@ -64,7 +65,7 @@ export class QueueController {
         });
         return;
       }
-      
+
       // Check cooldown if applicable
       if (barSettings?.song_request_cooldown && barSettings.song_request_cooldown > 0) {
         const lastRequest = await QueueModel.findByBarId(
@@ -74,11 +75,11 @@ export class QueueController {
           0,
           false
         );
-        
+
         if (lastRequest.items.length > 0) {
           const lastRequestTime = new Date(lastRequest.items[0].requested_at);
           const cooldownEnd = new Date(lastRequestTime.getTime() + (barSettings.song_request_cooldown * 1000));
-          
+
           if (new Date() < cooldownEnd) {
             const remainingSeconds = Math.ceil((cooldownEnd.getTime() - Date.now()) / 1000);
             res.status(400).json({
@@ -89,7 +90,7 @@ export class QueueController {
           }
         }
       }
-      
+
       const queueData: CreateQueueData = {
         bar_id,
         song_id,
@@ -97,7 +98,7 @@ export class QueueController {
         priority_play: priority_play || false,
         points_used: points_used || 0
       };
-      
+
       const queueEntry = await QueueModel.create(queueData);
 
       // Get full queue entry with song and user details
@@ -126,7 +127,7 @@ export class QueueController {
       });
     }
   }
-  
+
   // Get queue for a bar
   static async getQueue(req: Request, res: Response): Promise<void> {
     try {
@@ -140,15 +141,15 @@ export class QueueController {
         page = 1,
         limit = 50
       } = req.query;
-      
+
       const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string),
         100 // Max limit for queue
       );
-      
+
       const filters: QueueFilters = {};
-      
+
       if (status) {
         if (typeof status === 'string' && status.includes(',')) {
           filters.status = status.split(',');
@@ -156,12 +157,12 @@ export class QueueController {
           filters.status = status as string;
         }
       }
-      
+
       if (user_id) filters.user_id = user_id as string;
       if (priority_play !== undefined) filters.priority_play = priority_play === 'true';
       if (date_from) filters.date_from = new Date(date_from as string);
       if (date_to) filters.date_to = new Date(date_to as string);
-      
+
       const result = await QueueModel.findByBarId(
         barId,
         filters,
@@ -169,7 +170,7 @@ export class QueueController {
         offset,
         true
       );
-      
+
       res.json({
         success: true,
         data: result.items,
@@ -188,14 +189,14 @@ export class QueueController {
       });
     }
   }
-  
+
   // Get currently playing song
   static async getCurrentlyPlaying(req: Request, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      
+
       const currentSong = await QueueModel.getCurrentlyPlaying(barId);
-      
+
       res.json({
         success: true,
         data: currentSong
@@ -208,14 +209,14 @@ export class QueueController {
       });
     }
   }
-  
+
   // Get next song in queue
   static async getNextInQueue(req: Request, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      
+
       const nextSong = await QueueModel.getNextInQueue(barId);
-      
+
       res.json({
         success: true,
         data: nextSong
@@ -228,13 +229,13 @@ export class QueueController {
       });
     }
   }
-  
+
   // Update queue entry (admin/bar_owner only)
   static async updateQueueEntry(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
       const updateData: UpdateQueueData = req.body;
-      
+
       // Get queue entry to check permissions
       const queueEntry = await QueueModel.findById(id);
       if (!queueEntry) {
@@ -244,15 +245,15 @@ export class QueueController {
         });
         return;
       }
-      
+
       // Check if user has permission to update this queue entry
       const userRole = req.user!.role;
       const userId = req.user!.userId;
-      
+
       if (userRole !== 'admin') {
         // Check if user is bar owner
         const bar = await BarModel.findById(queueEntry.bar_id);
-        if (!bar || bar.owner_id !== userId) {
+        if (!bar || bar.ownerId !== userId) {
           res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
@@ -260,7 +261,7 @@ export class QueueController {
           return;
         }
       }
-      
+
       const updatedEntry = await QueueModel.update(id, updateData);
 
       if (!updatedEntry) {
@@ -297,12 +298,12 @@ export class QueueController {
       });
     }
   }
-  
+
   // Remove song from queue
   static async removeFromQueue(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      
+
       // Get queue entry to check permissions
       const queueEntry = await QueueModel.findById(id);
       if (!queueEntry) {
@@ -312,11 +313,11 @@ export class QueueController {
         });
         return;
       }
-      
+
       // Check permissions
       const userRole = req.user!.role;
       const userId = req.user!.userId;
-      
+
       if (userRole !== 'admin') {
         // Users can remove their own songs if they're pending
         if (queueEntry.user_id === userId && queueEntry.status === 'pending') {
@@ -324,7 +325,7 @@ export class QueueController {
         } else {
           // Check if user is bar owner
           const bar = await BarModel.findById(queueEntry.bar_id);
-          if (!bar || bar.owner_id !== userId) {
+          if (!bar || bar.ownerId !== userId) {
             res.status(403).json({
               success: false,
               message: 'Insufficient permissions'
@@ -333,7 +334,7 @@ export class QueueController {
           }
         }
       }
-      
+
       const deleted = await QueueModel.delete(id);
 
       if (!deleted) {
@@ -364,13 +365,13 @@ export class QueueController {
       });
     }
   }
-  
+
   // Reorder queue (admin/bar_owner only)
   static async reorderQueue(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
       const { queue_ids } = req.body;
-      
+
       if (!Array.isArray(queue_ids)) {
         res.status(400).json({
           success: false,
@@ -378,15 +379,15 @@ export class QueueController {
         });
         return;
       }
-      
+
       // Check permissions
       const userRole = req.user!.role;
       const userId = req.user!.userId;
-      
+
       if (userRole !== 'admin') {
         // Check if user is bar owner
         const bar = await BarModel.findById(barId);
-        if (!bar || bar.owner_id !== userId) {
+        if (!bar || bar.ownerId !== userId) {
           res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
@@ -394,7 +395,7 @@ export class QueueController {
           return;
         }
       }
-      
+
       await QueueModel.reorderQueue(barId, queue_ids);
 
       // Emit event for real-time updates
@@ -418,21 +419,21 @@ export class QueueController {
       });
     }
   }
-  
+
   // Clear queue (admin/bar_owner only)
   static async clearQueue(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
       const { status } = req.body;
-      
+
       // Check permissions
       const userRole = req.user!.role;
       const userId = req.user!.userId;
-      
+
       if (userRole !== 'admin') {
         // Check if user is bar owner
         const bar = await BarModel.findById(barId);
-        if (!bar || bar.owner_id !== userId) {
+        if (!bar || bar.ownerId !== userId) {
           res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
@@ -440,7 +441,7 @@ export class QueueController {
           return;
         }
       }
-      
+
       const deletedCount = await QueueModel.clearQueue(barId, status);
 
       // Emit event for real-time updates
@@ -465,21 +466,21 @@ export class QueueController {
       });
     }
   }
-  
+
   // Get queue statistics
   static async getQueueStats(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
       const { date_from, date_to } = req.query;
-      
+
       // Check permissions
       const userRole = req.user!.role;
       const userId = req.user!.userId;
-      
+
       if (userRole !== 'admin') {
         // Check if user is bar owner
         const bar = await BarModel.findById(barId);
-        if (!bar || bar.owner_id !== userId) {
+        if (!bar || bar.ownerId !== userId) {
           res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
@@ -487,12 +488,12 @@ export class QueueController {
           return;
         }
       }
-      
+
       const dateFrom = date_from ? new Date(date_from as string) : undefined;
       const dateTo = date_to ? new Date(date_to as string) : undefined;
-      
+
       const stats = await QueueModel.getQueueStats(barId, dateFrom, dateTo);
-      
+
       res.json({
         success: true,
         data: stats
@@ -505,15 +506,15 @@ export class QueueController {
       });
     }
   }
-  
+
   // Get user's position in queue
   static async getUserQueuePosition(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
       const userId = req.user!.userId;
-      
+
       const position = await QueueModel.getUserQueuePosition(barId, userId);
-      
+
       res.json({
         success: true,
         data: {
@@ -529,7 +530,7 @@ export class QueueController {
       });
     }
   }
-  
+
   // Get user's queue entries
   static async getUserQueue(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -540,16 +541,16 @@ export class QueueController {
         page = 1,
         limit = 25
       } = req.query;
-      
+
       const { offset, validatedLimit } = validatePaginationParams(
         parseInt(page as string),
         parseInt(limit as string)
       );
-      
+
       const filters: QueueFilters = {
         user_id: userId
       };
-      
+
       if (status) {
         if (typeof status === 'string' && status.includes(',')) {
           filters.status = status.split(',');
@@ -557,7 +558,7 @@ export class QueueController {
           filters.status = status as string;
         }
       }
-      
+
       const result = await QueueModel.findByBarId(
         barId,
         filters,
@@ -565,7 +566,7 @@ export class QueueController {
         offset,
         true
       );
-      
+
       res.json({
         success: true,
         data: result.items,
@@ -584,20 +585,20 @@ export class QueueController {
       });
     }
   }
-  
+
   // Skip current song (admin/bar_owner only)
   static async skipCurrentSong(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      
+
       // Check permissions
       const userRole = req.user!.role;
       const userId = req.user!.userId;
-      
+
       if (userRole !== 'admin') {
         // Check if user is bar owner
         const bar = await BarModel.findById(barId);
-        if (!bar || bar.owner_id !== userId) {
+        if (!bar || bar.ownerId !== userId) {
           res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
@@ -605,10 +606,10 @@ export class QueueController {
           return;
         }
       }
-      
+
       // Get currently playing song
       const currentSong = await QueueModel.getCurrentlyPlaying(barId);
-      
+
       if (!currentSong) {
         res.status(404).json({
           success: false,
@@ -616,29 +617,29 @@ export class QueueController {
         });
         return;
       }
-      
+
       // Mark current song as skipped
       await QueueModel.update(currentSong.id, {
         status: 'skipped',
         played_at: new Date()
       });
-      
+
       // Get next song and mark as playing
       const nextSong = await QueueModel.getNextInQueue(barId);
-      
+
       if (nextSong) {
         await QueueModel.update(nextSong.id, {
           status: 'playing'
         });
       }
-      
+
       logger.info('Song skipped via API', {
         barId,
         skippedSongId: currentSong.id,
         nextSongId: nextSong?.id,
         userId
       });
-      
+
       res.json({
         success: true,
         message: 'Song skipped successfully',
@@ -655,20 +656,20 @@ export class QueueController {
       });
     }
   }
-  
+
   // Play next song (admin/bar_owner only)
   static async playNextSong(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      
+
       // Check permissions
       const userRole = req.user!.role;
       const userId = req.user!.userId;
-      
+
       if (userRole !== 'admin') {
         // Check if user is bar owner
         const bar = await BarModel.findById(barId);
-        if (!bar || bar.owner_id !== userId) {
+        if (!bar || bar.ownerId !== userId) {
           res.status(403).json({
             success: false,
             message: 'Insufficient permissions'
@@ -676,7 +677,7 @@ export class QueueController {
           return;
         }
       }
-      
+
       // Mark current song as played (if any)
       const currentSong = await QueueModel.getCurrentlyPlaying(barId);
       if (currentSong) {
@@ -685,10 +686,10 @@ export class QueueController {
           played_at: new Date()
         });
       }
-      
+
       // Get next song and mark as playing
       const nextSong = await QueueModel.getNextInQueue(barId);
-      
+
       if (!nextSong) {
         res.json({
           success: true,
@@ -700,21 +701,21 @@ export class QueueController {
         });
         return;
       }
-      
+
       await QueueModel.update(nextSong.id, {
         status: 'playing'
       });
-      
+
       // Get updated song with details
       const updatedSong = await QueueModel.findById(nextSong.id, true);
-      
+
       logger.info('Next song started via API', {
         barId,
         previousSongId: currentSong?.id,
         currentSongId: nextSong.id,
         userId
       });
-      
+
       res.json({
         success: true,
         message: 'Next song started',

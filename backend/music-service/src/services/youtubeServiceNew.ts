@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import { redisHelpers } from '../config/redis';
 import { youtubeConfig } from '../config';
-import logger from '../../../shared/utils/logger';
+import logger from '@shared/utils/logger';
 
 // YouTube API response interfaces
 interface YouTubeVideo {

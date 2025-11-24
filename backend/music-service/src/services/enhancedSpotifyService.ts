@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
 import { redisHelpers } from '../config/redis';
-import logger from '../../../shared/utils/logger';
-import { getSecretsManager } from '../../../shared/utils/secrets';
+import logger from '@shared/utils/logger';
+import { getSecretsManager } from '@shared/utils/secrets';
 
 // Interfaces para tipos de datos de Spotify
 interface SpotifyTrack {

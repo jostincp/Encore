@@ -4,18 +4,19 @@ import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import config from './config';
-import logger from '../../../shared/utils/logger';
-import { initializeDatabase, closeDatabase, runMigrations } from '../../../shared/database';
-import { initRedis, getRedisClient, closeRedis } from '../../../shared/utils/redis';
-import { errorHandler, notFoundHandler } from '../../../shared/utils/errors';
+import logger from '@shared/utils/logger';
+import { initializeDatabase, closeDatabase, runMigrations } from '@shared/database';
+import { initRedis, getRedisClient, closeRedis } from '@shared/utils/redis';
+import { errorHandler, notFoundHandler } from '@shared/utils/errors';
 import {
   requestLoggingMiddleware,
   healthCheckMiddleware,
   corsMiddleware,
   basicRateLimit,
   securityMiddleware
-} from '../../../shared/middleware';
+} from '@shared/middleware';
 import routes from './routes';
+import youtubeSimpleRoutes from './routes/youtubeSimple';
 import { setupSwagger } from './swagger/swagger.config';
 import { 
   performanceMonitoring, 
@@ -79,17 +80,43 @@ process.on('unhandledRejection', (reason, promise) => {
 // Start server
 const startServer = async () => {
   try {
-    // Initialize database
-  await initializeDatabase();
-    logger.info('Database initialized successfully');
-    
-    // Run migrations
-    await runMigrations();
-    logger.info('Database migrations completed');
-    
-    // Initialize Redis
-    await initRedis();
-    logger.info('Redis connected successfully');
+    const skipInfra = process.env.SKIP_INFRA === '1';
+    if (!skipInfra) {
+      await initializeDatabase();
+      logger.info('Database initialized successfully');
+      await runMigrations();
+      logger.info('Database migrations completed');
+      await initRedis();
+      logger.info('Redis connected successfully');
+    } else {
+      logger.warn('Skipping database and Redis initialization (SKIP_INFRA=1)');
+      app.use('/api/music/youtube', youtubeSimpleRoutes);
+      const devQueue: Record<string, any[]> = {};
+      app.post('/api/music/queue/:barId/add', (req, res) => {
+        const { barId } = req.params as { barId: string };
+        const { song_id, priority_play = false, points_used = 0 } = req.body || {};
+        if (!song_id || typeof song_id !== 'string') {
+          return res.status(400).json({ success: false, message: 'song_id requerido' });
+        }
+        if (!devQueue[barId]) devQueue[barId] = [];
+        const entry = {
+          id: `${Date.now()}`,
+          bar_id: barId,
+          song_id,
+          priority_play: !!priority_play,
+          points_used: Number(points_used) || 0,
+          status: 'pending',
+          requested_at: new Date().toISOString()
+        };
+        devQueue[barId].push(entry);
+        return res.status(201).json({ success: true, data: entry });
+      });
+      app.get('/api/music/queue/bars/:barId', (req, res) => {
+        const { barId } = req.params as { barId: string };
+        const items = devQueue[barId] || [];
+        return res.json({ success: true, data: items, total: items.length });
+      });
+    }
     
     // Start HTTP server
     app.listen(PORT, () => {

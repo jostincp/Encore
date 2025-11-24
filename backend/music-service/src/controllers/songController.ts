@@ -3,18 +3,24 @@ import { SongModel, CreateSongData, UpdateSongData, SongSearchFilters } from '..
 import { YouTubeService } from '../services/youtubeService';
 import { SpotifyService } from '../services/spotifyService';
 import { enhancedYouTubeService } from '../services/enhancedYouTubeService';
-import { asyncHandler } from '../../../shared/utils/errors';
-import logger from '../../../shared/utils/logger';
-import { validatePaginationParams } from '../../../shared/utils/validation';
-import { AuthenticatedRequest } from '../../../shared/types/auth';
-import { 
-  validateId, 
-  validateText, 
-  validateSongUrl, 
-  sanitizeInput 
-} from '../../../shared/security';
+import { asyncHandler } from '@shared/utils/errors';
+import logger from '@shared/utils/logger';
+import { validatePaginationParams } from '@shared/utils/validation';
+import { AuthenticatedRequest } from '@shared/types/auth';
 
 export class SongController {
+  private static sanitizeString(value: string): string {
+    return value.trim().replace(/[<>]/g, '');
+  }
+
+  private static isValidText(value: string, maxLength: number = 500): boolean {
+    const v = value.trim();
+    return v.length > 0 && v.length <= maxLength;
+  }
+
+  private static isValidId(value: string): boolean {
+    return /^[a-fA-F0-9]{24}$|^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
   // Create a new song
   static async createSong(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -22,8 +28,8 @@ export class SongController {
       
       // Sanitizar y validar datos de entrada
       if (songData.title) {
-        songData.title = sanitizeInput(songData.title);
-        if (!validateText(songData.title)) {
+        songData.title = SongController.sanitizeString(songData.title);
+        if (!SongController.isValidText(songData.title)) {
           res.status(400).json({
             success: false,
             message: 'Título de canción inválido'
@@ -33,8 +39,8 @@ export class SongController {
       }
       
       if (songData.artist) {
-        songData.artist = sanitizeInput(songData.artist);
-        if (!validateText(songData.artist)) {
+        songData.artist = SongController.sanitizeString(songData.artist);
+        if (!SongController.isValidText(songData.artist)) {
           res.status(400).json({
             success: false,
             message: 'Nombre de artista inválido'
@@ -44,19 +50,12 @@ export class SongController {
       }
       
       if (songData.genre) {
-        songData.genre = sanitizeInput(songData.genre);
+        songData.genre = SongController.sanitizeString(songData.genre);
       }
       
       // Validate external IDs if provided
       if (songData.youtube_id) {
-        songData.youtube_id = sanitizeInput(songData.youtube_id);
-        if (!validateSongUrl(songData.youtube_id)) {
-          res.status(400).json({
-            success: false,
-            message: 'ID de YouTube inválido'
-          });
-          return;
-        }
+        songData.youtube_id = SongController.sanitizeString(songData.youtube_id);
         
         const isValidYouTube = await YouTubeService.validateVideoId(songData.youtube_id);
         if (!isValidYouTube) {
@@ -69,14 +68,7 @@ export class SongController {
       }
       
       if (songData.spotify_id) {
-        songData.spotify_id = sanitizeInput(songData.spotify_id);
-        if (!validateSongUrl(songData.spotify_id)) {
-          res.status(400).json({
-            success: false,
-            message: 'ID de Spotify inválido'
-          });
-          return;
-        }
+        songData.spotify_id = SongController.sanitizeString(songData.spotify_id);
         
         const isValidSpotify = await SpotifyService.validateTrackId(songData.spotify_id);
         if (!isValidSpotify) {
@@ -116,8 +108,8 @@ export class SongController {
       const { id } = req.params;
       
       // Validar y sanitizar ID
-      const sanitizedId = sanitizeInput(id);
-      if (!validateId(sanitizedId)) {
+      const sanitizedId = SongController.sanitizeString(id);
+      if (!SongController.isValidId(sanitizedId)) {
         res.status(400).json({
           success: false,
           message: 'ID de canción inválido'
@@ -174,8 +166,8 @@ export class SongController {
       
       // Sanitizar y validar parámetros de búsqueda
       if (query) {
-        const sanitizedQuery = sanitizeInput(query as string);
-        if (!validateText(sanitizedQuery)) {
+        const sanitizedQuery = SongController.sanitizeString(query as string);
+        if (!SongController.isValidText(sanitizedQuery)) {
           res.status(400).json({
             success: false,
             message: 'Término de búsqueda inválido'
@@ -186,7 +178,7 @@ export class SongController {
       }
       
       if (source) {
-        const sanitizedSource = sanitizeInput(source as string);
+        const sanitizedSource = SongController.sanitizeString(source as string);
         if (!['youtube', 'spotify', 'both'].includes(sanitizedSource)) {
           res.status(400).json({
             success: false,
@@ -198,8 +190,8 @@ export class SongController {
       }
       
       if (genre) {
-        const sanitizedGenre = sanitizeInput(genre as string);
-        if (validateText(sanitizedGenre)) {
+        const sanitizedGenre = SongController.sanitizeString(genre as string);
+        if (SongController.isValidText(sanitizedGenre)) {
           filters.genre = sanitizedGenre;
         }
       }
