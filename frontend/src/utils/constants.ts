@@ -20,9 +20,9 @@ const normalizeBaseUrl = (urlEnv?: string): string => {
 };
 
 export const API_URLS = {
-  websocket: process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3003', // Queue Service
-  queueService: process.env.NEXT_PUBLIC_QUEUE_SERVICE_URL || 'http://localhost:3003', // Queue Service
-  musicBase: `${process.env.NEXT_PUBLIC_MUSIC_SERVICE_URL || 'http://localhost:3002'}/api/music`, // Music Service
+  websocket: process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'http://localhost:3005', // Queue Service
+  queueService: process.env.NEXT_PUBLIC_QUEUE_SERVICE_URL || 'http://localhost:3005', // Queue Service
+  musicBase: `${process.env.NEXT_PUBLIC_MUSIC_SERVICE_URL || 'http://localhost:3003'}/api/music`, // Music Service
   authBase: `${process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:3001'}/api/auth`, // Auth Service
 };
 

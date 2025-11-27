@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Layout, PageContainer } from '@/components/ui/layout';
 import { useAppStore } from '@/stores/useAppStore';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 import { formatPoints } from '@/utils/format';
 
@@ -16,22 +16,41 @@ export default function ClientHub() {
   const {
     user,
     tableNumber,
+    barId,
     isConnected,
     queue,
     cart,
     disconnectWebSocket,
-    setUser
+    setUser,
+    connectToBar
   } = useAppStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { success: showSuccessToast } = useToast();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
-    // Verificar si el usuario está autenticado
-    if (!user || !tableNumber) {
-      router.push('/qr');
-      return;
-    }
+    const initializeSession = async () => {
+      const barIdParam = searchParams.get('b');
+      const tableParam = searchParams.get('t');
+
+      if (barIdParam && tableParam) {
+        // Si hay parámetros en la URL, intentamos conectar si no estamos conectados al mismo bar/mesa
+        if (barId !== barIdParam || tableNumber !== parseInt(tableParam)) {
+          try {
+            await connectToBar(barIdParam, parseInt(tableParam));
+          } catch (error) {
+            console.error('Error connecting via URL:', error);
+            router.push('/qr');
+          }
+        }
+      } else if (!user || !tableNumber) {
+        // Si no hay parámetros y no hay sesión, redirigir
+        router.push('/qr');
+      }
+    };
+
+    initializeSession();
 
     // Actualizar hora cada minuto
     const timer = setInterval(() => {
@@ -39,7 +58,7 @@ export default function ClientHub() {
     }, 60000);
 
     return () => clearInterval(timer);
-  }, [user, tableNumber, router]);
+  }, [user, tableNumber, barId, router, searchParams, connectToBar]);
 
   const handleLogout = () => {
     disconnectWebSocket();
@@ -52,8 +71,18 @@ export default function ClientHub() {
     router.push(`/client/${section}`);
   };
 
+  // Si no hay usuario/mesa y NO estamos intentando conectar vía URL, no renderizar nada (o redirigir)
+  const barIdParam = searchParams.get('b');
   if (!user || !tableNumber) {
-    return null; // Evitar flash mientras redirige
+    if (barIdParam) {
+      // Mostrar loading mientras conecta
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-background">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      );
+    }
+    return null;
   }
 
   const sections = [
@@ -122,7 +151,7 @@ export default function ClientHub() {
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
             {/* Connection Status */}
             <div className="flex items-center gap-1">
@@ -132,7 +161,7 @@ export default function ClientHub() {
                 <WifiOff className="h-4 w-4 text-red-500" />
               )}
             </div>
-            
+
             {/* Logout Button */}
             <Button
               variant="ghost"
@@ -186,7 +215,7 @@ export default function ClientHub() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.3 + index * 0.1 }}
               >
-                <Card 
+                <Card
                   className="group hover:shadow-xl transition-all duration-300 cursor-pointer border-2 hover:border-primary/50 h-full"
                   onClick={() => navigateToSection(section.id)}
                 >
@@ -207,8 +236,8 @@ export default function ClientHub() {
                     <p className="text-muted-foreground mb-4">
                       {section.description}
                     </p>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       className="w-full group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary"
                     >
                       {section.action}
