@@ -90,6 +90,10 @@ export default function ClientMusicPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [barInfo, setBarInfo] = useState<any>(null);
   const [selectedGenre, setSelectedGenre] = useState('all');
+  const [queueItems, setQueueItems] = useState<any[]>([]);
+  const [queueDetails, setQueueDetails] = useState<Record<string, any>>({});
+  const [nowPlaying, setNowPlaying] = useState<any | null>(null);
+  const [points, setPoints] = useState<number>(100);
   
   const debouncedSearch = useDebounce(searchTerm, 300);
 
@@ -124,6 +128,66 @@ export default function ClientMusicPage() {
       })();
     }
   }, [barId, tableNumber]);
+
+  const fetchQueue = async () => {
+    const currentBarId = barId || 'test-bar';
+    try {
+      const res = await fetch(`http://localhost:3002/api/queue/bars/${currentBarId}`);
+      const json = await res.json();
+      const items = json?.data || [];
+      setQueueItems(items);
+      const missing = items.map((it: any) => it.song_id).filter((id: string) => !queueDetails[id]);
+      if (missing.length) {
+        const fetched = await Promise.all(
+          missing.map(async (id: string) => {
+            try {
+              const r = await fetch(`http://localhost:3002/api/youtube/video/${encodeURIComponent(id)}`);
+              const j = await r.json();
+              const d = j?.data || {};
+              const thumb = d?.thumbnail || `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+              return d?.id ? { ...d, thumbnail: thumb } : { id, title: id, artist: '', thumbnail: thumb };
+            } catch {
+              return { id, title: id, artist: '', thumbnail: `https://img.youtube.com/vi/${id}/hqdefault.jpg` };
+            }
+          })
+        );
+        setQueueDetails((prev) => {
+          const next = { ...prev } as Record<string, any>;
+          for (const d of fetched) next[d.id] = d;
+          return next;
+        });
+      }
+    } catch (e) {
+    }
+  };
+
+  useEffect(() => {
+    fetchQueue();
+    const t = setInterval(fetchQueue, 5000);
+    return () => clearInterval(t);
+  }, [barId]);
+
+  // SSE for realtime updates
+  useEffect(() => {
+    const currentBarId = barId || 'test-bar';
+    const es = new EventSource(`http://localhost:3002/events/${currentBarId}`);
+    es.addEventListener('queueUpdate', (e: any) => {
+      try {
+        const data = JSON.parse(e.data);
+        setQueueItems(data.data || []);
+      } catch {}
+    });
+    es.addEventListener('nowPlaying', (e: any) => {
+      try { setNowPlaying(JSON.parse(e.data)); } catch {}
+    });
+    es.addEventListener('pointsUpdate', (e: any) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (typeof d.points === 'number') setPoints(d.points);
+      } catch {}
+    });
+    return () => es.close();
+  }, [barId]);
 
   useEffect(() => {
     // TODO: Implementar verificación de usuario
@@ -183,7 +247,7 @@ export default function ClientMusicPage() {
 
   const handleSongRequest = async (song: Song, isPriority = false) => {
     // Obtener barId y tableNumber desde los parámetros URL o Zustand store
-    const currentBarId = barId || 'demo-bar-123'; // Usar valor por defecto para debugging
+    const currentBarId = barId || 'test-bar';
     const currentTable = tableNumber?.toString() || '1';
 
     if (!currentBarId) {
@@ -192,7 +256,7 @@ export default function ClientMusicPage() {
     }
 
     const cost = isPriority ? 100 : 50;
-    const userPoints = 100; // TODO: Obtener puntos reales del usuario
+    const userPoints = points;
 
     // TODO: Implementar verificación de puntos del usuario
     // Por ahora, asumimos que tiene puntos suficientes
@@ -202,10 +266,14 @@ export default function ClientMusicPage() {
     }
 
     try {
-      const url = `http://localhost:3002/guest/${currentBarId}/request?videoId=${encodeURIComponent(song.id)}`;
+      const url = `http://localhost:3002/guest/${currentBarId}/request?videoId=${encodeURIComponent(song.id)}&priority_play=${isPriority ? 'true' : 'false'}&cost=${cost}&table=${encodeURIComponent(currentTable)}`;
       const res = await fetch(url);
       if (res.status === 409) {
         error('🎵 Esta canción ya está en la cola');
+        return;
+      }
+      if (res.status === 402) {
+        error('💰 Saldo insuficiente. Recarga tus puntos para continuar');
         return;
       }
       if (res.ok) {
@@ -217,10 +285,11 @@ export default function ClientMusicPage() {
 
         // Actualizar puntos del usuario (restar los usados)
         // Esto debería venir del backend, pero por ahora lo simulamos
-        // user.points -= cost;
+        setPoints(p => Math.max(0, p - cost));
 
         setSelectedSong(null);
         setShowPriorityDialog(false);
+        fetchQueue();
       } else {
         error('Error al añadir canción a la cola');
       }
@@ -539,6 +608,61 @@ export default function ClientMusicPage() {
             </div>
           </TabsContent>
         </Tabs>
+
+        <div className="mt-8">
+          <h2 className="text-xl font-semibold mb-3 text-card-foreground">En cola</h2>
+          {nowPlaying?.details && (
+            <div className="mb-4">
+              <h3 className="text-sm text-muted-foreground">Reproduciendo ahora</h3>
+              <div className="flex items-center gap-3 mt-2">
+                <img
+                  src={nowPlaying.details.thumbnail || '/placeholder-music.jpg'}
+                  alt={nowPlaying.details.title}
+                  width={56}
+                  height={42}
+                  className="w-14 h-10 rounded-md object-cover"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate text-card-foreground">{nowPlaying.details.title}</div>
+                  <div className="text-xs text-muted-foreground truncate">{nowPlaying.details.artist || nowPlaying.details.channelTitle}</div>
+                </div>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  await fetch(`http://localhost:3002/api/player/${barId || 'test-bar'}/skip`, { method: 'POST' });
+                }}>Saltar</Button>
+              </div>
+            </div>
+          )}
+          {queueItems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No hay canciones en cola</p>
+          ) : (
+            <div className="space-y-3">
+              {queueItems.map((it: any, idx: number) => {
+                const d = queueDetails[it.song_id];
+                return (
+                  <Card key={it.id} className="bg-card border-border">
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={d?.thumbnail || `https://img.youtube.com/vi/${it.song_id}/hqdefault.jpg`}
+                          alt={d?.title || it.song_id}
+                          width={56}
+                          height={42}
+                          className="w-14 h-10 rounded-md object-cover"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold truncate text-card-foreground">{d?.title || it.song_id}</div>
+                          <div className="text-xs text-muted-foreground truncate">{d?.artist || d?.channelTitle || ''}</div>
+                        </div>
+                        <Badge variant="outline" className="text-xs bg-secondary text-secondary-foreground border-border">{it.status}</Badge>
+                        <span className="text-xs text-muted-foreground">{new Date(it.requested_at).toLocaleString()}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Priority Play Dialog */}
         <Dialog open={showPriorityDialog} onOpenChange={setShowPriorityDialog}>

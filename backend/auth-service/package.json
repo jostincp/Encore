@@ -5,7 +5,7 @@
   "main": "dist/auth-service/src/server.js",
   "scripts": {
     "start": "node dist/auth-service/src/server.js",
-    "dev": "nodemon src/server.ts",
+    "dev": "nodemon --exec ts-node -r tsconfig-paths/register src/server.ts",
     "build": "tsc",
     "build:watch": "tsc --watch",
     "clean": "rimraf dist",

@@ -1,6 +1,6 @@
-import { query, dbOperations, transaction } from '../utils/database';
+import { query, dbOperations, transaction } from '../../auth-service/src/utils/database';
 import { Bar, BarSettings } from '../../auth-service/src/types/models';
-import { validateBarCreation } from '../utils/validation';
+import { PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 
 // Re-export Bar interface for external use
@@ -56,17 +56,9 @@ export class BarModel {
    * Create a new bar with default settings
    */
   static async create(barData: CreateBarData): Promise<Bar> {
-    // Validate bar data
-    const validation = validateBarCreation({
-      name: barData.name,
-      address: barData.address,
-      city: barData.city,
-      country: barData.country,
-      ownerId: barData.ownerId
-    });
-
-    if (!validation.isValid) {
-      throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
+    // Minimal validation
+    if (!barData.name || !barData.address || !barData.city || !barData.country || !barData.ownerId) {
+      throw new Error('Missing required bar fields');
     }
 
     // Verificar que el propietario exista y tenga rol BAR_OWNER o ADMIN
@@ -83,11 +75,11 @@ export class BarModel {
       throw new Error('Owner must have bar_owner or admin role');
     }
 
-    return await transaction(async (client) => {
+    return await transaction(async (client: PoolClient) => {
       // Create bar
       const barId = uuidv4();
       const settingsId = uuidv4();
-      const barResult = await client.query<Bar>(
+      const barResult = await client.query(
         `INSERT INTO bars (id, name, description, address, city, country, phone, email, website_url, logo_url, cover_image_url, owner_id, timezone)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *`,
@@ -114,7 +106,7 @@ export class BarModel {
         [settingsId, barId]
       );
 
-      return barResult.rows[0];
+      return barResult.rows[0] as Bar;
     });
   }
 

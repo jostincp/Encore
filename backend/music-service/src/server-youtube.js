@@ -199,7 +199,8 @@ app.get('/api/youtube/video/:videoId', async (req, res) => {
       thumbnail: video.snippet.thumbnails?.high?.url || video.snippet.thumbnails?.medium?.url,
       channelTitle: video.snippet.channelTitle,
       publishedAt: video.snippet.publishedAt,
-      duration: video.contentDetails?.duration
+      duration: video.contentDetails?.duration,
+      durationSeconds: parseYouTubeDuration(video.contentDetails?.duration)
     };
 
     return res.json({ success: true, data: details });
@@ -211,10 +212,36 @@ app.get('/api/youtube/video/:videoId', async (req, res) => {
 
 // In-memory queue (development fallback)
 const devQueue = {};
+const devPoints = {}; // { [barId]: { [table]: number } }
+const devSSE = {}; // { [barId]: Set<res> }
+const devPlayer = {}; // { [barId]: { currentId, timer } }
+
+function ensurePoints(barId, table) {
+  if (!devPoints[barId]) devPoints[barId] = {};
+  if (!devPoints[barId][table]) devPoints[barId][table] = 100;
+}
+
+function broadcast(barId, event, data) {
+  const clients = devSSE[barId];
+  if (!clients) return;
+  const payload = `event: ${event}\n` + `data: ${JSON.stringify(data)}\n\n`;
+  for (const res of clients) {
+    try { res.write(payload); } catch {}
+  }
+}
+
+function parseYouTubeDuration(iso) {
+  try {
+    const m = iso?.match(/PT(?:(\d+)M)?(?:(\d+)S)?/);
+    const minutes = Number(m?.[1] || 0);
+    const seconds = Number(m?.[2] || 0);
+    return minutes * 60 + seconds || 180;
+  } catch { return 180; }
+}
 
 app.post('/api/queue/:barId/add', (req, res) => {
   const barId = req.params.barId;
-  const { song_id, priority_play = false, points_used = 0 } = req.body || {};
+  const { song_id, priority_play = false, points_used = 0, table = '1', cost } = req.body || {};
   if (!song_id || typeof song_id !== 'string') {
     return res.status(400).json({ success: false, message: 'song_id is required' });
   }
@@ -224,6 +251,13 @@ app.post('/api/queue/:barId/add', (req, res) => {
   if (exists) {
     return res.status(409).json({ success: false, message: 'Song already in queue' });
   }
+  // Points handling
+  ensurePoints(barId, table);
+  const toCharge = Number(cost || points_used || (priority_play ? 100 : 50));
+  if (devPoints[barId][table] < toCharge) {
+    return res.status(402).json({ success: false, message: 'Insufficient points' });
+  }
+  devPoints[barId][table] -= toCharge;
   const entry = {
     id: String(Date.now()),
     bar_id: barId,
@@ -233,7 +267,14 @@ app.post('/api/queue/:barId/add', (req, res) => {
     status: 'pending',
     requested_at: new Date().toISOString()
   };
-  devQueue[barId].push(entry);
+  if (priority_play) {
+    const idx = devQueue[barId].findIndex(e => e.status === 'pending');
+    if (idx === -1) devQueue[barId].push(entry); else devQueue[barId].splice(idx, 0, entry);
+  } else {
+    devQueue[barId].push(entry);
+  }
+  broadcast(barId, 'queueUpdate', { data: devQueue[barId] });
+  broadcast(barId, 'pointsUpdate', { table, points: devPoints[barId][table] });
   return res.status(201).json({ success: true, data: entry });
 });
 
@@ -241,6 +282,38 @@ app.get('/api/queue/bars/:barId', (req, res) => {
   const barId = req.params.barId;
   const items = devQueue[barId] || [];
   return res.json({ success: true, data: items, total: items.length });
+});
+
+// SSE events per bar
+app.get('/events/:barId', (req, res) => {
+  const barId = req.params.barId;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  if (!devSSE[barId]) devSSE[barId] = new Set();
+  devSSE[barId].add(res);
+  req.on('close', () => { try { devSSE[barId].delete(res); } catch {} });
+  broadcast(barId, 'queueUpdate', { data: devQueue[barId] || [] });
+});
+
+// Points endpoints
+app.get('/api/points/:barId/:table', (req, res) => {
+  const { barId, table } = req.params;
+  ensurePoints(barId, table);
+  return res.json({ success: true, data: { points: devPoints[barId][table] } });
+});
+
+// Player controls (guest)
+app.post('/api/player/:barId/skip', async (req, res) => {
+  const { barId } = req.params;
+  const q = devQueue[barId] || [];
+  const playing = q.find(e => e.status === 'playing');
+  if (!playing) return res.status(400).json({ success: false, message: 'No song playing' });
+  playing.status = 'completed';
+  broadcast(barId, 'songCompleted', { entry: playing });
+  broadcast(barId, 'queueUpdate', { data: devQueue[barId] });
+  await (async () => { const next = q.find(e => e.status === 'pending'); if (next) next.status = 'pending'; })();
+  return res.json({ success: true });
 });
 
 // Guest testing endpoints
@@ -321,6 +394,7 @@ app.get('/guest/:barId/find-and-request', async (req, res) => {
       requested_at: new Date().toISOString()
     };
     devQueue[barId].push(entry);
+    broadcast(barId, 'queueUpdate', { data: devQueue[barId] });
     return res.status(201).json({ success: true, data: { queued: entry, selected: first, query: q } });
   } catch (e) {
     return res.status(500).json({ success: false, message: 'Failed to find and request' });
