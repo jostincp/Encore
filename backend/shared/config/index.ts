@@ -4,8 +4,9 @@ import * as fs from 'fs';
 import { getSecretsManager } from '../utils/secrets';
 
 // Cargar variables de entorno, intentando primero en backend/.env y luego en repo root/.env
-const backendEnvPath = path.resolve(__dirname, '../../../.env');
-const repoRootEnvPath = path.resolve(__dirname, '../../../../.env');
+const backendEnvPath = path.resolve(__dirname, '../../.env');
+const repoRootEnvPath = path.resolve(__dirname, '../../../.env');
+console.log('Loading .env from:', backendEnvPath, 'Exists:', fs.existsSync(backendEnvPath));
 const envPathToUse = fs.existsSync(backendEnvPath) ? backendEnvPath : repoRootEnvPath;
 dotenv.config({ path: envPathToUse });
 

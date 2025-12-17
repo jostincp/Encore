@@ -56,8 +56,6 @@ class StripeService {
    */
   private async initializeStripe(): Promise<void> {
     try {
-      const secretsManager = getSecretsManager();
-
       // Get Stripe secrets from HashiCorp Vault
       try {
         const stripeSecrets = await vaultService.getSecret('encore/stripe');

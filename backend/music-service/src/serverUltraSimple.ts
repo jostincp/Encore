@@ -9,7 +9,7 @@ import axios from 'axios';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.MUSIC_SERVICE_PORT || process.env.PORT || 3002;
 
 // Configuración YouTube
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
@@ -73,10 +73,10 @@ app.get('/api/youtube/search', async (req, res) => {
       source: 'youtube'
     }));
 
-    log('✅ YouTube search completed', { 
-      query: q, 
+    log('✅ YouTube search completed', {
+      query: q,
       results: videos.length,
-      totalResults: response.data.pageInfo?.totalResults 
+      totalResults: response.data.pageInfo?.totalResults
     });
 
     return res.json({
@@ -96,7 +96,7 @@ app.get('/api/youtube/search', async (req, res) => {
 
   } catch (error: any) {
     log('❌ YouTube search error:', error);
-    
+
     if (error.response?.status === 403) {
       return res.status(403).json({
         success: false,
@@ -166,7 +166,7 @@ app.get('/api/youtube/video/:videoId', async (req, res) => {
 
   } catch (error: any) {
     log('❌ YouTube video details error:', error);
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to get video details',
@@ -213,9 +213,9 @@ app.get('/api/youtube/trending', async (req, res) => {
       source: 'youtube'
     }));
 
-    log('✅ YouTube trending music retrieved', { 
-      regionCode, 
-      results: videos.length 
+    log('✅ YouTube trending music retrieved', {
+      regionCode,
+      results: videos.length
     });
 
     return res.json({
@@ -229,7 +229,7 @@ app.get('/api/youtube/trending', async (req, res) => {
 
   } catch (error: any) {
     log('❌ YouTube trending error:', error);
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to get trending music',
@@ -295,7 +295,7 @@ app.get('/', (req, res) => {
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   log('Express error:', err);
-  
+
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal server error',
@@ -326,4 +326,4 @@ app.listen(PORT, () => {
   log(`🔍 Search: http://localhost:${PORT}/api/youtube/search?q=queen`);
 });
 
-export {};
+export { };

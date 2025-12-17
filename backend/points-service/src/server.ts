@@ -10,10 +10,10 @@ import { config } from '../../shared/config';
 import logger from '../../shared/utils/logger';
 import { initializeDatabase } from '../../shared/database';
 import { initRedis, getRedisClient } from '../../shared/utils/redis';
-import { 
-  securityMiddleware, 
-  corsOptions, 
-  helmetOptions, 
+import {
+  securityMiddleware,
+  corsOptions,
+  helmetOptions,
   generalRateLimit,
   authRateLimit,
   externalApiRateLimit
@@ -22,6 +22,7 @@ import routes from './routes';
 
 const app: express.Application = express();
 const PORT = config.services.points.port;
+
 
 // Security middleware con configuraciones centralizadas
 app.use(helmet(helmetOptions));
@@ -45,18 +46,20 @@ app.use(morgan('combined', {
 }));
 
 // Rate limiting específico para puntos
-app.use('/api/points/earn', authRateLimit);
-app.use('/api/points/redeem', authRateLimit);
-app.use('/api/rewards', generalRateLimit);
+app.use('/api/points/earn', authRateLimit as any);
+app.use('/api/points/redeem', authRateLimit as any);
+app.use('/api/rewards', generalRateLimit as any);
 
 // Rate limiting general para API
-app.use('/api', generalRateLimit);
+app.use('/api', generalRateLimit as any);
 
 // Middleware de seguridad centralizado
 app.use(securityMiddleware);
 
 // Mount API routes
 app.use('/api', routes);
+
+
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -65,10 +68,10 @@ app.get('/health', async (req, res) => {
     const dbStatus = await checkDatabaseHealth();
     // Check Redis connection
     const redisStatus = await checkRedisHealth();
-    
+
     const status = dbStatus && redisStatus ? 'healthy' : 'unhealthy';
     const statusCode = status === 'healthy' ? 200 : 503;
-    
+
     res.status(statusCode).json({
       status,
       service: 'points-service',
@@ -110,7 +113,7 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
 
   // Don't leak error details in production
   const isDevelopment = process.env.NODE_ENV === 'development';
-  
+
   res.status(error.status || 500).json({
     error: 'Internal Server Error',
     message: isDevelopment ? error.message : 'Something went wrong',
@@ -153,12 +156,12 @@ process.on('SIGINT', gracefulShutdown);
 
 function gracefulShutdown(signal: string) {
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
-  
+
   const shutdownTimeout = setTimeout(() => {
     logger.error('Graceful shutdown timeout. Forcing exit.');
     process.exit(1);
   }, parseInt(process.env.GRACEFUL_SHUTDOWN_TIMEOUT || '30000'));
-  
+
   // Close server and cleanup resources
   Promise.all([
     // Add cleanup logic here if needed
@@ -177,13 +180,13 @@ function gracefulShutdown(signal: string) {
 async function startServer() {
   try {
     // Initialize database connection
-  await initializeDatabase();
-  logger.info('Database connected successfully');
+    await initializeDatabase();
+    logger.info('Database connected successfully');
 
-  // Initialize Redis connection
-  await initRedis();
-  logger.info('Redis connected successfully');
-    
+    // Initialize Redis connection
+    await initRedis();
+    logger.info('Redis connected successfully');
+
     // Start HTTP server
     app.listen(PORT, () => {
       logger.info(`Points service started on port ${PORT}`);
@@ -211,5 +214,6 @@ process.on('unhandledRejection', (reason, promise) => {
 if (require.main === module) {
   startServer();
 }
+
 
 export default app;

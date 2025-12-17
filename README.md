@@ -106,7 +106,7 @@ cp backend/music-service/.env.example backend/music-service/.env
 **Variables clave para Music Service:**
 ```bash
 # YouTube API (requerido)
-YOUTUBE_API_KEY=AIzaSyDmB98_1mo0doDBWwETyd-4iOacHNu3avc
+YOUTUBE_API_KEY=api_key_youtbe
 
 # Base de datos
 DB_HOST=localhost

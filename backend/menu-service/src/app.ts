@@ -83,7 +83,7 @@ app.use(compression({
     return compression.filter(req, res);
   },
   threshold: 1024 // Only compress responses larger than 1KB
-}));
+}) as any);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -102,7 +102,7 @@ const limiter = rateLimit({
   }
 });
 
-app.use(limiter);
+app.use(limiter as any);
 
 // Strict rate limiting for authentication endpoints
 const authLimiter = rateLimit({
@@ -118,28 +118,28 @@ const authLimiter = rateLimit({
 // Apply auth rate limiting to sensitive endpoints
 app.use('/api/bars/:barId/menu', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return authLimiter(req, res, next);
+    return (authLimiter as any)(req, res, next);
   }
   return next();
 });
 
 app.use('/api/bars/:barId/categories', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return authLimiter(req, res, next);
+    return (authLimiter as any)(req, res, next);
   }
   return next();
 });
 
 app.use('/api/bars/:barId/specials', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return authLimiter(req, res, next);
+    return (authLimiter as any)(req, res, next);
   }
   return next();
 });
 
 app.use('/api/specials/:specialId', (req, res, next) => {
   if (['PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return authLimiter(req, res, next);
+    return (authLimiter as any)(req, res, next);
   }
   return next();
 });

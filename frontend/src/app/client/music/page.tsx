@@ -5,9 +5,9 @@ import MusicPage from '@/components/MusicPage';
 import { useQRConnection } from '@/hooks/useQRConnection';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { 
-  Loader2, AlertCircle, Link, Unlink, ArrowLeft, Music2, Search, 
-  TrendingUp, Clock, Shuffle, Play, Zap, Star 
+import {
+  Loader2, AlertCircle, Link, Unlink, ArrowLeft, Music2, Search,
+  TrendingUp, Clock, Shuffle, Play, Zap, Star
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,6 +24,8 @@ import { formatDuration, formatPoints } from '@/utils/format';
 import { Song } from '@/types';
 import axios from 'axios';
 import Image from 'next/image';
+import { API_URLS } from '@/utils/constants';
+import { wsManager } from '@/utils/websocket';
 
 // Mock data para el catálogo musical
 const mockSongs: Song[] = [
@@ -75,11 +77,15 @@ const mockSongs: Song[] = [
 ];
 
 export default function ClientMusicPage() {
+  const { isConnected, disconnect, barId: storeBarId, tableNumber: storeTableNumber } = useQRConnection();
+
   const searchParams = useSearchParams();
-  const barId = searchParams?.get('barId');
-  const tableNumber = searchParams?.get('table');
-  
-  const { isConnected, disconnect } = useQRConnection();
+  const paramBarId = searchParams?.get('barId');
+  const paramTableNumber = searchParams?.get('table');
+
+  const barId = storeBarId || paramBarId;
+  const tableNumber = storeTableNumber || paramTableNumber;
+
   const router = useRouter();
   const { success, error } = useToast();
   const [songs, setSongs] = useState<Song[]>([]);
@@ -94,7 +100,7 @@ export default function ClientMusicPage() {
   const [queueDetails, setQueueDetails] = useState<Record<string, any>>({});
   const [nowPlaying, setNowPlaying] = useState<any | null>(null);
   const [points, setPoints] = useState<number>(100);
-  
+
   const debouncedSearch = useDebounce(searchTerm, 300);
 
   // Obtener información del bar para personalizar experiencia
@@ -132,16 +138,20 @@ export default function ClientMusicPage() {
   const fetchQueue = async () => {
     const currentBarId = barId || 'test-bar';
     try {
-      const res = await fetch(`http://localhost:3002/api/queue/bars/${currentBarId}`);
+      // Usar music-service (3003) para obtener la cola real
+      const res = await fetch(`${API_URLS.musicBase}/queue/${currentBarId}`);
       const json = await res.json();
       const items = json?.data || [];
       setQueueItems(items);
+
+      // Fetch details for missing items
       const missing = items.map((it: any) => it.song_id).filter((id: string) => !queueDetails[id]);
       if (missing.length) {
         const fetched = await Promise.all(
           missing.map(async (id: string) => {
             try {
-              const r = await fetch(`http://localhost:3002/api/youtube/video/${encodeURIComponent(id)}`);
+              // Usar music-service para detalles de video
+              const r = await fetch(`${API_URLS.musicBase}/youtube/video/${encodeURIComponent(id)}`);
               const j = await r.json();
               const d = j?.data || {};
               const thumb = d?.thumbnail || `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
@@ -158,36 +168,48 @@ export default function ClientMusicPage() {
         });
       }
     } catch (e) {
+      console.error('Error fetching queue:', e);
     }
   };
 
   useEffect(() => {
     fetchQueue();
-    const t = setInterval(fetchQueue, 5000);
-    return () => clearInterval(t);
+    // Polling como fallback
+    const t = setInterval(fetchQueue, 10000);
+
+    // Escuchar eventos de socket desde queue-service (3005)
+    const handleQueueUpdate = () => {
+      console.log('Socket queue update received, fetching queue...');
+      fetchQueue();
+    };
+
+    const handleNowPlaying = (data: any) => {
+      try { setNowPlaying(data); } catch { }
+    };
+
+    const handlePointsUpdate = (data: any) => {
+      try {
+        if (typeof data.points === 'number') setPoints(data.points);
+      } catch { }
+    };
+
+    wsManager.on('queue-updated', handleQueueUpdate);
+    wsManager.on('song-added', handleQueueUpdate);
+    wsManager.on('queueUpdate', handleQueueUpdate); // Legacy event name support
+    wsManager.on('nowPlaying', handleNowPlaying);
+    wsManager.on('pointsUpdate', handlePointsUpdate);
+
+    return () => {
+      clearInterval(t);
+      wsManager.off('queue-updated', handleQueueUpdate);
+      wsManager.off('song-added', handleQueueUpdate);
+      wsManager.off('queueUpdate', handleQueueUpdate);
+      wsManager.off('nowPlaying', handleNowPlaying);
+      wsManager.off('pointsUpdate', handlePointsUpdate);
+    };
   }, [barId]);
 
-  // SSE for realtime updates
-  useEffect(() => {
-    const currentBarId = barId || 'test-bar';
-    const es = new EventSource(`http://localhost:3002/events/${currentBarId}`);
-    es.addEventListener('queueUpdate', (e: any) => {
-      try {
-        const data = JSON.parse(e.data);
-        setQueueItems(data.data || []);
-      } catch {}
-    });
-    es.addEventListener('nowPlaying', (e: any) => {
-      try { setNowPlaying(JSON.parse(e.data)); } catch {}
-    });
-    es.addEventListener('pointsUpdate', (e: any) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (typeof d.points === 'number') setPoints(d.points);
-      } catch {}
-    });
-    return () => es.close();
-  }, [barId]);
+  // SSE eliminado en favor de Socket.IO (wsManager)
 
   useEffect(() => {
     // TODO: Implementar verificación de usuario
@@ -207,7 +229,8 @@ export default function ClientMusicPage() {
 
       setIsSearching(true);
       try {
-        const response = await axios.get('http://localhost:3002/api/youtube/search', {
+        // Usar music-service (3003) para búsqueda
+        const response = await axios.get(`${API_URLS.musicBase}/youtube/search`, {
           params: { q: debouncedSearch, maxResults: 25 },
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token') || 'demo-token'}`
@@ -219,7 +242,7 @@ export default function ClientMusicPage() {
           id: item.id,
           title: item.title,
           artist: item.artist || item.channel || 'Unknown Artist',
-          duration: item.duration || '0:00',
+          duration: item.durationSeconds || 0, // Usar durationSeconds si está disponible
           thumbnailUrl: item.thumbnail,
           genre: 'Unknown', // La API no proporciona género
           previewUrl: '', // YouTube no proporciona preview
@@ -266,8 +289,22 @@ export default function ClientMusicPage() {
     }
 
     try {
-      const url = `http://localhost:3002/guest/${currentBarId}/request?videoId=${encodeURIComponent(song.id)}&priority_play=${isPriority ? 'true' : 'false'}&cost=${cost}&table=${encodeURIComponent(currentTable)}`;
-      const res = await fetch(url);
+      // Usar music-service (3003) para añadir a la cola (DB persistence + Redis publish)
+      const res = await fetch(`${API_URLS.musicBase}/queue/${currentBarId}/add`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          bar_id: currentBarId, // Required by music-service
+          song_id: song.id,
+          priority_play: isPriority,
+          points_used: cost,
+          // requested_by: 'guest', // Handled by controller default
+          table: currentTable
+        })
+      });
+
       if (res.status === 409) {
         error('🎵 Esta canción ya está en la cola');
         return;
@@ -289,13 +326,13 @@ export default function ClientMusicPage() {
 
         setSelectedSong(null);
         setShowPriorityDialog(false);
-        fetchQueue();
+        // fetchQueue se llamará automáticamente por el evento de socket
       } else {
         error('Error al añadir canción a la cola');
       }
     } catch (error: any) {
       console.error('Error adding song to queue:', error);
-      
+
       // Manejar error 402 Payment Required
       if (error.response?.status === 402) {
         error('💰 Saldo insuficiente. Recarga tus puntos para continuar');
@@ -305,9 +342,9 @@ export default function ClientMusicPage() {
         }, 3000);
         return;
       }
-      
+
       // Manejar duplicado ya controlado arriba
-      
+
       const errorMessage = error.response?.data?.message || 'Error al añadir canción a la cola';
       error(errorMessage);
     }
@@ -340,42 +377,42 @@ export default function ClientMusicPage() {
               Volver
             </Button>
             <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2 text-card-foreground">
-              {barInfo?.logo && (
-                <img 
-                  src={barInfo.logo} 
-                  alt={barInfo.name}
-                  width={32}
-                  height={32}
-                  className="rounded-md"
-                />
-              )}
-              <Music2 className="h-6 w-6 text-primary" />
-              {barInfo?.name || 'Rockola Digital'}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {barInfo?.description && `${barInfo.description} • `}
-              Mesa {tableNumber || 'N/A'} • Puntos: {100} {/* TODO: user.points */}
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-              <span className="text-sm text-muted-foreground">
-                {isConnected ? 'Conectado' : 'Desconectado'}
-              </span>
+              <h1 className="text-2xl font-bold flex items-center gap-2 text-card-foreground">
+                {barInfo?.logo && (
+                  <img
+                    src={barInfo.logo}
+                    alt={barInfo.name}
+                    width={32}
+                    height={32}
+                    className="rounded-md"
+                  />
+                )}
+                <Music2 className="h-6 w-6 text-primary" />
+                {barInfo?.name || 'Rockola Digital'}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {barInfo?.description && `${barInfo.description} • `}
+                Mesa {tableNumber || 'N/A'} • Puntos: {100} {/* TODO: user.points */}
+              </p>
             </div>
-            {barId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => disconnect()}
-              >
-                <Unlink className="h-4 w-4 mr-2" />
-                Desconectar
-              </Button>
-            )}
-          </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-sm text-muted-foreground">
+                  {isConnected ? 'Conectado' : 'Desconectado'}
+                </span>
+              </div>
+              {barId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => disconnect()}
+                >
+                  <Unlink className="h-4 w-4 mr-2" />
+                  Desconectar
+                </Button>
+              )}
+            </div>
           </div>
         </motion.div>
 
@@ -395,7 +432,7 @@ export default function ClientMusicPage() {
               className="pl-10 bg-card text-card-foreground placeholder:text-muted-foreground border-border"
             />
           </div>
-          
+
           <div className="flex gap-2 overflow-x-auto pb-2">
             {genres.map((genre) => (
               <Button
@@ -552,59 +589,59 @@ export default function ClientMusicPage() {
                 .sort(() => Math.random() - 0.5)
                 .slice(0, 6)
                 .map((song: any, index: number) => (
-                <motion.div
-                  key={`random-${song.id}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.1 }}
-                >
-                  <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer bg-card border-border">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={song.thumbnailUrl}
-                          alt={song.title}
-                          width={48}
-                          height={48}
-                          className="w-12 h-12 rounded-lg object-cover group-hover:scale-105 transition-transform"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold truncate group-hover:text-primary transition-colors text-card-foreground">
-                            {song.title}
-                          </h3>
-                          <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs bg-secondary text-secondary-foreground border-border">
-                              {song.genre}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {formatDuration(song.duration)}
-                            </span>
+                  <motion.div
+                    key={`random-${song.id}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: index * 0.1 }}
+                  >
+                    <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer bg-card border-border">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={song.thumbnailUrl}
+                            alt={song.title}
+                            width={48}
+                            height={48}
+                            className="w-12 h-12 rounded-lg object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold truncate group-hover:text-primary transition-colors text-card-foreground">
+                              {song.title}
+                            </h3>
+                            <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant="outline" className="text-xs bg-secondary text-secondary-foreground border-border">
+                                {song.genre}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDuration(song.duration)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-1">
+                              <Star className="h-3 w-3 text-yellow-500 fill-current" />
+                              <span className="text-xs text-muted-foreground">4.5</span>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                setSelectedSong(song);
+                                setShowPriorityDialog(true);
+                              }}
+                              disabled={userPoints < 50}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-primary-foreground hover:bg-primary/90"
+                            >
+                              <Play className="h-3 w-3 mr-1" />
+                              Pedir
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex items-center gap-1">
-                            <Star className="h-3 w-3 text-yellow-500 fill-current" />
-                            <span className="text-xs text-muted-foreground">4.5</span>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              setSelectedSong(song);
-                              setShowPriorityDialog(true);
-                            }}
-                            disabled={userPoints < 50}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity bg-primary text-primary-foreground hover:bg-primary/90"
-                          >
-                            <Play className="h-3 w-3 mr-1" />
-                            Pedir
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
             </div>
           </TabsContent>
         </Tabs>
@@ -673,8 +710,8 @@ export default function ClientMusicPage() {
             {selectedSong && (
               <div className="space-y-4">
                 <div className="flex items-center gap-4">
-                  <Image 
-                    src={selectedSong.thumbnailUrl || '/placeholder-music.jpg'} 
+                  <Image
+                    src={selectedSong.thumbnailUrl || '/placeholder-music.jpg'}
                     alt={selectedSong.title}
                     width={64}
                     height={64}
@@ -686,7 +723,7 @@ export default function ClientMusicPage() {
                     <p className="text-xs text-muted-foreground">{formatDuration(selectedSong.duration)}</p>
                   </div>
                 </div>
-                
+
                 <div className="space-y-3">
                   <Button
                     onClick={() => handleSongRequest(selectedSong, false)}
@@ -700,7 +737,7 @@ export default function ClientMusicPage() {
                     </span>
                     <Badge variant="secondary">50 puntos</Badge>
                   </Button>
-                  
+
                   <Button
                     onClick={() => handleSongRequest(selectedSong, true)}
                     disabled={userPoints < 100}
@@ -713,7 +750,7 @@ export default function ClientMusicPage() {
                     <Badge variant="secondary">100 puntos</Badge>
                   </Button>
                 </div>
-                
+
                 <p className="text-xs text-muted-foreground text-center">
                   Priority Play coloca tu canción al inicio de la cola
                 </p>

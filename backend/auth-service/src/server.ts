@@ -44,10 +44,10 @@ app.use(cors(corsOptions));
 if (process.env.DISABLE_RATE_LIMIT === 'true') {
   logger.warn('Auth rate limiting is DISABLED via DISABLE_RATE_LIMIT=true');
 } else {
-  app.use('/api/auth/login', rateLimiters.auth);
-  app.use('/api/auth/register-guest', rateLimiters.auth);
-  app.use('/api/auth/register-user', rateLimiters.auth);
-  app.use('/api/auth/register-bar-owner', rateLimiters.auth);
+  app.use('/api/auth/login', rateLimiters.auth as any);
+  app.use('/api/auth/register-guest', rateLimiters.auth as any);
+  app.use('/api/auth/register-user', rateLimiters.auth as any);
+  app.use('/api/auth/register-bar-owner', rateLimiters.auth as any);
 }
 
 // General middleware with stricter limits for security

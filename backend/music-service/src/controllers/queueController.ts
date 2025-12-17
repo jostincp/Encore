@@ -11,10 +11,11 @@ import { queueEventService } from '../services/queueEventService';
 
 export class QueueController {
   // Add song to queue
-  static async addToQueue(req: AuthenticatedRequest, res: Response): Promise<void> {
+  static async addToQueue(req: Request, res: Response): Promise<void> {
     try {
       const { bar_id, song_id, priority_play, points_used } = req.body;
-      const user_id = req.user!.userId;
+      // Allow guest requests by using a default guest ID if no user is authenticated
+      const user_id = (req as any).user?.userId || '00000000-0000-0000-0000-000000000000';
 
       // Validate bar exists and is active
       const bar = await BarService.findById(bar_id);

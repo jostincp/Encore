@@ -138,9 +138,8 @@ const statsDateValidation = [
 
 // User routes (require authentication)
 
-// Add song to queue
+// Add song to queue - Guest access allowed (no authenticateToken)
 router.post('/:barId/add',
-  authenticateToken,
   rateLimitMiddleware('queue_add', 10, 60 * 1000), // 10 requests per minute
   addToQueueValidation,
   handleValidationErrors,
