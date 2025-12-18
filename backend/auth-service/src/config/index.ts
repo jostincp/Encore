@@ -89,10 +89,10 @@ export const config = {
   
   // CORS configuration
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'http://localhost:3004'],
     credentials: true,
   },
-  corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'],
+  corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:3004'],
   
   // Security configuration
   security: {

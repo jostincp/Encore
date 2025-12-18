@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import logger from '../../../shared/utils/logger';
 import { authenticate, requireRole } from '../middleware/auth';
 import { UserRole } from '../constants/roles';
+import { RequestWithUser } from '../types';
 
 interface QRCodeData {
   tableNumber: number;
@@ -17,7 +18,7 @@ interface QRCodeData {
  * Genera códigos QR para las mesas de un bar
  * @route POST /api/qr/generate
  */
-export const generateQRCodes = async (req: Request, res: Response): Promise<void> => {
+export const generateQRCodes = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     // Verificar autenticación del administrador del bar
     if (!req.user) {
@@ -103,7 +104,7 @@ export const generateQRCodes = async (req: Request, res: Response): Promise<void
  * Genera un QR code individual para una mesa específica
  * @route POST /api/qr/generate-single
  */
-export const generateSingleQR = async (req: Request, res: Response): Promise<void> => {
+export const generateSingleQR = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({
@@ -156,7 +157,7 @@ export const generateSingleQR = async (req: Request, res: Response): Promise<voi
  * Genera QR codes y los descarga como archivos PNG en un ZIP
  * @route POST /api/qr/download
  */
-export const downloadQRCodes = async (req: Request, res: Response): Promise<void> => {
+export const downloadQRCodes = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({
@@ -273,7 +274,7 @@ export const validateQRCode = async (req: Request, res: Response): Promise<void>
  * Obtener QR codes existentes para un bar
  * @route GET /api/qr/bar/:barId
  */
-export const getBarQRCodes = async (req: Request, res: Response): Promise<void> => {
+export const getBarQRCodes = async (req: RequestWithUser, res: Response): Promise<void> => {
   try {
     if (!req.user) {
       res.status(401).json({

@@ -83,5 +83,13 @@ export const logDebug = (message: string, meta?: any) => {
   logger.debug(message, meta);
 };
 
-// Export requestLogger from middleware
-export { requestLogger } from '../middleware/requestLogger';
+export const requestLogger = (req: any, res: any, next: any) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.http(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+  });
+
+  next();
+};

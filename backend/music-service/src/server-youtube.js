@@ -150,6 +150,21 @@ app.get('/api/youtube/search', async (req, res) => {
   }
 });
 
+// Legacy alias for clients expecting /api/music/youtube/search
+app.get('/api/music/youtube/search', async (req, res) => {
+  try {
+    const { q: query, maxResults = 25 } = req.query;
+    if (!query) {
+      return res.status(400).json({ success: false, message: 'Query parameter is required' });
+    }
+    const results = await searchYouTube(String(query), parseInt(maxResults));
+    return res.json(results);
+  } catch (error) {
+    logger.error('Error searching YouTube (legacy path):', error);
+    return res.status(500).json({ success: false, message: 'Error searching for songs' });
+  }
+});
+
 // YouTube search endpoint (POST)
 app.post('/api/youtube/search', async (req, res) => {
   try {
@@ -279,6 +294,13 @@ app.post('/api/queue/:barId/add', (req, res) => {
 });
 
 app.get('/api/queue/bars/:barId', (req, res) => {
+  const barId = req.params.barId;
+  const items = devQueue[barId] || [];
+  return res.json({ success: true, data: items, total: items.length });
+});
+
+// Legacy alias for clients expecting /api/music/queue/:barId
+app.get('/api/music/queue/:barId', (req, res) => {
   const barId = req.params.barId;
   const items = devQueue[barId] || [];
   return res.json({ success: true, data: items, total: items.length });

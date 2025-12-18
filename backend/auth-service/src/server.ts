@@ -1,4 +1,18 @@
 import express from 'express';
+
+// Move handlers to the very top
+process.on('uncaughtException', (error) => {
+  console.error('UNCAUGHT EXCEPTION:', error);
+  if (logger) logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION:', reason);
+  if (logger) logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
 import { logger, requestLogger } from './utils/logger';
 import { initializeDatabase, runMigrations } from './utils/database';
 import { initRedis } from './utils/redis';
@@ -10,9 +24,19 @@ import rateLimit from 'express-rate-limit';
 
 // Configuración CORS simple para desarrollo
 const corsOptions = {
-  origin: ['http://localhost:3000', 'http://localhost:3004', 'http://localhost:5173'],
+  origin: function (origin: any, callback: any) {
+    // Permitir requests sin origen (como Postman o curl)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = ['http://localhost:3000', 'http://localhost:3004', 'http://localhost:5173'];
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
 };
 
@@ -39,6 +63,7 @@ const PORT = parseInt(process.env.AUTH_PORT || process.env.PORT || '3001', 10);
 // Security middleware avanzado
 app.use(helmet(helmetOptions));
 app.use(cors(corsOptions));
+// app.options('*', cors(corsOptions)); // Habilitar pre-flight para todas las rutas
 
 // Rate limiting específico para autenticación
 if (process.env.DISABLE_RATE_LIMIT === 'true') {
@@ -167,9 +192,23 @@ const startServer = async () => {
 
   // Start server (always attempt to start)
   try {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, '0.0.0.0', () => {
       logger.info(`Auth Service running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
+    
+    server.on('error', (e: any) => {
+      if (e.code === 'EADDRINUSE') {
+        logger.error(`Port ${PORT} is already in use.`);
+        // Try next port just in case
+        const nextPort = PORT + 1;
+        logger.info(`Attempting to bind to port ${nextPort}...`);
+        app.listen(nextPort, '0.0.0.0', () => {
+            logger.info(`Auth Service running on port ${nextPort}`);
+        });
+      } else {
+        logger.error('Server error:', e);
+      }
     });
   } catch (listenError) {
     logger.error('Failed to start Auth Service (listen error):', listenError);
@@ -187,16 +226,9 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
-});
+// Remove old handlers at the bottom to avoid duplication
+// process.on('uncaughtException', (error) => { ... });
+// process.on('unhandledRejection', (reason, promise) => { ... });
 
 startServer();
 

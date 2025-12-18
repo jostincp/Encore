@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { getPool } from '../../../shared/database';
 import logger from '../../../shared/utils/logger';
-import { AuthenticatedRequest } from '../../../shared/utils/jwt';
+import { AuthenticatedRequest } from '../../../shared/types/auth';
 import { UserRole } from '../../../shared/types/index';
 
 /**
@@ -91,12 +91,21 @@ export class BarController {
 
       const pool = getPool();
       const result = await pool.query(`
-        INSERT INTO bars (name, description, address, phone, email, owner_id, settings, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-        RETURNING id, name, description, address, phone, email, owner_id, settings, created_at
-      `, [name, description, address, phone, email, ownerId, JSON.stringify(settings || {})]);
-
+        INSERT INTO bars (name, description, address, phone, email, owner_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        RETURNING id, name, description, address, phone, email, owner_id, created_at
+      `, [name, description, address, phone, email, ownerId]);
+      
       const bar = result.rows[0];
+
+      // Crear configuración por defecto en bar_settings
+      await pool.query(`
+        INSERT INTO bar_settings (bar_id, settings)
+        VALUES ($1, $2)
+      `, [bar.id, JSON.stringify(settings || {})]);
+
+      // Add settings to bar object for response if needed
+      (bar as any).settings = settings || {};
 
       logger.info(`Bar created: ${bar.id} by user ${ownerId}`);
 
@@ -120,11 +129,17 @@ export class BarController {
    */
   static async getMyBars(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user!.userId;
+      logger.info('getMyBars called', { user: req.user });
+      
+      if (!req.user) {
+        throw new Error('User not authenticated in controller');
+      }
+
+      const userId = req.user.userId;
       const pool = getPool();
       
       const result = await pool.query(`
-        SELECT id, name, description, address, phone, email, owner_id, settings, is_active, created_at, updated_at
+        SELECT id, name, description, address, phone, email, owner_id, is_active, created_at, updated_at
         FROM bars
         WHERE owner_id = $1
         ORDER BY created_at DESC
@@ -141,7 +156,8 @@ export class BarController {
       logger.error('Error getting my bars:', error);
       res.status(500).json({
         success: false,
-        message: 'Error interno del servidor'
+        message: 'Error interno del servidor',
+        debug: error instanceof Error ? error.message : String(error)
       });
     }
   }
@@ -157,7 +173,7 @@ export class BarController {
 
       const pool = getPool();
       let query = `
-        SELECT id, name, description, address, phone, email, owner_id, settings, is_active, created_at, updated_at
+        SELECT id, name, description, address, phone, email, owner_id, is_active, created_at, updated_at
         FROM bars
         WHERE 1=1
       `;
@@ -243,7 +259,7 @@ export class BarController {
 
       const pool = getPool();
       const result = await pool.query(`
-        SELECT id, name, description, address, phone, email, owner_id, settings, is_active, created_at, updated_at
+        SELECT id, name, description, address, phone, email, owner_id, is_active, created_at, updated_at
         FROM bars
         WHERE id = $1
       `, [id]);
@@ -351,11 +367,11 @@ export class BarController {
         paramIndex++;
       }
 
-      if (settings !== undefined) {
-        updates.push(`settings = $${paramIndex}`);
-        params.push(JSON.stringify(settings));
-        paramIndex++;
-      }
+      // if (settings !== undefined) {
+      //   updates.push(`settings = $${paramIndex}`);
+      //   params.push(JSON.stringify(settings));
+      //   paramIndex++;
+      // }
 
       if (is_active !== undefined && userRole === UserRole.ADMIN) {
         updates.push(`is_active = $${paramIndex}`);
@@ -377,7 +393,7 @@ export class BarController {
         UPDATE bars
         SET ${updates.join(', ')}
         WHERE id = $${paramIndex}
-        RETURNING id, name, description, address, phone, email, owner_id, settings, is_active, updated_at
+        RETURNING id, name, description, address, phone, email, owner_id, is_active, updated_at
       `;
       params.push(id);
 
