@@ -177,7 +177,7 @@ export class MenuModel {
       let sortOrder = data.sort_order;
       if (sortOrder === undefined) {
         const maxOrderResult = await client.query(
-          'SELECT COALESCE(MAX(sort_order), 0) + 1 as next_order FROM menu_items WHERE bar_id = $1 AND category_id = $2',
+          'SELECT COALESCE(MAX(display_order), 0) + 1 as next_order FROM menu_items WHERE bar_id = $1 AND category_id = $2',
           [data.bar_id, data.category_id]
         );
         sortOrder = maxOrderResult.rows[0].next_order;
@@ -187,7 +187,7 @@ export class MenuModel {
         INSERT INTO menu_items (
           id, bar_id, category_id, name, description, price, image_url,
           is_available, preparation_time, ingredients, allergens,
-          nutritional_info, tags, sort_order, created_at, updated_at
+          nutritional_info, tags, display_order, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING *
       `;
@@ -286,7 +286,8 @@ export class MenuModel {
             updateFields.push(`${key} = $${paramCount}`);
             values.push(JSON.stringify(value));
           } else {
-            updateFields.push(`${key} = $${paramCount}`);
+            const dbKey = key === 'sort_order' ? 'display_order' : key;
+            updateFields.push(`${dbKey} = $${paramCount}`);
             values.push(value);
           }
           paramCount++;
@@ -450,7 +451,7 @@ export class MenuModel {
         FROM menu_items mi
         JOIN menu_categories mc ON mi.category_id = mc.id
         WHERE ${whereClause}
-        ORDER BY mc.sort_order, mi.sort_order, mi.name
+        ORDER BY mc.display_order, mi.display_order, mi.name
         LIMIT $${paramCount} OFFSET $${paramCount + 1}
       `;
       
@@ -496,7 +497,7 @@ export class MenuModel {
       let sortOrder = data.sort_order;
       if (sortOrder === undefined) {
         const maxOrderResult = await client.query(
-          'SELECT COALESCE(MAX(sort_order), 0) + 1 as next_order FROM menu_categories WHERE bar_id = $1',
+          'SELECT COALESCE(MAX(display_order), 0) + 1 as next_order FROM menu_categories WHERE bar_id = $1',
           [data.bar_id]
         );
         sortOrder = maxOrderResult.rows[0].next_order;
@@ -504,7 +505,7 @@ export class MenuModel {
       
       const query = `
         INSERT INTO menu_categories (
-          id, bar_id, name, description, image_url, is_active, sort_order, created_at, updated_at
+          id, bar_id, name, description, image_url, is_active, display_order, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
       `;
@@ -548,7 +549,7 @@ export class MenuModel {
       const query = `
         SELECT * FROM menu_categories
         WHERE bar_id = $1 AND is_active = true
-        ORDER BY sort_order, name
+        ORDER BY display_order, name
       `;
       
       const result = await this.pool.query(query, [barId]);
@@ -586,7 +587,8 @@ export class MenuModel {
       // Build dynamic update query
       Object.entries(data).forEach(([key, value]) => {
         if (value !== undefined) {
-          updateFields.push(`${key} = $${paramCount}`);
+          const dbKey = key === 'sort_order' ? 'display_order' : key;
+          updateFields.push(`${dbKey} = $${paramCount}`);
           values.push(value);
           paramCount++;
         }
@@ -783,7 +785,7 @@ export class MenuModel {
       allergens: row.allergens ? JSON.parse(row.allergens) : null,
       nutritional_info: row.nutritional_info ? JSON.parse(row.nutritional_info) : null,
       tags: row.tags ? JSON.parse(row.tags) : null,
-      sort_order: row.sort_order,
+      sort_order: row.display_order,
       created_at: row.created_at,
       updated_at: row.updated_at
     };
@@ -797,7 +799,7 @@ export class MenuModel {
       description: row.description,
       image_url: row.image_url,
       is_active: row.is_active,
-      sort_order: row.sort_order,
+      sort_order: row.display_order,
       created_at: row.created_at,
       updated_at: row.updated_at
     };
@@ -872,7 +874,7 @@ export class MenuModel {
       
       for (const item of itemOrders) {
         await client.query(
-          'UPDATE menu_items SET sort_order = $1, updated_at = $2 WHERE id = $3 AND bar_id = $4 AND category_id = $5',
+          'UPDATE menu_items SET display_order = $1, updated_at = $2 WHERE id = $3 AND bar_id = $4 AND category_id = $5',
           [item.sort_order, new Date(), item.id, barId, categoryId]
         );
       }

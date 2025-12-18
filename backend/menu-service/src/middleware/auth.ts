@@ -45,10 +45,10 @@ export const authenticateToken = async (
     
     // Add user information to request
     req.user = {
-      id: decoded.id,
+      id: decoded.id || decoded.sub || decoded.userId,
       email: decoded.email,
       role: decoded.role,
-      bar_id: decoded.bar_id
+      bar_id: decoded.bar_id || decoded.barId
     };
 
     next();
@@ -287,16 +287,19 @@ export const optionalAuth = async (
     const decoded = jwt.verify(token, jwtSecret) as any;
     
     req.user = {
-      id: decoded.id,
+      id: decoded.id || decoded.sub || decoded.userId, // Handle different claim names
       email: decoded.email,
       role: decoded.role,
-      bar_id: decoded.bar_id
+      bar_id: decoded.bar_id || decoded.barId // Handle camelCase mismatch
     };
 
     next();
   } catch (error) {
     // If token is invalid, continue without user info
-    logger.warn('Optional auth failed:', error);
+    logger.warn('Optional auth failed:', {
+        error: error instanceof Error ? error.message : 'Unknown',
+        secretLength: process.env.JWT_SECRET?.length
+    });
     next();
   }
 };

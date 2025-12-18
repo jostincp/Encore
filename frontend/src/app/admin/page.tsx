@@ -35,121 +35,23 @@ import { formatPrice, formatTime, formatDuration } from '@/utils/format';
 import { API_ENDPOINTS } from '@/utils/constants';
 import { BarStats, Order } from '@/types';
 
-// Mock data para el dashboard
-const mockStats: BarStats = {
-  activeTables: 14,
-  totalRevenue: 2450000,
-  songsInQueue: 5,
-  topSellingItems: [],
-  popularSongs: [],
-  averagePointsPerTable: 150
-};
-
-// Stats adicionales para el dashboard
-const additionalStats = {
-  totalTables: 20,
-  totalOrders: 87,
-  averageOrderValue: 28160,
-  totalSongsPlayed: 156,
-  averageWaitTime: 12,
-  peakHours: ['19:00', '20:00', '21:00'],
-  topGenres: ['Rock', 'Pop', 'Reggaeton'],
-  customerSatisfaction: 4.7
-};
-
-const mockActiveOrders: Order[] = [
-  {
-    id: 'order-1',
-    tableNumber: 5,
-    items: [{
-      menuItem: {
-        id: '1',
-        name: 'Hamburguesa Clásica',
-        description: 'Deliciosa hamburguesa con carne de res',
-        price: 15000,
-        pointsReward: 15,
-        category: 'comidas',
-        isAvailable: true
-      },
-      quantity: 2,
-      totalPrice: 30000,
-      totalPoints: 30
-    }],
-    totalAmount: 35700,
-    totalPointsEarned: 30,
-    status: 'preparing',
-    timestamp: new Date(Date.now() - 8 * 60000)
-  },
-  {
-    id: 'order-2',
-    tableNumber: 12,
-    items: [{
-      menuItem: {
-        id: '2',
-        name: 'Pizza Margherita',
-        description: 'Pizza clásica con tomate y mozzarella',
-        price: 12000,
-        pointsReward: 12,
-        category: 'comidas',
-        isAvailable: true
-      },
-      quantity: 1,
-      totalPrice: 12000,
-      totalPoints: 12
-    }],
-    totalAmount: 14280,
-    totalPointsEarned: 12,
-    status: 'ready',
-    timestamp: new Date(Date.now() - 25 * 60000)
-  }
-];
-
-const mockCurrentQueue = [
-  {
-    id: 'queue-1',
-    song: {
-      id: 'song-1',
-      title: 'Bohemian Rhapsody',
-      artist: 'Queen',
-      duration: 355,
-      genre: 'Rock',
-      thumbnailUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Queen%20Bohemian%20Rhapsody%20album%20cover%20classic%20rock%20vintage%20style&image_size=square',
-      pointsCost: 50
-    },
-    requestedBy: 'user-1',
-    tableNumber: 5,
-    timestamp: new Date(Date.now() - 5 * 60000),
-    status: 'approved',
-    isPriority: false,
-    pointsSpent: 50
-  },
-  {
-    id: 'queue-2',
-    song: {
-      id: 'song-2',
-      title: 'Despacito',
-      artist: 'Luis Fonsi ft. Daddy Yankee',
-      duration: 229,
-      genre: 'Reggaeton',
-      thumbnailUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=Despacito%20Luis%20Fonsi%20reggaeton%20tropical%20music%20cover&image_size=square',
-      pointsCost: 50
-    },
-    requestedBy: 'user-2',
-    tableNumber: 12,
-    timestamp: new Date(Date.now() - 1 * 60000),
-    status: 'approved',
-    isPriority: true,
-    pointsSpent: 100
-  }
-];
-
 export default function AdminPage() {
   const { user, currentSong, queue, barStats, isConnected } = useAppStore();
   const { success: showSuccess, error: showError } = useToast();
   const router = useRouter();
-  const [stats] = useState(mockStats);
-  const [activeOrders] = useState(mockActiveOrders);
-  const [currentQueue] = useState(mockCurrentQueue);
+  
+  // Initialize with empty data instead of mocks
+  const [stats, setStats] = useState<BarStats>({
+    activeTables: 0,
+    totalRevenue: 0,
+    songsInQueue: 0,
+    topSellingItems: [],
+    popularSongs: [],
+    averagePointsPerTable: 0
+  });
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
+  const [currentQueue, setCurrentQueue] = useState<any[]>([]);
+  
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [realBar, setRealBar] = useState<any | null>(null);
   const [realUser, setRealUser] = useState<any | null>(null);

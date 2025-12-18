@@ -5,6 +5,8 @@ import path from 'path';
 // This ensures we read c:\www\Encore\.env first, and c:\www\Encore\backend\.env if present
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') }); // Load local service .env
+
 
 /**
  * Application configuration

@@ -9,9 +9,17 @@ import { Label } from '@/components/ui/label';
 import { Layout, PageContainer } from '@/components/ui/layout';
 import { useToast } from '@/hooks/useToast';
 import { motion } from 'framer-motion';
-import { Shield, Mail, Lock, Building2 } from 'lucide-react';
+import { Shield, Mail, Lock, Building2, AlertCircle } from 'lucide-react';
 import { API_ENDPOINTS } from '@/utils/constants';
 import { useAppStore } from '@/stores/useAppStore';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export default function RegisterBarOwnerPage() {
   const router = useRouter();
@@ -29,19 +37,53 @@ export default function RegisterBarOwnerPage() {
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // Modal state
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [modalErrors, setModalErrors] = useState<string[]>([]);
+
   // Validaciones en frontend
   const validateEmailLocal = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
   const validatePasswordLocal = (val: string) => /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/.test(val);
-  const validatePhoneLocal = (val: string) => val.trim() === '' || /^[+]?[\d\s()-]{7,20}$/.test(val);
   const validateNonEmpty = (val: string, min = 2, max = 100) => typeof val === 'string' && val.trim().length >= min && val.trim().length <= max;
 
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string | null }>({});
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setPhone(val);
+    
+    if (!val.trim()) {
+      setFieldErrors(prev => ({ ...prev, phone: null }));
+      return;
+    }
+
+    // Limpieza básica para validación
+    const clean = val.replace(/\s/g, '');
+    let errorMsg: string | null = null;
+
+    if (!clean.startsWith('+')) {
+      errorMsg = 'Debe comenzar con "+" seguido del código de país (ej. +57...)';
+    } else {
+      const rest = clean.substring(1);
+      if (/[^0-9]/.test(rest)) {
+        errorMsg = 'Solo se permiten números después del código de país';
+      } else if (rest.length < 8) {
+        errorMsg = 'Longitud insuficiente (mínimo 8 dígitos)';
+      } else if (rest.length > 15) {
+        errorMsg = 'Número demasiado largo (máximo 15 dígitos)';
+      }
+    }
+
+    setFieldErrors(prev => ({ ...prev, phone: errorMsg }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setApiError(null);
 
     const newErrors: { [key: string]: string | null } = {};
+    const validationMessages: string[] = [];
+
     if (!email) newErrors.email = 'Email es requerido';
     if (!password) newErrors.password = 'Contraseña es requerida';
     if (!barName) newErrors.barName = 'Nombre del bar es requerido';
@@ -59,14 +101,44 @@ export default function RegisterBarOwnerPage() {
     if (address && !validateNonEmpty(address, 5, 255)) newErrors.address = 'Dirección debe tener al menos 5 caracteres';
     if (city && !validateNonEmpty(city)) newErrors.city = 'Ciudad debe tener entre 2 y 100 caracteres';
     if (country && !validateNonEmpty(country)) newErrors.country = 'País debe tener entre 2 y 100 caracteres';
-    if (phone && !validatePhoneLocal(phone)) newErrors.phone = 'Formato de teléfono inválido';
+    
+    // Validación final de teléfono
+    if (phone && phone.trim()) {
+        const clean = phone.replace(/\s/g, '');
+        if (!clean.startsWith('+')) {
+            newErrors.phone = 'Falta código de país (+XX)';
+            validationMessages.push('El teléfono debe iniciar con el código de país (ej. +57)');
+        } else {
+            const rest = clean.substring(1);
+            if (/[^0-9]/.test(rest)) {
+                newErrors.phone = 'Contiene caracteres no numéricos';
+                validationMessages.push('El teléfono solo debe contener números después del +');
+            } else if (rest.length < 8 || rest.length > 15) {
+                newErrors.phone = 'Longitud inválida (8-15 dígitos)';
+                validationMessages.push('El teléfono debe tener entre 8 y 15 dígitos');
+            }
+        }
+    } else if (fieldErrors.phone) {
+        // Persistir error si ya existía y no se limpió
+        newErrors.phone = fieldErrors.phone;
+        if (fieldErrors.phone) validationMessages.push(`Teléfono: ${fieldErrors.phone}`);
+    }
 
     setFieldErrors(newErrors);
     const hasErrors = Object.values(newErrors).some(Boolean);
+    
     if (hasErrors) {
-      setApiError('Por favor corrige los campos resaltados');
+      // Recopilar todos los mensajes de error para el modal
+      Object.entries(newErrors).forEach(([key, msg]) => {
+         if (msg && key !== 'phone') validationMessages.push(`${key}: ${msg}`);
+      });
+      
+      // Priorizar errores de teléfono si existen para el mensaje principal o mostrarlos todos
+      setModalErrors(validationMessages);
+      setShowErrorModal(true);
       return;
     }
+
     setLoading(true);
     try {
       console.log('RegisterBarOwner: Enviando registro', { email, barName, firstName, lastName, address, city, country, phone });
@@ -219,7 +291,7 @@ export default function RegisterBarOwnerPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone" className="flex items-center gap-2"><Shield className="h-4 w-4" /> Teléfono</Label>
-                  <Input id="phone" type="tel" placeholder="+57 300 123 4567" value={phone} onChange={e => setPhone(e.target.value)} />
+                  <Input id="phone" type="tel" placeholder="+57 300 123 4567" value={phone} onChange={handlePhoneChange} />
                   {fieldErrors.phone && <div className="text-xs text-red-600">{fieldErrors.phone}</div>}
                 </div>
 
@@ -238,6 +310,31 @@ export default function RegisterBarOwnerPage() {
           </Card>
         </div>
       </PageContainer>
+
+      {/* Error Modal */}
+      <Dialog open={showErrorModal} onOpenChange={setShowErrorModal}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              Errores de Validación
+            </DialogTitle>
+            <DialogDescription>
+              Por favor corrige los siguientes problemas antes de continuar:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground">
+              {modalErrors.map((err, index) => (
+                <li key={index} className="text-red-500">{err}</li>
+              ))}
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowErrorModal(false)}>Entendido</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

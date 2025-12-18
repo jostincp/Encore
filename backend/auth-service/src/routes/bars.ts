@@ -62,7 +62,7 @@ router.get('/stats',
 router.get('/my',
   authenticate,
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
-  BarController.getBars // TODO: Implement getMyBars
+  BarController.getMyBars
 );
 
 /**

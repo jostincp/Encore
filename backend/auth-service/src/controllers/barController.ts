@@ -116,6 +116,37 @@ export class BarController {
   }
 
   /**
+   * Obtener bares del usuario actual
+   */
+  static async getMyBars(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const pool = getPool();
+      
+      const result = await pool.query(`
+        SELECT id, name, description, address, phone, email, owner_id, settings, is_active, created_at, updated_at
+        FROM bars
+        WHERE owner_id = $1
+        ORDER BY created_at DESC
+      `, [userId]);
+
+      res.json({
+        success: true,
+        data: {
+          bars: result.rows
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error getting my bars:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
+    }
+  }
+
+  /**
    * Obtener todos los bares
    */
   static async getBars(req: AuthenticatedRequest, res: Response): Promise<void> {

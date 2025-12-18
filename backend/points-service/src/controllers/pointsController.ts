@@ -11,7 +11,16 @@ export class PointsController {
   static async getUserBalance(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.userId;
+      // Handle different claim names from token
+      const userId = req.user!.userId || (req.user as any).sub || (req.user as any).id;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          message: 'User ID not found in token'
+        });
+        return;
+      }
 
       const balance = await PointsModel.getUserBalance(userId, barId);
 
@@ -36,7 +45,7 @@ export class PointsController {
   static async getUserTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.userId;
+      const userId = req.user!.userId || (req.user as any).sub || (req.user as any).id;
       
       const {
         type,
@@ -81,7 +90,7 @@ export class PointsController {
   static async addTransaction(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { user_id, bar_id, type, amount, description, reference_id, reference_type, metadata } = req.body;
-      const adminId = req.user!.userId;
+      const adminId = req.user!.userId || (req.user as any).sub || (req.user as any).id;
 
       // Verify admin has permission for this bar
       if (req.user!.role !== UserRole.ADMIN) {
@@ -144,7 +153,7 @@ export class PointsController {
   static async transferPoints(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { from_user_id, to_user_id, bar_id, amount, description } = req.body;
-      const adminId = req.user!.userId;
+      const adminId = req.user!.userId || (req.user as any).sub || (req.user as any).id;
 
       // Verify admin has permission for this bar
       if (req.user!.role !== UserRole.ADMIN) {
@@ -213,7 +222,7 @@ export class PointsController {
     try {
       const { barId } = req.params;
       const { date_from, date_to } = req.query;
-      const userId = req.user!.userId;
+      const userId = req.user!.userId || (req.user as any).sub || (req.user as any).id;
 
       // Verify admin has permission for this bar
       if (req.user!.role !== UserRole.ADMIN) {
@@ -290,7 +299,7 @@ export class PointsController {
   static async getBarTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { barId } = req.params;
-      const userId = req.user!.userId;
+      const userId = req.user!.userId || (req.user as any).sub || (req.user as any).id;
       
       // Verify admin has permission for this bar
       if (req.user!.role !== UserRole.ADMIN) {
@@ -354,7 +363,7 @@ export class PointsController {
   static async bulkAddPoints(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const { bar_id, users, amount, description, reference_type } = req.body;
-      const adminId = req.user!.userId;
+      const adminId = req.user!.userId || (req.user as any).sub || (req.user as any).id;
 
       // Verify admin has permission for this bar
       if (req.user!.role !== UserRole.ADMIN) {
@@ -431,7 +440,7 @@ export class PointsController {
   // Get user points summary across all bars
   static async getUserPointsSummary(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const userId = req.user!.userId;
+      const userId = req.user!.userId || (req.user as any).sub || (req.user as any).id;
 
       // Get user points for all bars
       const result = await getPool().query(

@@ -28,11 +28,36 @@ export const validateNonEmptyString = (value: string): boolean => {
 };
 
 /**
- * Validate phone number
+ * Clean phone number to E.164 format
+ * Removes all non-digit characters except the leading +
+ */
+export const cleanPhoneNumber = (phone: string): string => {
+  if (!phone) return '';
+  // Remove all whitespace
+  let cleaned = phone.replace(/\s/g, '');
+  
+  // If it doesn't start with +, add it if it looks like it has a country code, 
+  // but E.164 requires explicit +, so we will enforce it in validation.
+  // This function just removes spaces and invalid chars.
+  // We'll keep + only at the start.
+  if (cleaned.startsWith('+')) {
+    cleaned = '+' + cleaned.substring(1).replace(/\D/g, '');
+  } else {
+    // If no +, just keep digits
+    cleaned = cleaned.replace(/\D/g, '');
+  }
+  return cleaned;
+};
+
+/**
+ * Validate phone number (E.164 format)
+ * Must start with + and have 8-15 digits
  */
 export const validatePhone = (phone: string): boolean => {
-  const phoneRegex = /^[+]?[1-9]\d{1,14}$/;
-  return phoneRegex.test(phone.replace(/[\s-()]/g, ''));
+  // E.164 format: + followed by 1-15 digits. 
+  // We require at least 8 digits including country code for practical reasons.
+  const phoneRegex = /^\+[1-9]\d{7,14}$/;
+  return phoneRegex.test(phone);
 };
 
 /**

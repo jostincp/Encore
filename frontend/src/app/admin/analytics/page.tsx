@@ -32,6 +32,7 @@ import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 import { formatPrice } from '@/utils/format';
+import { analyticsService, DashboardMetrics } from '@/services/analyticsService';
 import { 
   Line, 
   AreaChart, 
@@ -129,15 +130,36 @@ export default function AdminAnalyticsPage() {
   const router = useRouter();
   const toast = useToast();
   const [analytics] = useState(mockAnalytics);
-  const [selectedPeriod, setSelectedPeriod] = useState('7d');
+  const [selectedPeriod, setSelectedPeriod] = useState('today');
   const [selectedTab, setSelectedTab] = useState('overview');
+  const [kpiMetrics, setKpiMetrics] = useState<DashboardMetrics | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
       router.push('/');
       return;
     }
-  }, [user, router]);
+
+    const loadMetrics = async () => {
+      try {
+        setIsLoading(true);
+        const barId = 'default-bar-id';
+        const token = localStorage.getItem('token') || '';
+        const metrics = await analyticsService.getDashboardMetrics(barId, token, selectedPeriod);
+        setKpiMetrics(metrics);
+      } catch (err) {
+        console.error('Failed to load analytics:', err);
+        toast.error('Error cargando métricas');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (user) {
+      loadMetrics();
+    }
+  }, [user, router, selectedPeriod]);
 
   if (!user || user.role !== 'admin') return null;
 
@@ -145,15 +167,28 @@ export default function AdminAnalyticsPage() {
     toast.success('Datos exportados exitosamente');
   };
 
-  const handleRefreshData = () => {
-    // Aquí se actualizarían los datos desde el backend
-    toast.success('Datos actualizados');
+  const handleRefreshData = async () => {
+    const barId = 'default-bar-id';
+    const token = localStorage.getItem('token') || '';
+    try {
+      const metrics = await analyticsService.getDashboardMetrics(barId, token, selectedPeriod);
+      setKpiMetrics(metrics);
+      toast.success('Datos actualizados');
+    } catch (err) {
+      toast.error('Error al actualizar');
+    }
   };
 
-  const totalSales = analytics.salesData.reduce((sum, day) => sum + day.sales, 0);
-  const totalOrders = analytics.salesData.reduce((sum, day) => sum + day.orders, 0);
-  const totalCustomers = analytics.salesData.reduce((sum, day) => sum + day.customers, 0);
-  const avgOrderValue = totalSales / totalOrders;
+  // Fallback values if KPI metrics are not loaded
+  const displaySales = kpiMetrics?.revenue || analytics.salesData.reduce((sum, day) => sum + day.sales, 0);
+  const displayActiveUsers = kpiMetrics?.activeUsers || analytics.salesData.reduce((sum, day) => sum + day.customers, 0);
+  const displayPoints = kpiMetrics?.totalPointsSpent || 0;
+  const displayQueue = kpiMetrics?.songsInQueue || 0;
+
+  // const totalSales = analytics.salesData.reduce((sum, day) => sum + day.sales, 0);
+  // const totalOrders = analytics.salesData.reduce((sum, day) => sum + day.orders, 0);
+  // const totalCustomers = analytics.salesData.reduce((sum, day) => sum + day.customers, 0);
+  // const avgOrderValue = totalSales / totalOrders;
 
   return (
     <AdminLayout>
@@ -189,14 +224,14 @@ export default function AdminAnalyticsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1d">Hoy</SelectItem>
-                <SelectItem value="7d">7 días</SelectItem>
-                <SelectItem value="30d">30 días</SelectItem>
-                <SelectItem value="90d">90 días</SelectItem>
+                <SelectItem value="today">Hoy</SelectItem>
+                <SelectItem value="week">7 días</SelectItem>
+                <SelectItem value="month">30 días</SelectItem>
+                <SelectItem value="year">90 días</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={handleRefreshData}>
-              <RefreshCw className="h-4 w-4 mr-2" />
+            <Button variant="outline" onClick={handleRefreshData} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               Actualizar
             </Button>
             <Button variant="outline" onClick={handleExportData}>
@@ -231,7 +266,7 @@ export default function AdminAnalyticsPage() {
                       <div>
                         <p className="text-sm text-muted-foreground">Ventas Totales</p>
                         <p className="text-2xl font-bold text-green-600">
-                          {formatPrice(totalSales)}
+                          {formatPrice(displaySales)}
                         </p>
                         <p className="text-xs text-green-600 flex items-center">
                           <TrendingUp className="h-3 w-3 mr-1" />
@@ -246,14 +281,14 @@ export default function AdminAnalyticsPage() {
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground">Órdenes</p>
-                        <p className="text-2xl font-bold text-blue-600">{totalOrders}</p>
+                        <p className="text-sm text-muted-foreground">Canciones en Cola</p>
+                        <p className="text-2xl font-bold text-blue-600">{displayQueue}</p>
                         <p className="text-xs text-blue-600 flex items-center">
                           <TrendingUp className="h-3 w-3 mr-1" />
-                          +8.3% vs período anterior
+                          Activas ahora
                         </p>
                       </div>
-                      <ShoppingCart className="h-8 w-8 text-blue-600" />
+                      <Music className="h-8 w-8 text-blue-600" />
                     </div>
                   </CardContent>
                 </Card>
@@ -261,11 +296,11 @@ export default function AdminAnalyticsPage() {
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground">Clientes</p>
-                        <p className="text-2xl font-bold text-purple-600">{totalCustomers}</p>
+                        <p className="text-sm text-muted-foreground">Usuarios Activos</p>
+                        <p className="text-2xl font-bold text-purple-600">{displayActiveUsers}</p>
                         <p className="text-xs text-purple-600 flex items-center">
                           <TrendingUp className="h-3 w-3 mr-1" />
-                          +15.2% vs período anterior
+                          En el local
                         </p>
                       </div>
                       <Users className="h-8 w-8 text-purple-600" />
@@ -276,16 +311,16 @@ export default function AdminAnalyticsPage() {
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground">Ticket Promedio</p>
+                        <p className="text-sm text-muted-foreground">Puntos Gastados</p>
                         <p className="text-2xl font-bold text-orange-600">
-                          {formatPrice(avgOrderValue)}
+                          {displayPoints}
                         </p>
                         <p className="text-xs text-orange-600 flex items-center">
                           <TrendingUp className="h-3 w-3 mr-1" />
-                          +3.7% vs período anterior
+                          Canjeados hoy
                         </p>
                       </div>
-                      <Target className="h-8 w-8 text-orange-600" />
+                      <Star className="h-8 w-8 text-orange-600" />
                     </div>
                   </CardContent>
                 </Card>

@@ -10,6 +10,7 @@ import { logger } from './utils/logger';
 import { connectDatabase } from './utils/database';
 import { connectRedis } from './utils/redis';
 import { config } from './utils/config';
+import { MenuModel } from './models/Menu';
 
 const app = express();
 
@@ -233,8 +234,12 @@ app.use(errorHandler);
 const initializeConnections = async () => {
   try {
     // Connect to PostgreSQL
-    await connectDatabase();
+    const pool = await connectDatabase();
     logger.info('Database connected successfully');
+    
+    // Initialize Models
+    await MenuModel.initialize(pool);
+    logger.info('MenuModel initialized');
     
     // Connect to Redis
     await connectRedis();

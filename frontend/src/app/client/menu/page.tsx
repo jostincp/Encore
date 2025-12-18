@@ -26,105 +26,48 @@ import { Layout, PageContainer } from '@/components/ui/layout';
 import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
-import { formatPrice } from '@/utils/format';
-import { MenuItem } from '@/types';
+import { menuService, MenuItem } from '@/services/menuService';
 
-
-// Mock data para el menú
-const mockMenuItems: MenuItem[] = [
-  {
-    id: '1',
-    name: 'Hamburguesa Clásica',
-    description: 'Carne de res, lechuga, tomate, cebolla, queso cheddar',
-    price: 15000,
-    pointsReward: 150,
-    category: 'comidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=delicious%20classic%20hamburger%20with%20beef%20lettuce%20tomato%20cheese%20professional%20food%20photography&image_size=square',
-    isAvailable: true,
-    ingredients: ['Carne de res', 'Lechuga', 'Tomate', 'Cebolla', 'Queso cheddar']
-  },
-  {
-    id: '2',
-    name: 'Pizza Margherita',
-    description: 'Salsa de tomate, mozzarella fresca, albahaca',
-    price: 18000,
-    pointsReward: 180,
-    category: 'comidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=authentic%20margherita%20pizza%20with%20fresh%20mozzarella%20basil%20tomato%20sauce%20wood%20fired&image_size=square',
-    isAvailable: true,
-    ingredients: ['Salsa de tomate', 'Mozzarella fresca', 'Albahaca']
-  },
-  {
-    id: '3',
-    name: 'Cerveza Artesanal',
-    description: 'Cerveza rubia artesanal de la casa',
-    price: 8000,
-    pointsReward: 80,
-    category: 'bebidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=craft%20beer%20golden%20ale%20in%20glass%20with%20foam%20bar%20setting%20professional%20photography&image_size=square',
-    isAvailable: true
-  },
-  {
-    id: '4',
-    name: 'Tiramisú',
-    description: 'Postre italiano con café, mascarpone y cacao',
-    price: 12000,
-    pointsReward: 120,
-    category: 'postres',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=elegant%20tiramisu%20dessert%20with%20cocoa%20powder%20coffee%20mascarpone%20italian%20style&image_size=square',
-    isAvailable: true,
-    ingredients: ['Café', 'Mascarpone', 'Cacao', 'Bizcochos']
-  },
-  {
-    id: '5',
-    name: 'Ensalada César',
-    description: 'Lechuga romana, crutones, parmesano, aderezo césar',
-    price: 13000,
-    pointsReward: 130,
-    category: 'especiales',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=fresh%20caesar%20salad%20with%20romaine%20lettuce%20croutons%20parmesan%20cheese%20dressing&image_size=square',
-    isAvailable: true,
-    ingredients: ['Lechuga romana', 'Crutones', 'Parmesano', 'Aderezo césar']
-  },
-  {
-    id: '6',
-    name: 'Café Espresso',
-    description: 'Café espresso italiano tradicional',
-    price: 4000,
-    pointsReward: 40,
-    category: 'bebidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=perfect%20espresso%20coffee%20in%20white%20cup%20with%20crema%20italian%20style%20coffee%20shop&image_size=square',
-    isAvailable: true
-  }
-];
-
-// Helper function for category icons
-const getCategoryIcon = (category: string) => {
-  switch (category.toLowerCase()) {
-    case 'comidas': return <Utensils className="h-4 w-4" />;
-    case 'bebidas': return <Coffee className="h-4 w-4" />;
-    case 'postres': return <Cake className="h-4 w-4" />;
-    case 'especiales': return <Star className="h-4 w-4" />;
-    default: return <Utensils className="h-4 w-4" />;
-  }
-};
+// ... (keep imports)
 
 export default function MenuPage() {
   const { user, cart, addToCart } = useAppStore();
   const router = useRouter();
-  const { success } = useToast();
-  const [menuItems] = useState<MenuItem[]>(mockMenuItems);
+  const { success, error: showError } = useToast();
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [view3D, setView3D] = useState(true);
 
+  // Load menu items
   useEffect(() => {
-    if (!user) {
+    const loadMenu = async () => {
+      try {
+        setIsLoading(true);
+        // Using a default barId for now, ideally this comes from the user context or URL
+        const barId = 'default-bar-id'; 
+        const items = await menuService.getMenuItems(barId);
+        setMenuItems(items);
+      } catch (err) {
+        console.error('Failed to load menu:', err);
+        // Fallback to empty or show error
+        showError('No se pudo cargar el menú. Intenta de nuevo.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (user) {
+      loadMenu();
+    } else {
       router.push('/auth/login');
-      return;
     }
-  }, [user, router]);
+  }, [user, router, showError]);
+
+  // ... (rest of the component)
+
 
   const categories = ['all', 'comidas', 'bebidas', 'postres', 'especiales'];
 

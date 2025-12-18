@@ -14,7 +14,8 @@ import {
   validatePassword,
   validateNonEmptyString as validateUsername,
   validateNonEmptyString,
-  validatePhone
+  validatePhone,
+  cleanPhoneNumber
 } from '../utils/validation';
 import { config } from '../../../shared/config';
 import { UserRole } from '../constants/roles';
@@ -234,8 +235,22 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
     throw new ValidationError('Dirección, ciudad y país son requeridos');
   }
 
-  if (phone && !validatePhone(phone)) {
-    throw new ValidationError('Teléfono inválido');
+  let cleanedPhone: string | undefined;
+  if (phone) {
+    cleanedPhone = cleanPhoneNumber(phone);
+    
+    if (!cleanedPhone.startsWith('+')) {
+      throw new ValidationError('El número de teléfono debe incluir el código de país (ej. +57...)');
+    }
+    
+    // + and 8-15 digits means length 9-16
+    if (cleanedPhone.length < 9 || cleanedPhone.length > 16) {
+      throw new ValidationError('La longitud del número no es válida (debe tener entre 8 y 15 dígitos más el código de país)');
+    }
+
+    if (!validatePhone(cleanedPhone)) {
+      throw new ValidationError('Teléfono inválido. Formato correcto: +571234567890');
+    }
   }
 
   // Check if user already exists
@@ -250,7 +265,7 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
     password,
     firstName: sanitizedFirstName,
     lastName: sanitizedLastName,
-    phone,
+    phone: cleanedPhone,
     role: UserRole.BAR_OWNER
   });
 
@@ -260,12 +275,17 @@ export const registerBarOwner = asyncHandler(async (req: Request, res: Response)
     address: sanitizedAddress,
     city: sanitizedCity,
     country: sanitizedCountry,
-    phone: phone || undefined,
+    phone: cleanedPhone || undefined,
     ownerId: user.id
   });
 
   // Generate tokens
-  const accessToken = generateAccessToken({ userId: user.id, email: user.email, role: user.role as UserRole });
+  const accessToken = generateAccessToken({ 
+    userId: user.id, 
+    email: user.email, 
+    role: user.role as UserRole,
+    barId: bar.id
+  });
   const refreshTokenExpiresAt = new Date(Date.now() +
     (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );
@@ -471,8 +491,21 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     throw new UnauthorizedError('Acceso denegado. Solo propietarios de bares o administradores pueden acceder.');
   }
 
-  // Generate tokens con configuración segura
-  const accessToken = generateAccessToken({ userId: user.id, email: user.email, role: user.role as UserRole });
+  // Generar tokens con configuración segura
+  let barId: string | undefined;
+  if (user.role === UserRole.BAR_OWNER) {
+    const bars = await BarModel.findByOwnerId(user.id);
+    if (bars.length > 0) {
+      barId = bars[0].id;
+    }
+  }
+
+  const accessToken = generateAccessToken({ 
+    userId: user.id, 
+    email: user.email, 
+    role: user.role as UserRole,
+    barId
+  });
   const refreshTokenExpiresAt = new Date(Date.now() +
     (config.jwt.refreshExpiresIn === '7d' ? 7 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000)
   );

@@ -23,71 +23,69 @@ import { useAppStore } from '@/stores/useAppStore';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 import { formatPoints, formatRelativeTime, formatDateTime } from '@/utils/format';
-import { PointsTransaction } from '@/types';
+import { pointsService, PointsTransaction } from '@/services/pointsService';
 
-// Mock data para transacciones
-const mockTransactions: PointsTransaction[] = [
-  {
-    id: '1',
-    userId: 'user1',
-    type: 'earned',
-    amount: 50,
-    description: 'Compra en menú - Hamburguesa Clásica',
-    timestamp: new Date(Date.now() - 1000 * 60 * 30), // 30 min ago
-    relatedOrderId: 'order1'
-  },
-  {
-    id: '2',
-    userId: 'user1',
-    type: 'spent',
-    amount: -25,
-    description: 'Canción solicitada - Bohemian Rhapsody',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-    relatedSongId: 'song1'
-  },
-  {
-    id: '3',
-    userId: 'user1',
-    type: 'earned',
-    amount: 30,
-    description: 'Compra en menú - Cerveza Artesanal',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4), // 4 hours ago
-    relatedOrderId: 'order2'
-  },
-  {
-    id: '4',
-    userId: 'user1',
-    type: 'spent',
-    amount: -50,
-    description: 'Priority Play - Hotel California',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 6), // 6 hours ago
-    relatedSongId: 'song2'
-  },
-  {
-    id: '5',
-    userId: 'user1',
-    type: 'earned',
-    amount: 100,
-    description: 'Bono de bienvenida',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-  }
-];
+// ... (keep imports)
 
 export default function PointsPage() {
-  const { user } = useAppStore();
+  const { user, updateUser } = useAppStore();
   const router = useRouter();
-  const { success: showSuccessToast } = useToast();
-  const [transactions] = useState<PointsTransaction[]>(mockTransactions);
+  const { success: showSuccessToast, error: showErrorToast } = useToast();
+  const [transactions, setTransactions] = useState<PointsTransaction[]>([]);
   const [filter, setFilter] = useState<'all' | 'earned' | 'spent' | 'bonus'>('all');
   const [timeFilter, setTimeFilter] = useState<'today' | 'week' | 'month' | 'all'>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Load points data
   useEffect(() => {
-    if (!user) {
+    const loadData = async () => {
+      if (!user) return;
+      
+      try {
+        setIsLoading(true);
+        // Using default barId for now
+        const barId = 'default-bar-id';
+        const token = localStorage.getItem('token') || '';
+        
+        const [balanceData, historyData] = await Promise.all([
+          pointsService.getUserBalance(barId, token),
+          pointsService.getTransactions(barId, token)
+        ]);
+
+        setTransactions(historyData);
+        // Update user store with new balance if needed
+        // updateUser({ ...user, points: balanceData.points_balance });
+        
+      } catch (err) {
+        console.error('Failed to load points data:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (user) {
+      loadData();
+    } else {
       router.push('/qr');
-      return;
     }
   }, [user, router]);
+
+  const handleRefresh = async () => {
+    if (!user) return;
+    setIsRefreshing(true);
+    try {
+      const barId = 'default-bar-id';
+      const token = localStorage.getItem('token') || '';
+      const historyData = await pointsService.getTransactions(barId, token);
+      setTransactions(historyData);
+      showSuccessToast('Historial actualizado');
+    } catch (err) {
+      showErrorToast('Error al actualizar');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   if (!user) return null;
 
@@ -96,7 +94,7 @@ export default function PointsPage() {
     
     if (timeFilter !== 'all') {
       const now = new Date();
-      const transactionDate = new Date(transaction.timestamp);
+      const transactionDate = new Date(transaction.created_at); // Changed from timestamp to created_at
       
       switch (timeFilter) {
         case 'today':
@@ -120,14 +118,6 @@ export default function PointsPage() {
   const totalSpent = transactions
     .filter(t => t.type === 'spent')
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    // Simular carga
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsRefreshing(false);
-    showSuccessToast('Historial actualizado');
-  };
 
   const getTransactionIcon = (type: string) => {
     switch (type) {
@@ -370,7 +360,7 @@ export default function PointsPage() {
                                  transaction.type === 'spent' ? 'Gastado' : 'Bono'}
                               </Badge>
                               <span className="text-xs text-muted-foreground">
-                                {formatRelativeTime(transaction.timestamp)}
+                                {formatRelativeTime(new Date(transaction.created_at))}
                               </span>
                             </div>
                           </div>
@@ -380,7 +370,7 @@ export default function PointsPage() {
                             {transaction.amount > 0 ? '+' : ''}{formatPoints(transaction.amount)}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {formatDateTime(transaction.timestamp)}
+                            {formatDateTime(new Date(transaction.created_at))}
                           </p>
                         </div>
                       </motion.div>

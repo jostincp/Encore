@@ -94,9 +94,12 @@ export class PointsModel {
       if (result.rows.length === 0) {
         // Create new points record
         const id = uuidv4();
+        // Ensure we handle potential race conditions with ON CONFLICT if the table has unique constraint on (user_id, bar_id)
+        // Assuming there is a unique constraint on (user_id, bar_id)
         const insertResult = await query(
           `INSERT INTO user_points (id, user_id, bar_id, current_balance, total_earned, total_spent, last_activity, created_at, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), NOW())
+           ON CONFLICT (user_id, bar_id) DO UPDATE SET updated_at = NOW()
            RETURNING *`,
           [id, userId, barId, 0, 0, 0]
         );

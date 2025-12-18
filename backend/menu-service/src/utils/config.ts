@@ -3,7 +3,9 @@ import path from 'path';
 import { logInfo, logError } from '../types/shared';
 
 // Load environment variables from .env file
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') }); // backend/.env
+dotenv.config({ path: path.resolve(__dirname, '../../.env') }); // backend/menu-service/.env
+
 
 interface Config {
   // Server configuration

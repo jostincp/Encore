@@ -13,6 +13,7 @@ import jwt from 'jsonwebtoken';
 import { AuthenticationError, AuthorizationError } from '../utils/errors';
 import { logger } from '../utils/logger';
 import { CacheManager } from '../utils/cache';
+import config from '../utils/config';
 
 // =============================================================================
 // Types and Interfaces
@@ -35,9 +36,12 @@ export interface AuthenticatedRequest extends Request {
 
 interface JWTPayload {
   sub: string; // user id
+  userId?: string;
+  id?: string;
   email: string;
   role: string;
   bar_id?: string;
+  barId?: string;
   permissions: string[];
   iat: number;
   exp: number;
@@ -47,7 +51,7 @@ interface JWTPayload {
 // Configuration
 // =============================================================================
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = config.JWT_SECRET;
 const JWT_ALGORITHM = 'HS256';
 const TOKEN_CACHE_TTL = 300; // 5 minutes
 
@@ -95,42 +99,54 @@ export const authMiddleware = async (
       }
     }
 
-    // Verify and decode JWT token
-    const decoded = jwt.verify(token, JWT_SECRET, {
-      algorithms: [JWT_ALGORITHM]
-    }) as JWTPayload;
+        // Verify and decode JWT token
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET, {
+          algorithms: [JWT_ALGORITHM]
+        }) as JWTPayload;
 
-    // Create user object from token payload
-    const user: AuthenticatedUser = {
-      id: decoded.sub,
-      email: decoded.email,
-      role: decoded.role as AuthenticatedUser['role'],
-      bar_id: decoded.bar_id,
-      permissions: decoded.permissions || [],
-      iat: decoded.iat,
-      exp: decoded.exp
-    };
+        // Check for required fields
+        const userId = decoded.sub || decoded.userId || decoded.id;
+        if (!userId) {
+           // Allow without user ID if it's a valid token, might be a service token or partial auth
+           // But better to log warning
+           logger.warn('Token payload missing user ID');
+        }
 
-    // Cache the validated user for performance (if cache available)
-    if (cacheManager) {
-      await cacheManager.set(
-        `auth:${token}`,
-        JSON.stringify(user),
-        TOKEN_CACHE_TTL
-      );
+        // Create user object from token payload
+        const user: AuthenticatedUser = {
+          id: userId || 'unknown',
+          email: decoded.email,
+          role: decoded.role as AuthenticatedUser['role'],
+          bar_id: decoded.bar_id || decoded.barId,
+          permissions: decoded.permissions || [],
+          iat: decoded.iat,
+          exp: decoded.exp
+        };
+    
+        // ... (rest of logic)
+        
+        // Add user and token to request
+        req.user = user;
+        req.token = token;
+    
+        logger.debug('User authenticated successfully', {
+          userId: user.id,
+          role: user.role,
+          barId: user.bar_id
+        });
+    
+        next();
+    } catch (err: any) {
+        logger.error('JWT Verify Failed', { 
+            error: err.message, 
+            secretLength: JWT_SECRET.length,
+            secretFirstChar: JWT_SECRET.substring(0, 1),
+            tokenSnippet: token.substring(0, 10)
+        });
+        throw err;
     }
 
-    // Add user and token to request
-    req.user = user;
-    req.token = token;
-
-    logger.debug('User authenticated successfully', {
-      userId: user.id,
-      role: user.role,
-      barId: user.bar_id
-    });
-
-    next();
   } catch (error) {
     logger.warn('Authentication failed', {
       error: {
