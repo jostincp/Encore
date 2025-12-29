@@ -71,17 +71,9 @@ export default function AdminPage() {
 
     // Simular usuario admin para desarrollo
     if (!user) {
-      const mockAdminUser = {
-        id: 'admin-1',
-        name: 'Administrador',
-        email: 'admin@encore.com',
-        role: 'admin' as const,
-        points: 0,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-      // TODO: Remover esta simulación cuando se implemente autenticación real
-      // setUser(mockAdminUser);
+      // Intentar cargar usuario desde localStorage si existe token
+      const token = typeof window !== 'undefined' ? localStorage.getItem('encore_access_token') : null;
+      // No forzar mock user si no hay token, dejar que el flujo normal maneje el login
     }
   }, [user, router]);
 
@@ -106,36 +98,47 @@ export default function AdminPage() {
         } as const;
 
         // Solo cargar datos disponibles - evitar errores de servicios no implementados
-        const [barRes, userRes] = await Promise.all([
-          fetch(`${API_ENDPOINTS.base}/api/bars/my`, { headers }),
-          fetch(`${API_ENDPOINTS.base}/api/auth/profile`, { headers })
-        ]);
+        // Se manejan las promesas individualmente para que un fallo no detenga toda la carga
+        const barPromise = fetch(`${API_ENDPOINTS.base}/api/bars/my`, { headers }).catch(err => {
+          console.error('Failed to fetch bar:', err);
+          return null;
+        });
+        
+        const userPromise = fetch(`${API_ENDPOINTS.base}/api/auth/profile`, { headers }).catch(err => {
+          console.error('Failed to fetch profile:', err);
+          return null;
+        });
 
-        const barJson = await barRes.json().catch(() => ({}));
-        const userJson = await userRes.json().catch(() => ({}));
+        const [barRes, userRes] = await Promise.all([barPromise, userPromise]);
 
-        if (!barRes.ok) {
-          // Si no hay bar asociado (404), no mostrar error - es normal para nuevos usuarios
-          if (barRes.status === 404) {
-            setRealBar(null); // Usuario no tiene bar asociado aún
+        if (barRes) {
+          const barJson = await barRes.json().catch(() => ({}));
+          if (!barRes.ok) {
+            // Si no hay bar asociado (404), no mostrar error - es normal para nuevos usuarios
+            if (barRes.status === 404) {
+              setRealBar(null); // Usuario no tiene bar asociado aún
+            } else {
+              const msg = barJson?.message || barJson?.error || barJson?.data?.message || `Error al cargar el bar (${barRes.status})`;
+              setRealError(msg);
+            }
           } else {
-            const msg = barJson?.message || barJson?.error || barJson?.data?.message || `Error al cargar el bar (${barRes.status})`;
-            setRealError(msg);
+            // La respuesta es { success, message, data: { bars: [...] } }
+            const barsArr = barJson?.data?.bars || barJson?.bars;
+            const bar = Array.isArray(barsArr) && barsArr.length > 0 ? barsArr[0] : null;
+            setRealBar(bar);
           }
-        } else {
-          // La respuesta es { success, message, data: { bars: [...] } }
-          const barsArr = barJson?.data?.bars || barJson?.bars;
-          const bar = Array.isArray(barsArr) && barsArr.length > 0 ? barsArr[0] : null;
-          setRealBar(bar);
         }
 
-        if (!userRes.ok) {
-          const msg = userJson?.message || userJson?.error || userJson?.data?.message || `Error al cargar el perfil (${userRes.status})`;
-          // no sobreescribir error del bar si ya existe
-          setRealError(prev => prev ?? msg);
-        } else {
-          const u = userJson?.data || userJson;
-          setRealUser(u);
+        if (userRes) {
+          const userJson = await userRes.json().catch(() => ({}));
+          if (!userRes.ok) {
+            const msg = userJson?.message || userJson?.error || userJson?.data?.message || `Error al cargar el perfil (${userRes.status})`;
+            // no sobreescribir error del bar si ya existe
+            setRealError(prev => prev ?? msg);
+          } else {
+            const u = userJson?.data || userJson;
+            setRealUser(u);
+          }
         }
 
         // TODO: Implementar cuando el servicio analytics esté disponible
@@ -188,6 +191,13 @@ export default function AdminPage() {
       case 'delivered': return <CheckCircle className="h-4 w-4" />;
       default: return <XCircle className="h-4 w-4" />;
     }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('encore_access_token');
+    localStorage.removeItem('encore_refresh_token');
+    // Limpiar estado de usuario si existiera función para ello
+    router.push('/auth/login');
   };
 
   return (
@@ -263,6 +273,13 @@ export default function AdminPage() {
             >
               <Settings className="h-4 w-4 mr-2" />
               Configuración
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleLogout}
+            >
+              <Users className="h-4 w-4 mr-2" />
+              Cerrar Sesión
             </Button>
           </div>
         </motion.div>

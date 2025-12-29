@@ -1,4 +1,4 @@
-'use client';
+2'use client';
 
 import { useState, useEffect, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
@@ -31,7 +31,7 @@ import { menuService, MenuItem } from '@/services/menuService';
 // ... (keep imports)
 
 export default function MenuPage() {
-  const { user, cart, addToCart } = useAppStore();
+  const { user, cart, addToCart, barId: storeBarId } = useAppStore();
   const router = useRouter();
   const { success, error: showError } = useToast();
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -46,9 +46,18 @@ export default function MenuPage() {
     const loadMenu = async () => {
       try {
         setIsLoading(true);
-        // Using a default barId for now, ideally this comes from the user context or URL
-        const barId = 'default-bar-id'; 
-        const items = await menuService.getMenuItems(barId);
+        // Try to get barId from store or localStorage
+        const storedBarId = typeof window !== 'undefined' ? localStorage.getItem('encore_bar_id') : null;
+        const activeBarId = storeBarId || storedBarId;
+
+        if (!activeBarId) {
+          console.warn('No barId found');
+          // For demo purposes, we might want to redirect or show a specific message
+          // router.push('/'); 
+          return;
+        }
+
+        const items = await menuService.getMenuItems(activeBarId);
         setMenuItems(items);
       } catch (err) {
         console.error('Failed to load menu:', err);
@@ -64,7 +73,7 @@ export default function MenuPage() {
     } else {
       router.push('/auth/login');
     }
-  }, [user, router, showError]);
+  }, [user, router, showError, storeBarId]);
 
   // ... (rest of the component)
 

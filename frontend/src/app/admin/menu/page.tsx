@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -19,7 +19,8 @@ import {
   Coffee, 
   IceCream,
   Save,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -36,131 +37,179 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 import { formatPrice } from '@/utils/format';
 import { MenuItem } from '@/types';
+import { API_URLS, API_ENDPOINTS } from '@/utils/constants';
 
-// Mock data para items del menú
-const mockMenuItems: MenuItem[] = [
-  {
-    id: '1',
-    name: 'Hamburguesa Clásica',
-    description: 'Jugosa hamburguesa de carne con lechuga, tomate, cebolla y salsa especial',
-    price: 15000,
-    pointsReward: 150,
-    category: 'comidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=delicious%20classic%20hamburger%20with%20lettuce%20tomato%20onion%20and%20special%20sauce%20on%20wooden%20board%20restaurant%20style&image_size=square',
-    isAvailable: true,
-    ingredients: ['Carne de res', 'Pan brioche', 'Lechuga', 'Tomate', 'Cebolla', 'Salsa especial']
-  },
-  {
-    id: '2',
-    name: 'Pizza Margherita',
-    description: 'Pizza tradicional italiana con salsa de tomate, mozzarella fresca y albahaca',
-    price: 18000,
-    pointsReward: 180,
-    category: 'comidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=traditional%20italian%20margherita%20pizza%20with%20fresh%20mozzarella%20basil%20tomato%20sauce%20wood%20fired%20oven&image_size=square',
-    isAvailable: true,
-    ingredients: ['Masa de pizza', 'Salsa de tomate', 'Mozzarella fresca', 'Albahaca', 'Aceite de oliva']
-  },
-  {
-    id: '3',
-    name: 'Salmón a la Plancha',
-    description: 'Filete de salmón fresco a la plancha con vegetales salteados y salsa de limón',
-    price: 22000,
-    pointsReward: 220,
-    category: 'comidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=grilled%20salmon%20fillet%20with%20sauteed%20vegetables%20lemon%20sauce%20elegant%20restaurant%20plating&image_size=square',
-    isAvailable: true,
-    ingredients: ['Salmón fresco', 'Vegetales mixtos', 'Limón', 'Aceite de oliva', 'Hierbas finas']
-  },
-  {
-    id: '4',
-    name: 'Ensalada César',
-    description: 'Ensalada fresca con lechuga romana, crutones, parmesano y aderezo césar',
-    price: 12000,
-    pointsReward: 120,
-    category: 'comidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=fresh%20caesar%20salad%20with%20romaine%20lettuce%20croutons%20parmesan%20cheese%20caesar%20dressing&image_size=square',
-    isAvailable: true,
-    ingredients: ['Lechuga romana', 'Crutones', 'Queso parmesano', 'Aderezo césar']
-  },
-  {
-    id: '5',
-    name: 'Mojito Clásico',
-    description: 'Refrescante cóctel con ron blanco, menta fresca, limón y agua con gas',
-    price: 8000,
-    pointsReward: 80,
-    category: 'bebidas',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=classic%20mojito%20cocktail%20with%20white%20rum%20fresh%20mint%20lime%20sparkling%20water%20ice%20cubes&image_size=square',
-    isAvailable: true,
-    ingredients: ['Ron blanco', 'Menta fresca', 'Limón', 'Azúcar', 'Agua con gas']
-  },
-  {
-    id: '6',
-    name: 'Tiramisú',
-    description: 'Postre italiano tradicional con café, mascarpone y cacao en polvo',
-    price: 9000,
-    pointsReward: 90,
-    category: 'postres',
-    imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=traditional%20italian%20tiramisu%20dessert%20with%20coffee%20mascarpone%20cocoa%20powder%20elegant%20presentation&image_size=square',
-    isAvailable: false,
-    ingredients: ['Mascarpone', 'Café espresso', 'Bizcochos de soletilla', 'Cacao en polvo', 'Huevos']
-  }
-];
-
-const categories = [
-  { id: 'comidas', name: 'Comidas', icon: ChefHat },
-  { id: 'bebidas', name: 'Bebidas', icon: Coffee },
-  { id: 'postres', name: 'Postres', icon: IceCream },
-  { id: 'especiales', name: 'Especiales', icon: Star }
-];
+interface Category {
+  id: string;
+  name: string;
+  icon?: any;
+  description?: string;
+}
 
 export default function AdminMenuPage() {
-  const { user } = useAppStore();
+  const { user, setUser } = useAppStore();
   const router = useRouter();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
-  const [menuItems, setMenuItems] = useState(mockMenuItems);
+  
+  // State
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [barId, setBarId] = useState<string | null>(null);
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [availabilityFilter, setAvailabilityFilter] = useState<string>('all');
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<MenuItem>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
+  // Authentication and Data Loading
   useEffect(() => {
-    if (!user || user.role !== 'admin') {
-      router.push('/');
-      return;
+    const initPage = async () => {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('encore_access_token') : null;
+      
+      if (!token) {
+        // router.push('/'); // Comentado para debugging
+        return;
+      }
+
+      try {
+        // 1. Get User Profile & Bar ID
+        const profileRes = await fetch(`${API_ENDPOINTS.base}/api/auth/profile`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!profileRes.ok) throw new Error('Failed to fetch profile');
+        const profileData = await profileRes.json();
+        const userData = profileData.data || profileData;
+        
+        if (!user) {
+          setUser({
+            id: userData.id,
+            email: userData.email,
+            role: userData.role,
+            points: 0
+          } as any);
+        }
+
+        // Get Bar ID (assuming owner has one bar)
+        const barsRes = await fetch(`${API_ENDPOINTS.base}/api/bars/my`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (barsRes.ok) {
+          const barsData = await barsRes.json();
+          const myBar = barsData.data?.bars?.[0];
+          if (myBar) {
+            setBarId(myBar.id);
+            await loadMenuData(myBar.id, token);
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing menu page:', error);
+        showErrorToast('Error al cargar datos del menú');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initPage();
+  }, []);
+
+  const loadMenuData = async (currentBarId: string, token: string) => {
+    try {
+      // 2. Fetch Categories
+      const catsRes = await fetch(`${API_URLS.menuBase}/bars/${currentBarId}/categories`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      let fetchedCategories: Category[] = [];
+      if (catsRes.ok) {
+        const catsData = await catsRes.json();
+        fetchedCategories = catsData.data?.categories || [];
+        setCategories(fetchedCategories);
+      }
+
+      // 3. Fetch Menu Items
+      const menuRes = await fetch(`${API_URLS.menuBase}/bars/${currentBarId}/menu?limit=100`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (menuRes.ok) {
+        const menuData = await menuRes.json();
+        const items = menuData.data?.items || [];
+        
+        // Map backend items to frontend MenuItem type
+        const mappedItems: MenuItem[] = items.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          price: Number(item.price),
+          pointsReward: item.points_reward || Math.floor(Number(item.price) * 0.01),
+          category: item.category_id, // This is UUID now
+          imageUrl: item.image_url,
+          isAvailable: item.is_available,
+          ingredients: item.ingredients || []
+        }));
+        
+        setMenuItems(mappedItems);
+      }
+    } catch (error) {
+      console.error('Error loading menu data:', error);
+      showErrorToast('Error al cargar el menú');
     }
-  }, [user, router]);
-
-  if (!user || user.role !== 'admin') return null;
-
-  const filteredItems = menuItems.filter(item => {
-    const matchesSearch = 
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
-    const matchesAvailability = 
-      availabilityFilter === 'all' || 
-      (availabilityFilter === 'available' && item.isAvailable) ||
-      (availabilityFilter === 'unavailable' && !item.isAvailable);
-    return matchesSearch && matchesCategory && matchesAvailability;
-  });
-
-  const handleToggleAvailability = (itemId: string) => {
-    setMenuItems(prev => prev.map(item => 
-      item.id === itemId 
-        ? { ...item, isAvailable: !item.isAvailable }
-        : item
-    ));
-    
-    const item = menuItems.find(i => i.id === itemId);
-    showSuccessToast(`${item?.name} ${item?.isAvailable ? 'deshabilitado' : 'habilitado'}`);
   };
 
-  const handleDeleteItem = (itemId: string) => {
-    setMenuItems(prev => prev.filter(item => item.id !== itemId));
-    showSuccessToast('Item eliminado del menú');
+  const handleToggleAvailability = async (item: MenuItem) => {
+    if (!barId) return;
+    
+    // Optimistic update
+    const previousItems = [...menuItems];
+    setMenuItems(prev => prev.map(i => 
+      i.id === item.id ? { ...i, isAvailable: !i.isAvailable } : i
+    ));
+
+    try {
+      const token = localStorage.getItem('encore_access_token');
+      const res = await fetch(`${API_URLS.menuBase}/bars/${barId}/menu/${item.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ is_available: !item.isAvailable })
+      });
+
+      if (!res.ok) throw new Error('Failed to update');
+      
+      showSuccessToast(`${item.name} ${!item.isAvailable ? 'habilitado' : 'deshabilitado'}`);
+    } catch (error) {
+      setMenuItems(previousItems); // Revert
+      showErrorToast('Error al actualizar disponibilidad');
+    }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if (!barId || !confirm('¿Estás seguro de eliminar este item?')) return;
+
+    try {
+      const token = localStorage.getItem('encore_access_token');
+      const res = await fetch(`${API_URLS.menuBase}/bars/${barId}/menu/${itemId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!res.ok) throw new Error('Failed to delete');
+
+      setMenuItems(prev => prev.filter(item => item.id !== itemId));
+      showSuccessToast('Item eliminado del menú');
+    } catch (error) {
+      showErrorToast('Error al eliminar item');
+    }
   };
 
   const handleEditItem = (item: MenuItem) => {
@@ -169,49 +218,158 @@ export default function AdminMenuPage() {
     setIsEditing(true);
   };
 
-  const handleSaveEdit = () => {
-    if (!selectedItem || !editForm.name || !editForm.price) {
+  const handleSaveEdit = async () => {
+    if (!barId || !editForm.name || !editForm.price || !editForm.category) {
       showErrorToast('Por favor completa todos los campos requeridos');
       return;
     }
 
-    setMenuItems(prev => prev.map(item => 
-      item.id === selectedItem.id 
-        ? { ...item, ...editForm }
-        : item
-    ));
+    setIsSaving(true);
+    try {
+      const token = localStorage.getItem('encore_access_token');
+      const isNew = !selectedItem || selectedItem.id.startsWith('temp-');
+      
+      const endpoint = isNew 
+        ? `${API_URLS.menuBase}/bars/${barId}/menu`
+        : `${API_URLS.menuBase}/bars/${barId}/menu/${selectedItem.id}`;
+      
+      const method = isNew ? 'POST' : 'PUT';
+      
+      const payload = {
+        name: editForm.name,
+        description: editForm.description,
+        price: Number(editForm.price),
+        category_id: editForm.category,
+        image_url: editForm.imageUrl,
+        is_available: editForm.isAvailable,
+        ingredients: editForm.ingredients,
+        points_reward: editForm.pointsReward
+      };
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Error saving item');
+      }
+
+      const savedItemData = await res.json();
+      const savedItem = savedItemData.data?.item || savedItemData.data;
+
+      // Map back to frontend model
+      const mappedItem: MenuItem = {
+        id: savedItem.id,
+        name: savedItem.name,
+        description: savedItem.description,
+        price: Number(savedItem.price),
+        pointsReward: savedItem.points_reward,
+        category: savedItem.category_id,
+        imageUrl: savedItem.image_url,
+        isAvailable: savedItem.is_available,
+        ingredients: savedItem.ingredients || []
+      };
+
+      if (isNew) {
+        setMenuItems(prev => [mappedItem, ...prev]);
+      } else {
+        setMenuItems(prev => prev.map(item => item.id === mappedItem.id ? mappedItem : item));
+      }
+      
+      setIsEditing(false);
+      setSelectedItem(null);
+      setEditForm({});
+      showSuccessToast('Item guardado correctamente');
+    } catch (error) {
+      console.error(error);
+      showErrorToast('Error al guardar item');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    if (!barId || !newCategoryName.trim()) return;
     
-    setIsEditing(false);
-    setSelectedItem(null);
-    setEditForm({});
-    showSuccessToast('Item actualizado correctamente');
+    try {
+      const token = localStorage.getItem('encore_access_token');
+      const res = await fetch(`${API_URLS.menuBase}/bars/${barId}/categories`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: newCategoryName, is_active: true })
+      });
+
+      if (!res.ok) throw new Error('Failed to create category');
+      
+      const data = await res.json();
+      const newCat = data.data?.category || data.data;
+      
+      setCategories(prev => [...prev, { id: newCat.id, name: newCat.name }]);
+      setNewCategoryName('');
+      showSuccessToast('Categoría creada');
+    } catch (error) {
+      showErrorToast('Error al crear categoría');
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    if (!barId || !confirm('¿Eliminar categoría? Esto podría fallar si tiene items asociados.')) return;
+    
+    try {
+      const token = localStorage.getItem('encore_access_token');
+      const res = await fetch(`${API_URLS.menuBase}/bars/${barId}/categories/${categoryId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!res.ok) throw new Error('Failed to delete');
+      
+      setCategories(prev => prev.filter(c => c.id !== categoryId));
+      showSuccessToast('Categoría eliminada');
+    } catch (error) {
+      showErrorToast('Error al eliminar categoría (¿tiene items?)');
+    }
   };
 
   const handleAddNewItem = () => {
     const newItem: MenuItem = {
-      id: `item-${Date.now()}`,
-      name: 'Nuevo Item',
-      description: 'Descripción del nuevo item',
-      price: 10000,
-      pointsReward: 100,
-      category: 'comidas',
-      imageUrl: 'https://trae-api-us.mchost.guru/api/ide/v1/text_to_image?prompt=delicious%20restaurant%20food%20dish%20professional%20photography&image_size=square',
+      id: `temp-${Date.now()}`,
+      name: '',
+      description: '',
+      price: 0,
+      pointsReward: 0,
+      category: categories[0]?.id || '',
+      imageUrl: '',
       isAvailable: true,
       ingredients: []
     };
     
-    setMenuItems(prev => [newItem, ...prev]);
-    handleEditItem(newItem);
+    setSelectedItem(newItem); // Mark as selected so handleSave knows it's being edited
+    setEditForm(newItem);
+    setIsEditing(true);
   };
 
   const getCategoryIcon = (categoryId: string) => {
+    // Default icons mapping if category doesn't have one
     const category = categories.find(c => c.id === categoryId);
-    return category ? category.icon : ChefHat;
+    if (category?.name.toLowerCase().includes('bebida')) return Coffee;
+    if (category?.name.toLowerCase().includes('postre')) return IceCream;
+    if (category?.name.toLowerCase().includes('especial')) return Star;
+    return ChefHat;
   };
 
   const getCategoryName = (categoryId: string) => {
     const category = categories.find(c => c.id === categoryId);
-    return category ? category.name : categoryId;
+    return category ? category.name : 'Sin categoría';
   };
 
   const MenuItemCard = ({ item }: { item: MenuItem }) => {
@@ -241,7 +399,6 @@ export default function AdminMenuPage() {
                 No disponible
               </Badge>
             )}
-            {/* Badges adicionales se pueden agregar aquí */}
           </div>
           <div className="absolute bottom-2 left-2">
             <Badge className="bg-black/70 text-white">
@@ -254,16 +411,14 @@ export default function AdminMenuPage() {
         <div className="p-4">
           <div className="flex items-start justify-between mb-2">
             <h3 className="font-semibold text-lg">{item.name}</h3>
-            {/* Rating se puede agregar aquí si se incluye en el tipo MenuItem */}
           </div>
           
           <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
-            {item.description}
+            {item.description || 'Sin descripción'}
           </p>
           
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              {/* Tiempo de preparación se puede agregar aquí si se incluye en el tipo MenuItem */}
               <div className="flex items-center gap-1">
                 <DollarSign className="h-4 w-4" />
                 <span className="font-semibold text-foreground">{formatPrice(item.price)}</span>
@@ -284,7 +439,7 @@ export default function AdminMenuPage() {
             <Button
               variant={item.isAvailable ? "outline" : "default"}
               size="sm"
-              onClick={() => handleToggleAvailability(item.id)}
+              onClick={() => handleToggleAvailability(item)}
             >
               {item.isAvailable ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </Button>
@@ -301,6 +456,28 @@ export default function AdminMenuPage() {
       </motion.div>
     );
   };
+
+  const filteredItems = menuItems.filter(item => {
+    const matchesSearch = 
+      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
+    const matchesAvailability = 
+      availabilityFilter === 'all' || 
+      (availabilityFilter === 'available' && item.isAvailable) ||
+      (availabilityFilter === 'unavailable' && !item.isAvailable);
+    return matchesSearch && matchesCategory && matchesAvailability;
+  });
+
+  if (isLoading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-screen">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
@@ -330,7 +507,11 @@ export default function AdminMenuPage() {
               </p>
             </div>
           </div>
-          <Button onClick={handleAddNewItem}>
+          <Button variant="outline" onClick={() => setIsCategoryDialogOpen(true)} disabled={!barId}>
+            <Tag className="h-4 w-4 mr-2" />
+            Gestionar Categorías
+          </Button>
+          <Button onClick={handleAddNewItem} disabled={!barId}>
             <Plus className="h-4 w-4 mr-2" />
             Agregar Item
           </Button>
@@ -419,7 +600,7 @@ export default function AdminMenuPage() {
             <SelectContent>
               <SelectItem value="all">Todas las categorías</SelectItem>
               {categories.map(category => {
-                const Icon = category.icon;
+                const Icon = getCategoryIcon(category.id);
                 return (
                   <SelectItem key={category.id} value={category.id}>
                     <div className="flex items-center gap-2">
@@ -466,7 +647,9 @@ export default function AdminMenuPage() {
           >
             <ChefHat className="h-16 w-16 mx-auto mb-4 opacity-50" />
             <p className="text-lg mb-2">No hay items que coincidan</p>
-            <p className="text-sm">Intenta ajustar los filtros de búsqueda</p>
+            <p className="text-sm">
+              {categories.length === 0 ? '¡Primero crea algunas categorías!' : 'Intenta ajustar los filtros de búsqueda'}
+            </p>
           </motion.div>
         )}
 
@@ -475,7 +658,7 @@ export default function AdminMenuPage() {
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {selectedItem?.id.startsWith('item-') ? 'Agregar Nuevo Item' : 'Editar Item del Menú'}
+                {selectedItem?.id.startsWith('temp-') ? 'Agregar Nuevo Item' : 'Editar Item del Menú'}
               </DialogTitle>
             </DialogHeader>
             
@@ -517,28 +700,32 @@ export default function AdminMenuPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <Label htmlFor="category">Categoría</Label>
-                    <Select
-                      value={editForm.category || ''}
-                      onValueChange={(value) => setEditForm(prev => ({ ...prev, category: value as 'bebidas' | 'comidas' | 'postres' | 'especiales' }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map(category => {
-                          const Icon = category.icon;
-                          return (
-                            <SelectItem key={category.id} value={category.id}>
-                              <div className="flex items-center gap-2">
-                                <Icon className="h-4 w-4" />
-                                {category.name}
-                              </div>
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="category">Categoría *</Label>
+                    {categories.length > 0 ? (
+                      <Select
+                        value={editForm.category || ''}
+                        onValueChange={(value) => setEditForm(prev => ({ ...prev, category: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map(category => {
+                            const Icon = getCategoryIcon(category.id);
+                            return (
+                              <SelectItem key={category.id} value={category.id}>
+                                <div className="flex items-center gap-2">
+                                  <Icon className="h-4 w-4" />
+                                  {category.name}
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <p className="text-sm text-red-500 mt-2">No hay categorías disponibles</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="pointsReward">Puntos de Recompensa</Label>
@@ -590,8 +777,6 @@ export default function AdminMenuPage() {
                   />
                 </div>
 
-
-
                 {/* Actions */}
                 <div className="flex justify-end gap-3 pt-4 border-t">
                   <Button
@@ -601,17 +786,60 @@ export default function AdminMenuPage() {
                       setSelectedItem(null);
                       setEditForm({});
                     }}
+                    disabled={isSaving}
                   >
                     <X className="h-4 w-4 mr-2" />
                     Cancelar
                   </Button>
-                  <Button onClick={handleSaveEdit}>
-                    <Save className="h-4 w-4 mr-2" />
+                  <Button onClick={handleSaveEdit} disabled={isSaving || categories.length === 0}>
+                    {isSaving ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-2" />
+                    )}
                     Guardar
                   </Button>
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+        {/* Category Dialog */}
+        <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Gestionar Categorías</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="Nueva categoría..." 
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                />
+                <Button onClick={handleCreateCategory} disabled={!newCategoryName.trim()}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {categories.map(cat => (
+                  <div key={cat.id} className="flex items-center justify-between p-2 border rounded">
+                    <span>{cat.name}</span>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-red-500"
+                      onClick={() => handleDeleteCategory(cat.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+                {categories.length === 0 && (
+                  <p className="text-center text-muted-foreground py-4">No hay categorías</p>
+                )}
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </PageContainer>

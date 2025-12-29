@@ -1,0 +1,44 @@
+{
+    "name": "encore-music-service-tests",
+    "version": "1.0.0",
+    "description": "Test suite for Encore Music Service",
+    "scripts": {
+        "test": "jest",
+        "test:unit": "jest --testPathPattern=tests/unit",
+        "test:integration": "jest --testPathPattern=tests/integration",
+        "test:performance": "jest --testPathPattern=tests/performance --runInBand",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage",
+        "test:cache": "jest --testPathPattern=cacheOptimizationService",
+        "test:precache": "jest --testPathPattern=nightlyPreCache",
+        "test:monitoring": "jest --testPathPattern=monitoring",
+        "validate:phase1": "node scripts/validate-phase1.js"
+    },
+    "jest": {
+        "preset": "ts-jest",
+        "testEnvironment": "node",
+        "roots": [
+            "<rootDir>/tests"
+        ],
+        "testMatch": [
+            "**/*.test.ts"
+        ],
+        "collectCoverageFrom": [
+            "src/**/*.ts",
+            "!src/**/*.d.ts",
+            "!src/**/index.ts"
+        ],
+        "coverageThreshold": {
+            "global": {
+                "branches": 70,
+                "functions": 80,
+                "lines": 80,
+                "statements": 80
+            }
+        },
+        "moduleNameMapper": {
+            "^@shared/(.*)$": "<rootDir>/../shared/$1",
+            "^@/(.*)$": "<rootDir>/src/$1"
+        }
+    }
+}

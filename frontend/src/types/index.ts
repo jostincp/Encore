@@ -41,7 +41,7 @@ export interface MenuItem {
   description: string;
   price: number;
   pointsReward: number;
-  category: 'bebidas' | 'comidas' | 'postres' | 'especiales';
+  category: string; // ID de categoría (UUID)
   imageUrl?: string;
   model3dUrl?: string;
   isAvailable: boolean;

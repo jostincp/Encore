@@ -1,6 +1,7 @@
 import logger from '@shared/utils/logger';
 import { getRedisClient } from '@shared/utils/redis';
 import { google } from 'googleapis';
+import { cacheOptimizationService } from './cacheOptimizationService';
 
 export interface YouTubeSearchResult {
   videoId: string;
@@ -82,11 +83,14 @@ export class EnhancedYouTubeService {
     const cacheKey = `youtube:search:${query}:${maxResults}:${order}:${safeSearch}:${videoCategoryId || ''}:${barId || ''}`;
 
     try {
-      // Verificar caché primero
-      const cached = await this.redis.get(cacheKey);
+      // Verificar caché primero usando cache optimization service
+      const cached = await cacheOptimizationService.get(query);
       if (cached) {
-        logger.debug('Returning cached YouTube search results');
-        return JSON.parse(cached as string);
+        logger.debug('Returning cached YouTube search results', {
+          query,
+          cacheHitRate: cacheOptimizationService.getStats().hitRate.toFixed(2) + '%'
+        });
+        return cached;
       }
 
       // Realizar búsqueda en YouTube
@@ -131,22 +135,29 @@ export class EnhancedYouTubeService {
         !this.containsInappropriateContent(result.title, result.channelTitle)
       );
 
-      // Cachear resultados
-      await this.redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(filteredResults));
+      // Cachear resultados usando cache optimization service
+      // El servicio determinará automáticamente el TTL basado en popularidad
+      await cacheOptimizationService.set(query, filteredResults);
 
-      logger.info(`YouTube search completed: ${filteredResults.length} results for query "${query}"`);
+      logger.info(`YouTube search completed: ${filteredResults.length} results for query "${query}"`, {
+        cacheStats: cacheOptimizationService.getStats()
+      });
 
       return filteredResults;
 
     } catch (error) {
-      logger.error('YouTube search error:', error);
+      logger.error('Error searching YouTube:', error);
 
       // Si hay error de API, intentar devolver resultados en caché antiguos
       try {
-        const cached = await this.redis.get(cacheKey);
+        const cached = await cacheOptimizationService.get(query);
         if (cached) {
-          logger.warn('Returning stale cached results due to API error');
-          return JSON.parse(cached as string);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          logger.warn('Returning stale cached results due to API error', {
+            query,
+            error: errorMessage
+          });
+          return cached;
         }
       } catch (cacheError) {
         logger.error('Cache fallback also failed:', cacheError);

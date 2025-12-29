@@ -2,11 +2,11 @@
 # Uso: .\check-services.ps1
 
 $services = @(
-    @{Name="Frontend (Next.js)"; Port=3004; Path="/"}
+    @{Name="Frontend (Next.js)"; Port=3000; Path="/"}
     @{Name="Auth Service"; Port=3001; Path="/health"}
     @{Name="Music Service"; Port=3002; Path="/health"}
     @{Name="Queue Service"; Port=3003; Path="/health"}
-    @{Name="Points Service"; Port=3007; Path="/health"}
+    @{Name="Points Service"; Port=3004; Path="/api/health"}
     @{Name="Analytics Service"; Port=3005; Path="/api/v1/health"}
     @{Name="Menu Service"; Port=3006; Path="/health"}
 )
@@ -37,6 +37,8 @@ foreach ($service in $services) {
     }
     catch {
         Write-Host " No responde" -ForegroundColor Red
+        Write-Host "  URL: $url" -ForegroundColor Gray
+        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Gray
         $failCount++
     }
 }
@@ -78,6 +80,12 @@ if ($failCount -eq 0) {
 }
 else {
     Write-Host "Algunos servicios tienen problemas. Revisa los logs." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Sugerencias de diagnostico:" -ForegroundColor Cyan
+    Write-Host "  1. Verifica que npm run dev este ejecutandose en la raiz del proyecto" -ForegroundColor Gray
+    Write-Host "  2. Revisa los logs en la terminal donde ejecutaste npm run dev" -ForegroundColor Gray
+    Write-Host "  3. Verifica que los archivos src/server.ts existan en cada servicio" -ForegroundColor Gray
+    Write-Host "  4. Verifica las variables de entorno (.env)" -ForegroundColor Gray
 }
 
 Write-Host ""

@@ -1,6 +1,8 @@
 import axios from 'axios';
+import { API_URLS } from '@/utils/constants';
 
-const MENU_SERVICE_URL = 'http://localhost:3006';
+// Remove /api suffix because the methods add it
+const MENU_SERVICE_URL = API_URLS.menuBase.replace(/\/api$/, '');
 
 export interface MenuItem {
   id: string;

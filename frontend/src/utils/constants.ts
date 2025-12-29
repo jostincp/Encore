@@ -25,6 +25,7 @@ export const API_URLS = {
   // Usar base /api porque el servicio expone /api/youtube/* y /api/queue/*
   musicBase: `${(process.env.NEXT_PUBLIC_MUSIC_SERVICE_URL || 'http://localhost:3002').replace(/\/$/, '')}/api`,
   authBase: `${(process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:3001').replace(/\/$/, '')}/api/auth`,
+  menuBase: `${(process.env.NEXT_PUBLIC_MENU_SERVICE_URL || 'http://localhost:3006').replace(/\/$/, '')}/api`,
 };
 
 export const API_ENDPOINTS = {
