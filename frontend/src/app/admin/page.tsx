@@ -234,8 +234,8 @@ export default function AdminPage() {
     };
 
     fetchQueue();
-    // Polling cada 10 segundos (aumentado para no saturar la API)
-    const interval = setInterval(fetchQueue, 10000);
+    // Polling cada 30 segundos (optimizado para reducir consumo de API)
+    const interval = setInterval(fetchQueue, 30000);
 
     return () => clearInterval(interval);
   }, [realBar?.id]);
