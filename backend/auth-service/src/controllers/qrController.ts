@@ -31,10 +31,10 @@ export const generateQRCodes = async (req: RequestWithUser, res: Response): Prom
 
     // Obtener el barId del usuario autenticado (del JWT)
     const barId = (req.user as any)?.barId || (req.user as any)?.userId;
-    
+
     // Obtener configuración del request
-    const { 
-      numberOfTables = 10, 
+    const {
+      numberOfTables = 10,
       baseUrl = process.env.FRONTEND_URL || 'https://encoreapp.pro',
       width = 300,
       errorCorrectionLevel = 'M'
@@ -42,9 +42,9 @@ export const generateQRCodes = async (req: RequestWithUser, res: Response): Prom
 
     // Validación
     if (!numberOfTables || numberOfTables < 1 || numberOfTables > 100) {
-      res.status(400).json({ 
+      res.status(400).json({
         success: false,
-        error: 'numberOfTables debe ser entre 1 y 100' 
+        error: 'numberOfTables debe ser entre 1 y 100'
       });
       return;
     }
@@ -57,13 +57,14 @@ export const generateQRCodes = async (req: RequestWithUser, res: Response): Prom
     for (let tableNumber = 1; tableNumber <= numberOfTables; tableNumber++) {
       // Construir la URL con los parámetros necesarios (siguiendo el formato especificado)
       const url = `${baseUrl}/client/music?barId=${barId}&table=${tableNumber}`;
-      
+
       // Generar el QR code como Data URL (Base64) con opciones optimizadas
       const qrCodeDataURL = await QRCode.toDataURL(url, {
-        errorCorrectionLevel: errorCorrectionLevel as any, // Nivel de corrección de errores
+        errorCorrectionLevel: 'H', // High - mejor detección en móviles
         type: 'image/png',
         width: width, // Ancho de la imagen en píxeles
-        margin: 2, // Margen alrededor del QR
+        margin: 4, // Margen más amplio para mejor detección
+        scale: 4, // Escala para mejor calidad
         color: {
           dark: '#000000',  // Color de los módulos (puntos negros)
           light: '#FFFFFF'  // Color del fondo
@@ -87,12 +88,12 @@ export const generateQRCodes = async (req: RequestWithUser, res: Response): Prom
       barId,
       qrCodes,
       totalQRCodes: qrCodes.length,
-      message: `${numberOfTables} códigos QR generados exitosamente` 
+      message: `${numberOfTables} códigos QR generados exitosamente`
     });
 
   } catch (error) {
     logger.error('Error generando QR codes:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Error interno al generar códigos QR',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -125,9 +126,10 @@ export const generateSingleQR = async (req: RequestWithUser, res: Response): Pro
     const url = `${baseUrl}/client/music?barId=${barId}&table=${tableNumber}`;
 
     const qrCodeDataURL = await QRCode.toDataURL(url, {
-      errorCorrectionLevel: 'M',
+      errorCorrectionLevel: 'H', // High - mejor detección en móviles
       width: 300,
-      margin: 2,
+      margin: 4, // Margen más amplio para mejor detección
+      scale: 4, // Escala para mejor calidad
       color: {
         dark: '#000000',
         light: '#FFFFFF'
@@ -145,7 +147,7 @@ export const generateSingleQR = async (req: RequestWithUser, res: Response): Pro
 
   } catch (error) {
     logger.error('Error generando QR code individual:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Error al generar código QR',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -168,29 +170,30 @@ export const downloadQRCodes = async (req: RequestWithUser, res: Response): Prom
     }
 
     const barId = (req.user as any)?.barId || (req.user as any)?.userId;
-    const { 
-      numberOfTables = 10, 
+    const {
+      numberOfTables = 10,
       baseUrl = process.env.FRONTEND_URL || 'https://encoreapp.pro',
       width = 600 // Más grande para impresión
     } = req.body;
 
     // Importar módulos necesarios para crear ZIP
     const archiver = require('archiver');
-    
+
     // Crear un stream para el ZIP
     const archive = archiver('zip', { zlib: { level: 9 } });
-    
+
     res.attachment(`encore-qr-codes-bar-${barId}.zip`);
     archive.pipe(res);
 
     for (let tableNumber = 1; tableNumber <= numberOfTables; tableNumber++) {
       const url = `${baseUrl}/client/music?barId=${barId}&table=${tableNumber}`;
-      
+
       // Generar el QR como buffer (más grande para impresión)
       const qrBuffer = await QRCode.toBuffer(url, {
-        errorCorrectionLevel: 'M',
+        errorCorrectionLevel: 'H', // High - mejor detección en móviles
         width: width,
-        margin: 2,
+        margin: 4, // Margen más amplio para mejor detección
+        scale: 4, // Escala para mejor calidad
         color: {
           dark: '#000000',
           light: '#FFFFFF'
@@ -205,7 +208,7 @@ export const downloadQRCodes = async (req: RequestWithUser, res: Response): Prom
 
   } catch (error) {
     logger.error('Error generando descarga de QR codes:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: 'Error al generar descarga',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -285,10 +288,10 @@ export const getBarQRCodes = async (req: RequestWithUser, res: Response): Promis
     }
 
     const { barId } = req.params;
-    
+
     // TODO: Obtener QR codes guardados en base de datos
     // const qrCodes = await getQRCodesFromDatabase(barId);
-    
+
     // Por ahora, devolvemos un array vacío
     res.json({
       success: true,

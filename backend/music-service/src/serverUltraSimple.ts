@@ -4,9 +4,10 @@ import helmet from 'helmet';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import axios from 'axios';
+import path from 'path';
 
-// Cargar variables de entorno
-dotenv.config();
+// Cargar variables de entorno desde backend/.env
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 const PORT = process.env.MUSIC_SERVICE_PORT || process.env.PORT || 3002;
@@ -41,10 +42,81 @@ app.get('/api/youtube/search', async (req, res) => {
       });
     }
 
-    if (!YOUTUBE_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        message: 'YouTube API key not configured'
+    // Si no hay API key, usar datos mock para desarrollo
+    if (!YOUTUBE_API_KEY || process.env.YOUTUBE_USE_MOCK === 'true') {
+      log('⚠️  Using mock data (YouTube API key not configured)', { query: q });
+
+      const mockVideos = [
+        {
+          id: 'fJ9rUzIMcZQ',
+          title: 'Queen - Bohemian Rhapsody (Official Video Remastered)',
+          artist: 'Queen',
+          thumbnail: 'https://i.ytimg.com/vi/fJ9rUzIMcZQ/mqdefault.jpg',
+          channel: 'Queen Official',
+          publishedAt: '2008-08-01T07:00:09Z',
+          description: 'Bohemian Rhapsody',
+          source: 'youtube'
+        },
+        {
+          id: 'HgzGwKwLmgM',
+          title: 'Queen - Don\'t Stop Me Now (Official Video)',
+          artist: 'Queen',
+          thumbnail: 'https://i.ytimg.com/vi/HgzGwKwLmgM/mqdefault.jpg',
+          channel: 'Queen Official',
+          publishedAt: '2008-08-01T07:00:09Z',
+          description: 'Don\'t Stop Me Now',
+          source: 'youtube'
+        },
+        {
+          id: '2ZBtPf7FOoM',
+          title: 'Queen - We Will Rock You (Official Video)',
+          artist: 'Queen',
+          thumbnail: 'https://i.ytimg.com/vi/2ZBtPf7FOoM/mqdefault.jpg',
+          channel: 'Queen Official',
+          publishedAt: '2008-08-01T07:00:09Z',
+          description: 'We Will Rock You',
+          source: 'youtube'
+        },
+        {
+          id: 'f4Mc-NYPHaQ',
+          title: 'Queen - We Are The Champions (Official Video)',
+          artist: 'Queen',
+          thumbnail: 'https://i.ytimg.com/vi/f4Mc-NYPHaQ/mqdefault.jpg',
+          channel: 'Queen Official',
+          publishedAt: '2008-08-01T07:00:09Z',
+          description: 'We Are The Champions',
+          source: 'youtube'
+        },
+        {
+          id: 'A_MjCqQoLLA',
+          title: 'Queen - Somebody To Love (Official Video)',
+          artist: 'Queen',
+          thumbnail: 'https://i.ytimg.com/vi/A_MjCqQoLLA/mqdefault.jpg',
+          channel: 'Queen Official',
+          publishedAt: '2008-08-01T07:00:09Z',
+          description: 'Somebody To Love',
+          source: 'youtube'
+        }
+      ];
+
+      // Filtrar por query (simple búsqueda en título)
+      const query = q.toString().toLowerCase();
+      const filteredVideos = mockVideos.filter(v =>
+        v.title.toLowerCase().includes(query) ||
+        v.artist.toLowerCase().includes(query)
+      );
+
+      return res.json({
+        success: true,
+        data: {
+          videos: filteredVideos.slice(0, parseInt(maxResults.toString())),
+          totalResults: filteredVideos.length,
+          nextPageToken: null,
+          regionCode: 'US'
+        },
+        query: { q, maxResults, type },
+        _mock: true,
+        _message: 'Using mock data. Configure YOUTUBE_API_KEY for real results.'
       });
     }
 
