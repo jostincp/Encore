@@ -20,7 +20,9 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  QrCode
+  QrCode,
+  Play,
+  SkipForward
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +36,8 @@ import { useToast } from '@/hooks/useToast';
 import { formatPrice, formatTime, formatDuration } from '@/utils/format';
 import { API_ENDPOINTS } from '@/utils/constants';
 import { BarStats, Order } from '@/types';
+import HybridMusicPlayer, { EmptyPlayerState } from '@/components/HybridMusicPlayer';
+
 
 export default function AdminPage() {
   const { user, currentSong, queue, barStats, isConnected } = useAppStore();
@@ -51,6 +55,7 @@ export default function AdminPage() {
   });
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [currentQueue, setCurrentQueue] = useState<any[]>([]);
+  const [playerMode, setPlayerMode] = useState<'external' | 'embedded'>('external');
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [realBar, setRealBar] = useState<any | null>(null);
@@ -458,62 +463,222 @@ export default function AdminPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {currentQueue.map((item, index) => (
-                    <motion.div
-                      key={item.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3, delay: index * 0.05 }}
-                      className={`flex items-center gap-4 p-4 rounded-lg border ${item.status === 'playing' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800' : ''
-                        }`}
-                    >
-                      <div className="flex-shrink-0">
-                        <Image
-                          src={item.song.thumbnailUrl}
-                          alt={item.song.title}
-                          width={48}
-                          height={48}
-                          className="w-12 h-12 rounded-lg object-cover"
-                        />
+                {/* Hybrid Music Player */}
+                {currentQueue.length > 0 && currentQueue[0].status === 'playing' ? (
+                  <HybridMusicPlayer
+                    currentSong={currentQueue[0]}
+                    onSkip={async () => {
+                      try {
+                        await fetch(`http://localhost:3002/api/player/${realBar?.id}/skip`, { method: 'POST' });
+                        const response = await fetch(`http://localhost:3002/api/queue/${realBar?.id}`);
+                        if (response.ok) {
+                          const data = await response.json();
+                          const queueItems = data.data || [];
+
+                          const itemsWithDetails = await Promise.all(
+                            queueItems.map(async (item: any) => {
+                              try {
+                                const videoRes = await fetch(`http://localhost:3002/api/youtube/video/${item.song_id}`);
+                                if (videoRes.ok) {
+                                  const videoData = await videoRes.json();
+                                  return {
+                                    ...item,
+                                    song: {
+                                      id: item.song_id,
+                                      title: videoData.data?.title || item.song_id,
+                                      artist: videoData.data?.artist || 'Unknown Artist',
+                                      thumbnailUrl: videoData.data?.thumbnail || `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
+                                      duration: videoData.data?.durationSeconds || 0,
+                                      genre: 'Music'
+                                    },
+                                    isPriority: item.priority_play,
+                                    tableNumber: item.table || '1',
+                                    timestamp: item.requested_at
+                                  };
+                                }
+                              } catch (err) {
+                                console.error(`Error fetching details for ${item.song_id}:`, err);
+                              }
+
+                              return {
+                                ...item,
+                                song: {
+                                  id: item.song_id,
+                                  title: item.song_id,
+                                  artist: 'Unknown',
+                                  thumbnailUrl: `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
+                                  duration: 0,
+                                  genre: 'Music'
+                                },
+                                isPriority: item.priority_play,
+                                tableNumber: item.table || '1',
+                                timestamp: item.requested_at
+                              };
+                            })
+                          );
+
+                          setCurrentQueue(itemsWithDetails);
+                        }
+                      } catch (error) {
+                        console.error('Error skipping song:', error);
+                      }
+                    }}
+                    onMarkPlayed={async () => {
+                      try {
+                        await fetch(`http://localhost:3002/api/player/${realBar?.id}/skip`, { method: 'POST' });
+                        const response = await fetch(`http://localhost:3002/api/queue/${realBar?.id}`);
+                        if (response.ok) {
+                          const data = await response.json();
+                          const queueItems = data.data || [];
+
+                          const itemsWithDetails = await Promise.all(
+                            queueItems.map(async (item: any) => {
+                              try {
+                                const videoRes = await fetch(`http://localhost:3002/api/youtube/video/${item.song_id}`);
+                                if (videoRes.ok) {
+                                  const videoData = await videoRes.json();
+                                  return {
+                                    ...item,
+                                    song: {
+                                      id: item.song_id,
+                                      title: videoData.data?.title || item.song_id,
+                                      artist: videoData.data?.artist || 'Unknown Artist',
+                                      thumbnailUrl: videoData.data?.thumbnail || `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
+                                      duration: videoData.data?.durationSeconds || 0,
+                                      genre: 'Music'
+                                    },
+                                    isPriority: item.priority_play,
+                                    tableNumber: item.table || '1',
+                                    timestamp: item.requested_at
+                                  };
+                                }
+                              } catch (err) {
+                                console.error(`Error fetching details for ${item.song_id}:`, err);
+                              }
+
+                              return {
+                                ...item,
+                                song: {
+                                  id: item.song_id,
+                                  title: item.song_id,
+                                  artist: 'Unknown',
+                                  thumbnailUrl: `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
+                                  duration: 0,
+                                  genre: 'Music'
+                                },
+                                isPriority: item.priority_play,
+                                tableNumber: item.table || '1',
+                                timestamp: item.requested_at
+                              };
+                            })
+                          );
+
+                          setCurrentQueue(itemsWithDetails);
+                        }
+                      } catch (error) {
+                        console.error('Error marking as played:', error);
+                      }
+                    }}
+                  />
+                ) : currentQueue.length > 0 ? (
+                  <EmptyPlayerState
+                    onStart={() => {
+                      const updatedQueue = [...currentQueue];
+                      updatedQueue[0] = { ...updatedQueue[0], status: 'playing' };
+                      setCurrentQueue(updatedQueue);
+                    }}
+                  />
+                ) : null}
+
+                {/* Próximas Canciones */}
+                <div>
+                  <h3 className="text-sm font-medium mb-3">
+                    {currentQueue.length > 0 && currentQueue[0].status === 'playing'
+                      ? '📋 Próximas Canciones:'
+                      : '📋 Canciones en Cola:'}
+                  </h3>
+                  <div className="space-y-3">
+                    {currentQueue
+                      .filter((item, index) => item.status !== 'playing' || index > 0)
+                      .map((item, index) => (
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.3, delay: index * 0.05 }}
+                          className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex-shrink-0 text-muted-foreground font-medium text-sm">
+                            #{index + (currentQueue[0]?.status === 'playing' ? 2 : 1)}
+                          </div>
+                          <div className="flex-shrink-0">
+                            <Image
+                              src={item.song.thumbnailUrl}
+                              alt={item.song.title}
+                              width={40}
+                              height={40}
+                              className="w-10 h-10 rounded object-cover"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium truncate text-sm">{item.song.title}</h4>
+                              {item.isPriority && (
+                                <Badge variant="destructive" className="text-xs">
+                                  <Star className="h-3 w-3 mr-1" />
+                                  Priority
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {item.song.artist} • Mesa {item.tableNumber} • {formatTime(item.timestamp)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                // Reproducir ahora - marcar como playing y mover al inicio
+                                try {
+                                  item.status = 'playing';
+                                  const reorderedQueue = [item, ...currentQueue.filter(q => q.id !== item.id)];
+                                  setCurrentQueue(reorderedQueue);
+                                } catch (error) {
+                                  console.error('Error playing song now:', error);
+                                }
+                              }}
+                            >
+                              <Play className="h-3 w-3 mr-1" />
+                              Ahora
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={async () => {
+                                // Remover de la cola
+                                try {
+                                  const updatedQueue = currentQueue.filter(q => q.id !== item.id);
+                                  setCurrentQueue(updatedQueue);
+                                  // TODO: Llamar al backend para remover permanentemente
+                                } catch (error) {
+                                  console.error('Error removing song:', error);
+                                }
+                              }}
+                            >
+                              <XCircle className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </motion.div>
+                      ))}
+                    {currentQueue.filter(item => item.status !== 'playing').length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Music className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>No hay más canciones en cola</p>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-medium truncate">{item.song.title}</h4>
-                          {item.isPriority && (
-                            <Badge variant="destructive" className="text-xs">
-                              <Star className="h-3 w-3 mr-1" />
-                              Priority
-                            </Badge>
-                          )}
-                          {item.status === 'playing' && (
-                            <Badge className="text-xs bg-green-600">
-                              <Music className="h-3 w-3 mr-1" />
-                              Reproduciendo
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground truncate">
-                          {item.song.artist} • Mesa {item.tableNumber}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDuration(item.song.duration)} • {item.song.genre}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">#{index + 1}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatTime(item.timestamp)}
-                        </p>
-                      </div>
-                    </motion.div>
-                  ))}
-                  {currentQueue.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Music className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No hay canciones en cola</p>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
