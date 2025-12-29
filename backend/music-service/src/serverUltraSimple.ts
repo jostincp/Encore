@@ -5,6 +5,7 @@ import compression from 'compression';
 import dotenv from 'dotenv';
 import axios from 'axios';
 import path from 'path';
+import { CacheService, CacheKeys } from './services/cacheService';
 
 // Cargar variables de entorno desde backend/.env
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -28,6 +29,9 @@ const log = (message: string, data?: any) => {
   console.log(`[${new Date().toISOString()}] ${message}`, data || '');
 };
 
+// Contador de cuota ahorrada
+let quotaSavedToday = 0;
+
 /**
  * 🔍 Búsqueda simple de YouTube
  */
@@ -41,6 +45,9 @@ app.get('/api/youtube/search', async (req, res) => {
         message: 'Query parameter "q" is required'
       });
     }
+
+    // Normalizar query para mejorar cache hit rate
+    const normalizedQuery = q.toString().toLowerCase().trim();
 
     // Si no hay API key, usar datos mock para desarrollo
     if (!YOUTUBE_API_KEY || process.env.YOUTUBE_USE_MOCK === 'true') {
@@ -120,13 +127,30 @@ app.get('/api/youtube/search', async (req, res) => {
       });
     }
 
-    log('🎵 Searching YouTube', { query: q, maxResults, type });
+    // PASO 1: Verificar caché PRIMERO
+    const cacheKey = `youtube:search:${normalizedQuery}:${maxResults}`;
+    const cachedResult = await CacheService.get<any>(cacheKey);
+
+    if (cachedResult) {
+      quotaSavedToday += 100;
+      log(`✅ CACHE HIT: "${q}" → Ahorró 100 unidades (Total hoy: ${quotaSavedToday})`, { cached: true });
+      return res.json({
+        success: true,
+        data: cachedResult.data,
+        query: cachedResult.query,
+        _cached: true,
+        _quotaSaved: quotaSavedToday
+      });
+    }
+
+    // PASO 2: Cache miss - llamar a YouTube API
+    log(`❌ CACHE MISS: "${q}" → Consumiendo 100 unidades`, { query: normalizedQuery });
 
     const response = await axios.get(`${YOUTUBE_API_BASE_URL}/search`, {
       params: {
         key: YOUTUBE_API_KEY,
         part: 'snippet',
-        q: q.toString(),
+        q: normalizedQuery,
         type: type.toString(),
         maxResults: parseInt(maxResults.toString()),
         videoCategoryId: '10', // Música
@@ -145,25 +169,30 @@ app.get('/api/youtube/search', async (req, res) => {
       source: 'youtube'
     }));
 
-    log('✅ YouTube search completed', {
-      query: q,
-      results: videos.length,
-      totalResults: response.data.pageInfo?.totalResults
-    });
-
-    return res.json({
-      success: true,
+    const resultData = {
       data: {
         videos,
         totalResults: response.data.pageInfo?.totalResults || 0,
         nextPageToken: response.data.nextPageToken,
         regionCode: response.data.regionCode
       },
-      query: {
-        q,
-        maxResults,
-        type
-      }
+      query: { q: normalizedQuery, maxResults, type }
+    };
+
+    // PASO 3: Guardar en caché (24 horas para búsquedas)
+    await CacheService.set(cacheKey, resultData, { ttl: 86400 });
+
+    log('✅ YouTube search completed and cached', {
+      query: normalizedQuery,
+      results: videos.length,
+      totalResults: response.data.pageInfo?.totalResults
+    });
+
+    return res.json({
+      success: true,
+      ...resultData,
+      _cached: false,
+      _quotaSaved: quotaSavedToday
     });
 
   } catch (error: any) {
@@ -198,6 +227,24 @@ app.get('/api/youtube/video/:videoId', async (req, res) => {
       });
     }
 
+    // PASO 1: Verificar caché PRIMERO
+    const cacheKey = `youtube:video:${videoId}`;
+    const cachedVideo = await CacheService.get<any>(cacheKey);
+
+    if (cachedVideo) {
+      quotaSavedToday += 1;
+      log(`✅ VIDEO CACHE HIT: ${videoId} → Ahorró 1 unidad (Total hoy: ${quotaSavedToday})`);
+      return res.json({
+        success: true,
+        data: cachedVideo,
+        _cached: true,
+        _quotaSaved: quotaSavedToday
+      });
+    }
+
+    // PASO 2: Cache miss - llamar a YouTube API
+    log(`❌ VIDEO CACHE MISS: ${videoId} → Consumiendo 1 unidad`);
+
     log('🎵 Getting YouTube video details', { videoId });
 
     const response = await axios.get(`${YOUTUBE_API_BASE_URL}/videos`, {
@@ -231,9 +278,14 @@ app.get('/api/youtube/video/:videoId', async (req, res) => {
 
     log('✅ YouTube video details retrieved', { videoId, title: videoDetails.title });
 
+    // PASO 3: Guardar en caché (7 días - los detalles del video no cambian)
+    await CacheService.set(cacheKey, videoDetails, { ttl: 604800 });
+
     return res.json({
       success: true,
-      data: videoDetails
+      data: videoDetails,
+      _cached: false,
+      _quotaSaved: quotaSavedToday
     });
 
   } catch (error: any) {
@@ -479,12 +531,138 @@ app.get('/health', (req, res) => {
   });
 });
 
+/**
+ * 📊 Estadísticas de caché
+ */
+app.get('/api/cache/stats', async (req, res) => {
+  try {
+    const stats = await CacheService.getStats();
+
+    res.json({
+      success: true,
+      data: {
+        ...stats,
+        quotaSavedToday,
+        estimatedMonthlySavings: quotaSavedToday * 30
+      }
+    });
+  } catch (error: any) {
+    log('❌ Cache stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get cache stats',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 🔥 Pre-calentar caché con canciones populares
+ */
+app.post('/api/cache/warmup', async (req, res) => {
+  try {
+    const popularQueries = [
+      'shakira', 'bad bunny', 'karol g', 'feid', 'peso pluma',
+      'bizarrap', 'rauw alejandro', 'rosalia', 'daddy yankee', 'j balvin',
+      'maluma', 'ozuna', 'anuel aa', 'nicky jam', 'manuel turizo'
+    ];
+
+    let warmedUp = 0;
+    let alreadyCached = 0;
+
+    for (const query of popularQueries) {
+      const cacheKey = `youtube:search:${query}:10`;
+      const exists = await CacheService.get(cacheKey);
+
+      if (!exists) {
+        try {
+          // Llamar al endpoint de búsqueda para cachear
+          await axios.get(`http://localhost:${PORT}/api/youtube/search?q=${query}`);
+          warmedUp++;
+          // Esperar 100ms entre llamadas para no saturar
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (error) {
+          log(`⚠️  Failed to warmup: ${query}`, error);
+        }
+      } else {
+        alreadyCached++;
+      }
+    }
+
+    log('✅ Cache warmup completed', { warmedUp, alreadyCached, total: popularQueries.length });
+
+    res.json({
+      success: true,
+      message: 'Cache warmed up successfully',
+      data: {
+        warmedUp,
+        alreadyCached,
+        total: popularQueries.length,
+        queries: popularQueries
+      }
+    });
+  } catch (error: any) {
+    log('❌ Cache warmup error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Warmup failed',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 🗑️ Limpiar caché (admin)
+ */
+app.delete('/api/cache/clear', async (req, res) => {
+  try {
+    const success = await CacheService.clear();
+
+    if (success) {
+      quotaSavedToday = 0; // Reset contador
+      log('✅ Cache cleared successfully');
+
+      res.json({
+        success: true,
+        message: 'Cache cleared successfully'
+      });
+    } else {
+      throw new Error('Failed to clear cache');
+    }
+  } catch (error: any) {
+    log('❌ Cache clear error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to clear cache',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 💚 Health check de caché
+ */
+app.get('/api/cache/health', async (req, res) => {
+  try {
+    const health = await CacheService.healthCheck();
+
+    res.status(health.status === 'healthy' ? 200 : 503).json({
+      success: health.status === 'healthy',
+      ...health
+    });
+  } catch (error: any) {
+    res.status(503).json({
+      success: false,
+      status: 'unhealthy',
+      error: error.message
+    });
+  }
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   return res.json({
     success: true,
-    service: 'Encore Music Service (Simple)',
-    status: 'running',
     message: '🎵 YouTube Music Search API is ready!',
     endpoints: {
       search: '/api/youtube/search?q={query}',
@@ -520,9 +698,30 @@ app.use('*', (req, res) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  log(`🎵 Music Service (Simple) started on port ${PORT}`);
+// Iniciar servidor
+app.listen(PORT, async () => {
+  log(`🎵 Music Service running on port ${PORT}`);
+  log(`✅ Cache Service: ENABLED`);
+  log(`📊 API Endpoints:`);
+  log(`   - GET  /api/youtube/search`);
+  log(`   - GET  /api/youtube/video/:videoId`);
+  log(`   - GET  /api/youtube/trending`);
+  log(`   - GET  /api/cache/stats`);
+  log(`   - POST /api/cache/warmup`);
+  log(`   - DELETE /api/cache/clear`);
+  log(`   - GET  /api/cache/health`);
+
+  // Verificar salud del caché al iniciar
+  try {
+    const health = await CacheService.healthCheck();
+    if (health.status === 'healthy') {
+      log(`✅ Cache health check: OK`);
+    } else {
+      log(`⚠️  Cache health check: UNHEALTHY`, health.details);
+    }
+  } catch (error) {
+    log(`❌ Cache health check failed:`, error);
+  }
   log(`🔗 YouTube API Key: ${YOUTUBE_API_KEY ? '✅ Configured' : '❌ Missing'}`);
   log(`🌐 Server: http://localhost:${PORT}`);
   log(`📚 Health: http://localhost:${PORT}/health`);
