@@ -33,21 +33,21 @@ export const formatDuration = (seconds: number): string => {
 export const formatRelativeTime = (date: Date): string => {
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  
+
   if (diffInSeconds < 60) {
     return 'Hace un momento';
   }
-  
+
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) {
     return `Hace ${diffInMinutes} minuto${diffInMinutes > 1 ? 's' : ''}`;
   }
-  
+
   const diffInHours = Math.floor(diffInMinutes / 60);
   if (diffInHours < 24) {
     return `Hace ${diffInHours} hora${diffInHours > 1 ? 's' : ''}`;
   }
-  
+
   const diffInDays = Math.floor(diffInHours / 24);
   return `Hace ${diffInDays} día${diffInDays > 1 ? 's' : ''}`;
 };
@@ -68,11 +68,22 @@ export const formatDateTime = (date: Date): string => {
 /**
  * Formatea solo la hora
  */
-export const formatTime = (date: Date): string => {
-  return new Intl.DateTimeFormat('es-ES', {
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date);
+export const formatTime = (date: Date | string): string => {
+  try {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+
+    // Verificar si la fecha es válida
+    if (isNaN(dateObj.getTime())) {
+      return '--:--';
+    }
+
+    return new Intl.DateTimeFormat('es-ES', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(dateObj);
+  } catch (error) {
+    return '--:--';
+  }
 };
 
 /**
@@ -120,12 +131,12 @@ export const formatDurationLong = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainingSeconds = seconds % 60;
-  
+
   const parts = [];
   if (hours > 0) parts.push(`${hours}h`);
   if (minutes > 0) parts.push(`${minutes}m`);
   if (remainingSeconds > 0 || parts.length === 0) parts.push(`${remainingSeconds}s`);
-  
+
   return parts.join(' ');
 };
 

@@ -3,14 +3,14 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { 
-  BarChart3, 
-  Users, 
-  Music, 
-  ShoppingCart, 
-  TrendingUp, 
-  Clock, 
-  Star, 
+import {
+  BarChart3,
+  Users,
+  Music,
+  ShoppingCart,
+  TrendingUp,
+  Clock,
+  Star,
   DollarSign,
   Headphones,
   Coffee,
@@ -39,7 +39,7 @@ export default function AdminPage() {
   const { user, currentSong, queue, barStats, isConnected } = useAppStore();
   const { success: showSuccess, error: showError } = useToast();
   const router = useRouter();
-  
+
   // Initialize with empty data instead of mocks
   const [stats, setStats] = useState<BarStats>({
     activeTables: 0,
@@ -51,7 +51,7 @@ export default function AdminPage() {
   });
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [currentQueue, setCurrentQueue] = useState<any[]>([]);
-  
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [realBar, setRealBar] = useState<any | null>(null);
   const [realUser, setRealUser] = useState<any | null>(null);
@@ -103,7 +103,7 @@ export default function AdminPage() {
           console.error('Failed to fetch bar:', err);
           return null;
         });
-        
+
         const userPromise = fetch(`${API_ENDPOINTS.base}/api/auth/profile`, { headers }).catch(err => {
           console.error('Failed to fetch profile:', err);
           return null;
@@ -165,6 +165,76 @@ export default function AdminPage() {
 
     fetchRealData();
   }, []);
+
+  // Cargar cola musical del bar
+  useEffect(() => {
+    if (!realBar?.id) return;
+
+    const fetchQueue = async () => {
+      try {
+        const response = await fetch(`http://localhost:3002/api/queue/${realBar.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          const queueItems = data.data || [];
+
+          // Obtener detalles de cada canción
+          const itemsWithDetails = await Promise.all(
+            queueItems.map(async (item: any) => {
+              try {
+                const videoRes = await fetch(`http://localhost:3002/api/youtube/video/${item.song_id}`);
+                if (videoRes.ok) {
+                  const videoData = await videoRes.json();
+                  return {
+                    ...item,
+                    song: {
+                      id: item.song_id,
+                      title: videoData.data?.title || item.song_id,
+                      artist: videoData.data?.artist || 'Unknown Artist',
+                      thumbnailUrl: videoData.data?.thumbnail || `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
+                      duration: videoData.data?.durationSeconds || 0,
+                      genre: 'Music'
+                    },
+                    isPriority: item.priority_play,
+                    tableNumber: item.table || '1',
+                    timestamp: item.requested_at
+                  };
+                }
+              } catch (err) {
+                console.error(`Error fetching details for ${item.song_id}:`, err);
+              }
+
+              // Fallback si falla la petición
+              return {
+                ...item,
+                song: {
+                  id: item.song_id,
+                  title: item.song_id,
+                  artist: 'Unknown',
+                  thumbnailUrl: `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
+                  duration: 0,
+                  genre: 'Music'
+                },
+                isPriority: item.priority_play,
+                tableNumber: item.table || '1',
+                timestamp: item.requested_at
+              };
+            })
+          );
+
+          setCurrentQueue(itemsWithDetails);
+        }
+      } catch (error) {
+        console.error('Error fetching queue:', error);
+      }
+    };
+
+    fetchQueue();
+    // Polling cada 10 segundos (aumentado para no saturar la API)
+    const interval = setInterval(fetchQueue, 10000);
+
+    return () => clearInterval(interval);
+  }, [realBar?.id]);
+
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -260,8 +330,8 @@ export default function AdminPage() {
               <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Actualizar
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => router.push('/admin/qr')}
             >
               <QrCode className="h-4 w-4 mr-2" />
@@ -305,9 +375,9 @@ export default function AdminPage() {
                 <Users className="h-8 w-8 text-blue-600" />
               </div>
               {barConnected && realMetrics?.occupiedTables != null && realMetrics?.totalTables != null ? (
-                <Progress 
-                  value={(realMetrics.occupiedTables / realMetrics.totalTables) * 100} 
-                  className="mt-3" 
+                <Progress
+                  value={(realMetrics.occupiedTables / realMetrics.totalTables) * 100}
+                  className="mt-3"
                 />
               ) : (
                 <p className="text-xs text-muted-foreground mt-3">Conecta tu bar para ver métricas reales</p>
@@ -377,8 +447,8 @@ export default function AdminPage() {
                     <Headphones className="h-5 w-5" />
                     Cola Musical Actual
                   </div>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={() => router.push('/admin/queue')}
                   >
@@ -395,13 +465,12 @@ export default function AdminPage() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3, delay: index * 0.05 }}
-                      className={`flex items-center gap-4 p-4 rounded-lg border ${
-                        item.status === 'playing' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800' : ''
-                      }`}
+                      className={`flex items-center gap-4 p-4 rounded-lg border ${item.status === 'playing' ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800' : ''
+                        }`}
                     >
                       <div className="flex-shrink-0">
-                        <Image 
-                          src={item.song.thumbnailUrl} 
+                        <Image
+                          src={item.song.thumbnailUrl}
                           alt={item.song.title}
                           width={48}
                           height={48}
@@ -463,8 +532,8 @@ export default function AdminPage() {
                     <Coffee className="h-5 w-5" />
                     Pedidos Activos
                   </div>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={() => router.push('/admin/orders')}
                   >

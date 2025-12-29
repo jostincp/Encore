@@ -333,6 +333,137 @@ function extractArtistFromTitle(title: string): string {
   return title.trim();
 }
 
+/**
+ * 🎵 Sistema de Cola (In-Memory para desarrollo)
+ */
+const devQueue: Record<string, any[]> = {};
+const devPoints: Record<string, Record<string, number>> = {};
+
+function ensurePoints(barId: string, table: string) {
+  if (!devPoints[barId]) devPoints[barId] = {};
+  if (!devPoints[barId][table]) devPoints[barId][table] = 100;
+}
+
+/**
+ * POST /api/queue/:barId/add
+ * Añadir canción a la cola
+ */
+app.post('/api/queue/:barId/add', (req, res) => {
+  const barId = req.params.barId;
+  const { song_id, bar_id, priority_play = false, points_used = 0, table = '1', cost } = req.body || {};
+
+  if (!song_id || typeof song_id !== 'string') {
+    return res.status(400).json({ success: false, message: 'song_id is required' });
+  }
+
+  if (!devQueue[barId]) devQueue[barId] = [];
+
+  // Prevenir duplicados
+  const exists = devQueue[barId].some(e => e.song_id === song_id && e.status === 'pending');
+  if (exists) {
+    return res.status(409).json({ success: false, message: 'Song already in queue' });
+  }
+
+  // Manejo de puntos
+  ensurePoints(barId, table);
+  const toCharge = Number(cost || points_used || (priority_play ? 100 : 50));
+
+  if (devPoints[barId][table] < toCharge) {
+    return res.status(402).json({ success: false, message: 'Insufficient points' });
+  }
+
+  devPoints[barId][table] -= toCharge;
+
+  const entry = {
+    id: String(Date.now()),
+    bar_id: barId,
+    song_id,
+    priority_play: !!priority_play,
+    points_used: toCharge,
+    status: 'pending',
+    requested_at: new Date().toISOString(),
+    table
+  };
+
+  // Si es priority, insertar al inicio de la cola
+  if (priority_play) {
+    const idx = devQueue[barId].findIndex(e => e.status === 'pending');
+    if (idx === -1) {
+      devQueue[barId].push(entry);
+    } else {
+      devQueue[barId].splice(idx, 0, entry);
+    }
+  } else {
+    devQueue[barId].push(entry);
+  }
+
+  log('✅ Song added to queue', { barId, song_id, priority_play, table });
+
+  return res.status(201).json({ success: true, data: entry });
+});
+
+/**
+ * GET /api/queue/:barId
+ * Obtener cola de un bar
+ */
+app.get('/api/queue/:barId', (req, res) => {
+  const barId = req.params.barId;
+  const items = devQueue[barId] || [];
+
+  return res.json({
+    success: true,
+    data: items,
+    total: items.length
+  });
+});
+
+/**
+ * GET /api/queue/bars/:barId (alias)
+ */
+app.get('/api/queue/bars/:barId', (req, res) => {
+  const barId = req.params.barId;
+  const items = devQueue[barId] || [];
+
+  return res.json({
+    success: true,
+    data: items,
+    total: items.length
+  });
+});
+
+/**
+ * GET /api/points/:barId/:table
+ * Obtener puntos de una mesa
+ */
+app.get('/api/points/:barId/:table', (req, res) => {
+  const { barId, table } = req.params;
+  ensurePoints(barId, table);
+
+  return res.json({
+    success: true,
+    data: { points: devPoints[barId][table] }
+  });
+});
+
+/**
+ * POST /api/player/:barId/skip
+ * Saltar canción actual
+ */
+app.post('/api/player/:barId/skip', (req, res) => {
+  const { barId } = req.params;
+  const q = devQueue[barId] || [];
+  const playing = q.find(e => e.status === 'playing');
+
+  if (!playing) {
+    return res.status(400).json({ success: false, message: 'No song playing' });
+  }
+
+  playing.status = 'completed';
+  log('⏭️  Song skipped', { barId, song_id: playing.song_id });
+
+  return res.json({ success: true });
+});
+
 // Health check principal
 app.get('/health', (req, res) => {
   return res.json({
