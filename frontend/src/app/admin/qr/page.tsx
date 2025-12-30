@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { QrCode, Settings, Download, Eye, Printer, Copy, X } from 'lucide-react';
+import { QrCode, Settings, Download, Eye, Printer, Copy, X, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -37,6 +38,7 @@ interface QRConfig {
 }
 
 export default function AdminQRPage() {
+  const router = useRouter();
   const { user, setUser } = useAppStore();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
   const [generatedQRCodes, setGeneratedQRCodes] = useState<GeneratedQR[]>([]);
@@ -266,19 +268,29 @@ export default function AdminQRPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-3">
-              <QrCode className="h-8 w-8 text-primary" />
-              Generador de Códigos QR
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Crea códigos QR únicos para cada mesa de tu bar
-            </p>
-            {barId && (
-              <Badge variant="outline" className="mt-2">
-                {barName} - ID: {barId}
-              </Badge>
-            )}
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => router.push('/admin')}
+              className="hover:bg-primary/10"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold flex items-center gap-3">
+                <QrCode className="h-8 w-8 text-primary" />
+                Generador de Códigos QR
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                Crea códigos QR únicos para cada mesa de tu bar
+              </p>
+              {barId && (
+                <Badge variant="outline" className="mt-2">
+                  {barName} - ID: {barId}
+                </Badge>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <Button
