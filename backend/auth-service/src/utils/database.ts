@@ -35,7 +35,7 @@ export const initializeDatabase = async () => {
       const client = await pool.connect();
       await client.query('SELECT NOW()');
       client.release();
-      
+
       logger.info('Database connected successfully');
       return; // success
     } catch (error) {
@@ -150,6 +150,25 @@ export const runMigrations = async () => {
       );
 
       await client.query(`CREATE INDEX IF NOT EXISTS idx_bar_settings_bar_id ON bar_settings(bar_id)`);
+
+      // Create qr_codes table for storing generated QR codes
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS qr_codes (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          bar_id UUID NOT NULL,
+          table_number INTEGER NOT NULL,
+          url TEXT NOT NULL,
+          qr_code_data_url TEXT NOT NULL,
+          generated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT fk_qr_codes_bar_id FOREIGN KEY (bar_id) REFERENCES bars(id) ON DELETE CASCADE,
+          CONSTRAINT unique_bar_table UNIQUE (bar_id, table_number)
+        )`
+      );
+
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_qr_codes_bar_id ON qr_codes(bar_id)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_qr_codes_table_number ON qr_codes(table_number)`);
 
       logger.info('Database migrations completed');
     } finally {
@@ -278,7 +297,7 @@ export const dbOperations = {
     const values = Object.values(data);
     const placeholders = keys.map((_, index) => `$${index + 1}`).join(', ');
     const columns = keys.join(', ');
-    
+
     const result = await query<T>(
       `INSERT INTO ${table} (${columns}) VALUES (${placeholders}) RETURNING *`,
       values
@@ -300,7 +319,7 @@ export const dbOperations = {
     const keys = Object.keys(data);
     const values = Object.values(data);
     const setClause = keys.map((key, index) => `${key} = $${index + 2}`).join(', ');
-    
+
     const result = await query<T>(
       `UPDATE ${table} SET ${setClause} WHERE id = $1 RETURNING *`,
       [id, ...values]

@@ -1,11 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Download, 
-  QrCode, 
-  Settings, 
-  CheckCircle, 
+import {
+  Download,
+  QrCode,
+  Settings,
+  CheckCircle,
   AlertCircle,
   Loader2,
   Image as ImageIcon
@@ -16,7 +16,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Layout, PageContainer } from '@/components/ui/layout';
 
 interface QRCodeData {
@@ -36,12 +35,58 @@ export default function QRGeneratorPage() {
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [barId, setBarId] = useState<string | null>(null);
+
+  // Cargar QR codes existentes al montar el componente
+  useEffect(() => {
+    const loadExistingQRCodes = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        // Primero obtener el bar del usuario
+        const barResponse = await fetch('http://localhost:3003/api/bars/my-bars', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!barResponse.ok) return;
+
+        const barData = await barResponse.json();
+        const barsArr = barData?.data?.bars || barData?.bars;
+        const bar = Array.isArray(barsArr) && barsArr.length > 0 ? barsArr[0] : null;
+
+        if (!bar || !bar.id) return;
+
+        const userBarId = bar.id;
+        setBarId(userBarId);
+
+        const response = await fetch(`http://localhost:3001/api/qr/bar/${userBarId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.qrCodes && data.qrCodes.length > 0) {
+            setQrCodes(data.qrCodes);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading existing QR codes:', error);
+      }
+    };
+
+    loadExistingQRCodes();
+  }, []);
 
   const handleGenerate = async () => {
     setLoading(true);
     setError(null);
     setSuccess(null);
-    
+
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -52,9 +97,9 @@ export default function QRGeneratorPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           numberOfTables,
           baseUrl,
           width: qrWidth,
@@ -63,14 +108,14 @@ export default function QRGeneratorPage() {
       });
 
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || 'Error al generar QR codes');
       }
 
       setQrCodes(data.qrCodes);
       setSuccess(`${data.totalQRCodes} códigos QR generados exitosamente`);
-      
+
     } catch (error) {
       console.error('Error generando QR codes:', error);
       setError(error instanceof Error ? error.message : 'Error al generar códigos QR');
@@ -82,7 +127,7 @@ export default function QRGeneratorPage() {
   const handleGenerateSingle = async (tableNumber: number) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -93,16 +138,16 @@ export default function QRGeneratorPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           tableNumber,
           baseUrl
         })
       });
 
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || 'Error al generar QR code');
       }
@@ -110,7 +155,7 @@ export default function QRGeneratorPage() {
       // Agregar el QR individual a la lista
       setQrCodes(prev => [...prev.filter(qr => qr.tableNumber !== tableNumber), data]);
       setSuccess(`QR code para mesa ${tableNumber} generado exitosamente`);
-      
+
     } catch (error) {
       console.error('Error generando QR code individual:', error);
       setError(error instanceof Error ? error.message : 'Error al generar código QR');
@@ -122,7 +167,7 @@ export default function QRGeneratorPage() {
   const handleDownload = async () => {
     setDownloading(true);
     setError(null);
-    
+
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -133,9 +178,9 @@ export default function QRGeneratorPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           numberOfTables,
           baseUrl,
           width: 600 // Más grande para impresión
@@ -155,9 +200,9 @@ export default function QRGeneratorPage() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      
+
       setSuccess('ZIP descargado exitosamente');
-      
+
     } catch (error) {
       console.error('Error descargando QR codes:', error);
       setError(error instanceof Error ? error.message : 'Error al descargar códigos QR');
@@ -205,7 +250,7 @@ export default function QRGeneratorPage() {
               </AlertDescription>
             </Alert>
           )}
-          
+
           {success && (
             <Alert className="mb-6 border-green-200 bg-green-50">
               <CheckCircle className="h-4 w-4 text-green-600" />
@@ -382,7 +427,7 @@ export default function QRGeneratorPage() {
                         <TabsTrigger value="grid">Vista Cuadrícula</TabsTrigger>
                         <TabsTrigger value="list">Vista Lista</TabsTrigger>
                       </TabsList>
-                      
+
                       <TabsContent value="grid" className="mt-4">
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
                           {qrCodes.map((qr) => (
@@ -393,9 +438,9 @@ export default function QRGeneratorPage() {
                               className="border rounded-lg p-3 text-center hover:shadow-md transition-shadow"
                             >
                               <h4 className="font-semibold mb-2">Mesa {qr.tableNumber}</h4>
-                              <img 
-                                src={qr.qrCodeDataURL} 
-                                alt={`QR Mesa ${qr.tableNumber}`} 
+                              <img
+                                src={qr.qrCodeDataURL}
+                                alt={`QR Mesa ${qr.tableNumber}`}
                                 className="w-full max-w-[150px] mx-auto mb-2 rounded"
                               />
                               <Button
@@ -411,7 +456,7 @@ export default function QRGeneratorPage() {
                           ))}
                         </div>
                       </TabsContent>
-                      
+
                       <TabsContent value="list" className="mt-4">
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                           {qrCodes.map((qr) => (
@@ -422,9 +467,9 @@ export default function QRGeneratorPage() {
                               className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50"
                             >
                               <div className="flex items-center gap-3">
-                                <img 
-                                  src={qr.qrCodeDataURL} 
-                                  alt={`QR Mesa ${qr.tableNumber}`} 
+                                <img
+                                  src={qr.qrCodeDataURL}
+                                  alt={`QR Mesa ${qr.tableNumber}`}
                                   className="w-12 h-12 rounded"
                                 />
                                 <div>

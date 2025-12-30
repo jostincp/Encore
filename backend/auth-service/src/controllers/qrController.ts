@@ -5,6 +5,7 @@ import logger from '../../../shared/utils/logger';
 import { authenticate, requireRole } from '../middleware/auth';
 import { UserRole } from '../constants/roles';
 import { RequestWithUser } from '../types';
+import { query } from '../utils/database';
 
 interface QRCodeData {
   tableNumber: number;
@@ -80,8 +81,14 @@ export const generateQRCodes = async (req: RequestWithUser, res: Response): Prom
       });
     }
 
-    // TODO: Guardar en la base de datos (opcional pero recomendado)
-    // await saveQRCodesToDatabase(barId, qrCodes);
+    // Guardar en la base de datos
+    try {
+      await saveQRCodesToDatabase(barId, qrCodes);
+      logger.info(`QR codes saved to database successfully for bar: ${barId}`);
+    } catch (dbError) {
+      logger.error('Failed to save QR codes to database:', dbError);
+      // No fallar la request, solo registrar el error
+    }
 
     res.status(200).json({
       success: true,
@@ -289,17 +296,27 @@ export const getBarQRCodes = async (req: RequestWithUser, res: Response): Promis
 
     const { barId } = req.params;
 
-    // TODO: Obtener QR codes guardados en base de datos
-    // const qrCodes = await getQRCodesFromDatabase(barId);
+    // Obtener QR codes guardados en base de datos
+    const result = await query(
+      `SELECT bar_id, table_number, url, qr_code_data_url, generated_at
+       FROM qr_codes
+       WHERE bar_id = $1
+       ORDER BY table_number ASC`,
+      [barId]
+    );
 
-    // Por ahora, devolvemos un array vacío
+    const qrCodes = result.rows.map(row => ({
+      tableNumber: row.table_number,
+      qrCodeDataURL: row.qr_code_data_url,
+      url: row.url,
+      barId: row.bar_id,
+      generatedAt: row.generated_at
+    }));
+
     res.json({
       success: true,
-      data: {
-        barId,
-        qrCodes: [],
-        totalQRCodes: 0
-      }
+      qrCodes,
+      totalQRCodes: qrCodes.length
     });
 
   } catch (error) {
@@ -312,18 +329,29 @@ export const getBarQRCodes = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
-// Función auxiliar para guardar en BD (opcional)
+// Función auxiliar para guardar en BD
 async function saveQRCodesToDatabase(barId: string, qrCodes: QRCodeData[]) {
-  // TODO: Implementar según tu ORM (Prisma, TypeORM, etc.)
-  // Ejemplo con Prisma:
-  // await prisma.qrCode.createMany({
-  //   data: qrCodes.map(qr => ({
-  //     barId,
-  //     tableNumber: qr.tableNumber,
-  //     url: qr.url,
-  //     qrCodeDataURL: qr.qrCodeDataURL,
-  //     createdAt: new Date()
-  //   }))
-  // });
-  logger.info(`TODO: Save ${qrCodes.length} QR codes to database for bar: ${barId}`);
+  try {
+    logger.info(`Saving ${qrCodes.length} QR codes to database for bar: ${barId}`);
+
+    // Usar UPSERT (INSERT ... ON CONFLICT) para actualizar si ya existe
+    for (const qr of qrCodes) {
+      await query(
+        `INSERT INTO qr_codes (bar_id, table_number, url, qr_code_data_url, generated_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (bar_id, table_number)
+         DO UPDATE SET
+           url = EXCLUDED.url,
+           qr_code_data_url = EXCLUDED.qr_code_data_url,
+           generated_at = EXCLUDED.generated_at,
+           updated_at = CURRENT_TIMESTAMP`,
+        [barId, qr.tableNumber, qr.url, qr.qrCodeDataURL, qr.generatedAt]
+      );
+    }
+
+    logger.info(`Successfully saved ${qrCodes.length} QR codes to database`);
+  } catch (error) {
+    logger.error('Error saving QR codes to database:', error);
+    throw error;
+  }
 }

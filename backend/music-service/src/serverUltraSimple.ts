@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import axios from 'axios';
 import path from 'path';
 import { CacheService, CacheKeys } from './services/cacheService';
+import { redisClient } from './config/redis';
+import { API_CONFIG, CACHE_CONFIG } from './config/config';
 
 // Cargar variables de entorno desde backend/.env
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -451,6 +453,17 @@ app.post('/api/queue/:barId/add', (req, res) => {
 
   log('✅ Song added to queue', { barId, song_id, priority_play, table });
 
+  // Publish event to Redis for WebSocket broadcast
+  redisClient.publish('queue:events', JSON.stringify({
+    barId,
+    eventType: 'queue_updated',
+    data: {
+      type: 'song_added',
+      entry,
+      queueLength: devQueue[barId].length
+    }
+  })).catch((err: any) => log('❌ Redis publish error:', err));
+
   return res.status(201).json({ success: true, data: entry });
 });
 
@@ -512,6 +525,16 @@ app.post('/api/player/:barId/skip', (req, res) => {
 
   playing.status = 'completed';
   log('⏭️  Song skipped', { barId, song_id: playing.song_id });
+
+  // Publish event
+  redisClient.publish('queue:events', JSON.stringify({
+    barId,
+    eventType: 'queue_updated',
+    data: {
+      type: 'song_skipped',
+      skippedSongId: playing.song_id
+    }
+  })).catch((err: any) => log('❌ Redis publish error:', err));
 
   return res.json({ success: true });
 });

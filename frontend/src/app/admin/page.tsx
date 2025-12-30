@@ -233,11 +233,37 @@ export default function AdminPage() {
       }
     };
 
-    fetchQueue();
-    // Polling cada 30 segundos (optimizado para reducir consumo de API)
-    const interval = setInterval(fetchQueue, 30000);
 
-    return () => clearInterval(interval);
+    fetchQueue();
+
+    // WebSocket Connection
+    const socket = io('http://localhost:3003', {
+      query: { barId: realBar.id },
+      transports: ['websocket', 'polling']
+    });
+
+    socket.on('connect', () => {
+      console.log('✅ Connected to queue-service WebSocket');
+    });
+
+    socket.on('queue-updated', (data: any) => {
+      console.log('🔄 Queue updated signal received:', data);
+      fetchQueue();
+    });
+
+    socket.on('song-added', (data: any) => {
+      console.log('🎵 Song added event:', data);
+      fetchQueue();
+    });
+
+    // Polling de respaldo cada 5 minutos (300000ms)
+    // Ya no es necesario polling frecuente gracias a WebSockets
+    const interval = setInterval(fetchQueue, 300000);
+
+    return () => {
+      socket.disconnect();
+      clearInterval(interval);
+    };
   }, [realBar?.id]);
 
 
