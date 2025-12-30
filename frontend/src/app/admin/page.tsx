@@ -491,7 +491,7 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent>
                 {/* Hybrid Music Player */}
-                {currentQueue.length > 0 && currentQueue[0].status === 'playing' ? (
+                {currentQueue.length > 0 && (currentQueue[0].status === 'playing' || currentQueue[0].status === 'pending') ? (
                   <HybridMusicPlayer
                     currentSong={currentQueue[0]}
                     onSkip={async () => {
