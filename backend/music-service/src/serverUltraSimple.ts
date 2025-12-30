@@ -517,14 +517,24 @@ app.get('/api/points/:barId/:table', (req, res) => {
 app.post('/api/player/:barId/skip', (req, res) => {
   const { barId } = req.params;
   const q = devQueue[barId] || [];
-  const playing = q.find(e => e.status === 'playing');
 
-  if (!playing) {
-    return res.status(400).json({ success: false, message: 'No song playing' });
+  // Buscar la primera canción pendiente o en reproducción
+  const currentSong = q.find(e => e.status === 'playing') || q.find(e => e.status === 'pending');
+
+  if (!currentSong) {
+    return res.status(400).json({ success: false, message: 'No hay canciones en la cola' });
   }
 
-  playing.status = 'completed';
-  log('⏭️  Song skipped', { barId, song_id: playing.song_id });
+  // Marcar como completada y remover de la cola
+  currentSong.status = 'completed';
+
+  // Remover la canción de la cola
+  const index = devQueue[barId].indexOf(currentSong);
+  if (index > -1) {
+    devQueue[barId].splice(index, 1);
+  }
+
+  log('⏭️  Song skipped and removed', { barId, song_id: currentSong.song_id, remainingInQueue: devQueue[barId].length });
 
   // Publish event
   redisClient.publish('queue:events', JSON.stringify({
@@ -532,11 +542,16 @@ app.post('/api/player/:barId/skip', (req, res) => {
     eventType: 'queue_updated',
     data: {
       type: 'song_skipped',
-      skippedSongId: playing.song_id
+      skippedSongId: currentSong.song_id,
+      queueLength: devQueue[barId].length
     }
   })).catch((err: any) => log('❌ Redis publish error:', err));
 
-  return res.json({ success: true });
+  return res.json({
+    success: true,
+    skippedSong: currentSong.song_id,
+    remainingInQueue: devQueue[barId].length
+  });
 });
 
 // Health check principal
