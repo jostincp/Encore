@@ -108,7 +108,7 @@ export default function ClientMusicPage() {
     if (barId) {
       // Guardar en localStorage para persistencia
       localStorage.setItem('currentBarId', barId);
-      localStorage.setItem('currentTable', tableNumber || '');
+      localStorage.setItem('currentTable', String(tableNumber || ''));
 
       // Fallback de información de bar en modo guest (sin auth-service)
       (async () => {
@@ -133,6 +133,30 @@ export default function ClientMusicPage() {
         setBarInfo({ name: 'Rockola Digital', description: 'Bar de prueba', primaryColor: undefined, secondaryColor: undefined });
       })();
     }
+  }, [barId, tableNumber]);
+
+  // Obtener puntos reales del backend
+  useEffect(() => {
+    const fetchPoints = async () => {
+      if (!barId || !tableNumber) return;
+
+      try {
+        const res = await fetch(`${API_URLS.musicBase}/points/${barId}/${tableNumber}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && typeof data.data.points === 'number') {
+            setPoints(data.data.points);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching points:', err);
+      }
+    };
+
+    fetchPoints();
+    // Actualizar puntos cada 30 segundos
+    const interval = setInterval(fetchPoints, 30000);
+    return () => clearInterval(interval);
   }, [barId, tableNumber]);
 
   const fetchQueue = async () => {
@@ -392,7 +416,7 @@ export default function ClientMusicPage() {
               </h1>
               <p className="text-sm text-muted-foreground">
                 {barInfo?.description && `${barInfo.description} • `}
-                Mesa {tableNumber || 'N/A'} • Puntos: {100} {/* TODO: user.points */}
+                Mesa {tableNumber || 'N/A'} • Puntos: {points}
               </p>
             </div>
             <div className="flex items-center gap-4">
