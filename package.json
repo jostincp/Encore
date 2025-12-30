@@ -10,7 +10,8 @@
     "backend/queue-service",
     "backend/points-service",
     "backend/menu-service",
-    "backend/analytics-service"
+    "backend/analytics-service",
+    "backend/shared"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
