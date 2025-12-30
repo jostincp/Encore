@@ -36,6 +36,7 @@
   "author": "Encore Team",
   "license": "MIT",
   "dependencies": {
+    "@types/lru-cache": "^7.10.9",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "axios": "^1.13.2",
@@ -51,6 +52,7 @@
     "ioredis": "^5.7.0",
     "jsdom": "^23.2.0",
     "jsonwebtoken": "^9.0.2",
+    "lru-cache": "^7.18.3",
     "node-cron": "^3.0.3",
     "pg": "^8.11.3",
     "qs": "^6.11.2",

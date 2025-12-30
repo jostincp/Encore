@@ -1,414 +1,229 @@
-import { redisHelpers } from '../config/redis';
-import logger from '@shared/utils/logger';
 
-interface CacheOptions {
-  ttl?: number; // Time to live in seconds
-  tags?: string[]; // Cache tags for invalidation
-  compress?: boolean; // Compress large objects
+import Redis from 'ioredis';
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Cargar variables de entorno
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6380';
+
+/**
+ * 🛠️ Simple LRU Cache Implementation
+ * Elimina dependencia externa problemática y asegura compatibilidad 100% CJS/TS.
+ */
+class SimpleLRUCache<V> {
+  private max: number;
+  private ttl: number; // ms
+  private cache: Map<string, { value: V; expires: number }>;
+
+  constructor(options: { max: number; ttl: number;[key: string]: any }) {
+    this.max = options.max;
+    this.ttl = options.ttl;
+    this.cache = new Map();
+  }
+
+  get(key: string): V | undefined {
+    const item = this.cache.get(key);
+    if (!item) return undefined;
+
+    // Check expiration
+    if (Date.now() > item.expires) {
+      this.cache.delete(key);
+      return undefined;
+    }
+
+    // Refresh LRU (delete and re-add)
+    this.cache.delete(key);
+    this.cache.set(key, item);
+
+    // Refresh TTL (updateAgeOnGet equivalent)
+    item.expires = Date.now() + this.ttl;
+
+    return item.value;
+  }
+
+  set(key: string, value: V, options?: { ttl?: number }): void {
+    const ttl = options?.ttl || this.ttl;
+
+    // Evitar crecimiento infinito
+    if (this.cache.size >= this.max) {
+      // Eliminar el primero (oldest)
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
+
+    this.cache.delete(key); // Mover al final
+    this.cache.set(key, {
+      value,
+      expires: Date.now() + ttl
+    });
+  }
+
+  delete(key: string): void {
+    this.cache.delete(key);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  get size(): number {
+    return this.cache.size;
+  }
 }
 
-interface CacheStats {
-  hits: number;
-  misses: number;
-  hitRate: number;
-  totalKeys: number;
-  memoryUsage: string;
-}
+// Configuración de LRU Cache (Memoria)
+const memoryCache = new SimpleLRUCache<any>({
+  max: 500, // Máximo 500 items
+  ttl: 1000 * 60 * 60, // 1 hora por defecto
+});
+
+export const CacheKeys = {
+  SEARCH_PREFIX: 'yt:search:',
+  VIDEO_PREFIX: 'yt:video:',
+  LYRICS_PREFIX: 'lyrics:',
+  QUEUE_PREFIX: 'queue:',
+  BAR_SETTINGS: 'bar:settings:',
+};
 
 export class CacheService {
-  private static readonly DEFAULT_TTL = 3600; // 1 hour
-  private static readonly COMPRESSION_THRESHOLD = 1024; // 1KB
-  private static readonly TAG_PREFIX = 'tag:';
-  private static readonly STATS_KEY = 'cache:stats';
+  private static redis: Redis | null = null;
+  private static isRedisHealthy = false;
 
-  /**
-   * Enhanced get with automatic decompression and stats tracking
-   */
+  private static stats = {
+    redisHits: 0,
+    redisMisses: 0,
+    memoryHits: 0,
+    memoryMisses: 0,
+    errors: 0
+  };
+
+  static async initialize() {
+    try {
+      console.log('🔌 Connecting to Redis at', REDIS_URL);
+      this.redis = new Redis(REDIS_URL, {
+        retryStrategy(times) {
+          return Math.min(times * 50, 2000);
+        },
+        maxRetriesPerRequest: 1,
+        enableOfflineQueue: false
+      });
+
+      this.redis.on('connect', () => {
+        console.log('✅ Redis connected');
+        this.isRedisHealthy = true;
+        memoryCache.clear();
+      });
+
+      this.redis.on('error', (err) => {
+        console.error('❌ Redis connection error:', err.message);
+        this.isRedisHealthy = false;
+      });
+
+      this.redis.on('close', () => {
+        console.warn('⚠️ Redis connection closed');
+        this.isRedisHealthy = false;
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to initialize Redis client:', error);
+      this.isRedisHealthy = false;
+    }
+  }
+
   static async get<T>(key: string): Promise<T | null> {
-    try {
-      const startTime = Date.now();
-      const cached = await redisHelpers.get(key);
-      
-      if (cached === null) {
-        await this.incrementStat('misses');
-        return null;
-      }
-
-      await this.incrementStat('hits');
-      
-      // Check if data is compressed
-      if (typeof cached === 'string' && cached.startsWith('COMPRESSED:')) {
-        const compressed = cached.substring(11);
-        const decompressed = await this.decompress(compressed);
-        return JSON.parse(decompressed);
-      }
-
-      const duration = Date.now() - startTime;
-      if (duration > 100) {
-        logger.warn(`Slow cache get for key: ${key}`, { duration });
-      }
-
-      return cached;
-    } catch (error) {
-      logger.error('Cache get error:', { key, error });
-      return null;
-    }
-  }
-
-  /**
-   * Enhanced set with compression, tagging, and TTL management
-   */
-  static async set<T>(
-    key: string, 
-    value: T, 
-    options: CacheOptions = {}
-  ): Promise<boolean> {
-    try {
-      const { ttl = this.DEFAULT_TTL, tags = [], compress = true } = options;
-      
-      let dataToStore: any = value;
-      const serialized = JSON.stringify(value);
-      
-      // Compress large objects
-      if (compress && serialized.length > this.COMPRESSION_THRESHOLD) {
-        const compressed = await this.compress(serialized);
-        dataToStore = `COMPRESSED:${compressed}`;
-      }
-
-      // Store the main data
-      const success = await redisHelpers.set(key, dataToStore, ttl);
-      
-      if (success && tags.length > 0) {
-        // Associate with tags for invalidation
-        await this.associateWithTags(key, tags, ttl);
-      }
-
-      return success;
-    } catch (error) {
-      logger.error('Cache set error:', { key, error });
-      return false;
-    }
-  }
-
-  /**
-   * Delete a single key
-   */
-  static async delete(key: string): Promise<boolean> {
-    try {
-      const result = await redisHelpers.delete(key);
-      return result > 0;
-    } catch (error) {
-      logger.error('Cache delete error:', { key, error });
-      return false;
-    }
-  }
-
-  /**
-   * Invalidate cache by tags
-   */
-  static async invalidateByTags(tags: string[]): Promise<number> {
-    try {
-      let totalInvalidated = 0;
-      
-      for (const tag of tags) {
-        const tagKey = `${this.TAG_PREFIX}${tag}`;
-        const keys = await redisHelpers.getSetMembers(tagKey);
-        
-        if (keys && keys.length > 0) {
-          // Delete all keys associated with this tag
-          const deleted = await redisHelpers.deleteMultiple(keys);
-          totalInvalidated += deleted;
-          
-          // Clean up the tag set
-          await redisHelpers.delete(tagKey);
+    if (this.isRedisHealthy && this.redis) {
+      try {
+        const data = await this.redis.get(key);
+        if (data) {
+          this.stats.redisHits++;
+          return JSON.parse(data) as T;
         }
+        this.stats.redisMisses++;
+      } catch (error) {
+        console.warn(`⚠️ Redis get failed for ${key}, falling back to memory`);
+        this.stats.errors++;
       }
-      
-      logger.info('Cache invalidated by tags', { tags, totalInvalidated });
-      return totalInvalidated;
-    } catch (error) {
-      logger.error('Cache invalidation error:', { tags, error });
-      return 0;
+    }
+
+    const cached = memoryCache.get(key);
+    if (cached) {
+      this.stats.memoryHits++;
+      return cached as T;
+    }
+
+    this.stats.memoryMisses++;
+    return null;
+  }
+
+  static async set(key: string, value: any, ttlOrOptions?: number | any): Promise<void> {
+    let ttl = 3600; // segundos
+
+    if (typeof ttlOrOptions === 'number') {
+      ttl = ttlOrOptions;
+    } else if (typeof ttlOrOptions === 'object' && ttlOrOptions.ttl) {
+      ttl = ttlOrOptions.ttl;
+    }
+
+    // Memoria usa ms
+    memoryCache.set(key, value, { ttl: ttl * 1000 });
+
+    if (this.isRedisHealthy && this.redis) {
+      try {
+        await this.redis.setex(key, ttl, JSON.stringify(value));
+      } catch (error) {
+        console.error(`❌ Redis set failed for ${key}`);
+        this.stats.errors++;
+      }
     }
   }
 
-  /**
-   * Invalidate cache by pattern
-   */
-  static async invalidateByPattern(pattern: string): Promise<number> {
-    try {
-      const keys = await redisHelpers.getKeysByPattern(pattern);
-      
-      if (keys.length === 0) {
-        return 0;
+  static async del(key: string): Promise<void> {
+    memoryCache.delete(key);
+    if (this.isRedisHealthy && this.redis) {
+      try {
+        await this.redis.del(key);
+      } catch (error) {
+        console.error(`❌ Redis delete failed for ${key}`);
       }
-      
-      const deleted = await redisHelpers.deleteMultiple(keys);
-      logger.info('Cache invalidated by pattern', { pattern, deleted });
-      
-      return deleted;
-    } catch (error) {
-      logger.error('Cache pattern invalidation error:', { pattern, error });
-      return 0;
     }
   }
 
-  /**
-   * Get or set pattern - fetch from cache or execute function and cache result
-   */
-  static async getOrSet<T>(
-    key: string,
-    fetchFunction: () => Promise<T>,
-    options: CacheOptions = {}
-  ): Promise<T> {
-    try {
-      // Try to get from cache first
-      const cached = await this.get<T>(key);
-      if (cached !== null) {
-        return cached;
-      }
-
-      // Execute function and cache result
-      const result = await fetchFunction();
-      await this.set(key, result, options);
-      
-      return result;
-    } catch (error) {
-      logger.error('Cache getOrSet error:', { key, error });
-      throw error;
-    }
+  static flushLocal(): void {
+    memoryCache.clear();
+    console.log('🧹 Local memory cache flushed');
   }
 
-  /**
-   * Warm up cache with predefined data
-   */
-  static async warmUp(barId: string): Promise<void> {
-    try {
-      logger.info('Starting cache warm-up', { barId });
-      
-      // Warm up popular songs
-      const popularKey = `popular:${barId}:20:week`;
-      if (!(await this.get(popularKey))) {
-        // This would trigger the actual data fetch
-        logger.info('Warming up popular songs cache', { barId });
-      }
-      
-      // Warm up recent songs
-      const recentKey = `recent:${barId}:20`;
-      if (!(await this.get(recentKey))) {
-        logger.info('Warming up recent songs cache', { barId });
-      }
-      
-      logger.info('Cache warm-up completed', { barId });
-    } catch (error) {
-      logger.error('Cache warm-up error:', { barId, error });
-    }
+  static clear(): void {
+    this.flushLocal();
   }
 
-  /**
-   * Get cache statistics
-   */
-  static async getStats(): Promise<CacheStats> {
+  static async healthCheck(): Promise<boolean> {
+    if (!this.isRedisHealthy || !this.redis) return false;
     try {
-      const stats = await redisHelpers.get(this.STATS_KEY) || { hits: 0, misses: 0 };
-      const totalRequests = stats.hits + stats.misses;
-      const hitRate = totalRequests > 0 ? (stats.hits / totalRequests) * 100 : 0;
-      
-      // Get Redis info
-      const info = await redisHelpers.getInfo();
-      const totalKeys = info.keyspace?.db0?.keys || 0;
-      const memoryUsage = info.memory?.used_memory_human || '0B';
-      
-      return {
-        hits: stats.hits,
-        misses: stats.misses,
-        hitRate: Math.round(hitRate * 100) / 100,
-        totalKeys,
-        memoryUsage
-      };
-    } catch (error) {
-      logger.error('Cache stats error:', error);
-      return {
-        hits: 0,
-        misses: 0,
-        hitRate: 0,
-        totalKeys: 0,
-        memoryUsage: '0B'
-      };
-    }
-  }
-
-  /**
-   * Clear all cache
-   */
-  static async clear(): Promise<boolean> {
-    try {
-      await redisHelpers.flushAll();
-      logger.info('Cache cleared completely');
+      await this.redis.ping();
       return true;
-    } catch (error) {
-      logger.error('Cache clear error:', error);
+    } catch {
       return false;
     }
   }
 
-  /**
-   * Health check for cache service
-   */
-  static async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; details: any }> {
-    try {
-      const testKey = 'health:check';
-      const testValue = { timestamp: Date.now() };
-      
-      // Test write
-      const writeSuccess = await this.set(testKey, testValue, { ttl: 60 });
-      if (!writeSuccess) {
-        throw new Error('Failed to write to cache');
-      }
-      
-      // Test read
-      const readValue = await this.get(testKey);
-      if (!readValue || readValue.timestamp !== testValue.timestamp) {
-        throw new Error('Failed to read from cache');
-      }
-      
-      // Test delete
-      const deleteSuccess = await this.delete(testKey);
-      if (!deleteSuccess) {
-        throw new Error('Failed to delete from cache');
-      }
-      
-      const stats = await this.getStats();
-      
-      return {
-        status: 'healthy',
-        details: {
-          connection: 'ok',
-          operations: 'ok',
-          stats
-        }
-      };
-    } catch (error) {
-      logger.error('Cache health check failed:', error);
-      return {
-        status: 'unhealthy',
-        details: {
-          error: error.message,
-          timestamp: new Date().toISOString()
-        }
-      };
-    }
-  }
-
-  // Private helper methods
-  
-  private static async compress(data: string): Promise<string> {
-    // Simple base64 encoding for now - in production use proper compression
-    return Buffer.from(data).toString('base64');
-  }
-  
-  private static async decompress(data: string): Promise<string> {
-    return Buffer.from(data, 'base64').toString('utf-8');
-  }
-  
-  private static async associateWithTags(key: string, tags: string[], ttl: number): Promise<void> {
-    for (const tag of tags) {
-      const tagKey = `${this.TAG_PREFIX}${tag}`;
-      await redisHelpers.addToSet(tagKey, key);
-      await redisHelpers.expire(tagKey, ttl + 300); // Tag expires 5 minutes after data
-    }
-  }
-  
-  private static async incrementStat(stat: 'hits' | 'misses'): Promise<void> {
-    try {
-      const current = await redisHelpers.get(this.STATS_KEY) || { hits: 0, misses: 0 };
-      current[stat]++;
-      await redisHelpers.set(this.STATS_KEY, current, 86400); // 24 hours
-    } catch (error) {
-      // Don't throw on stats errors
-      logger.warn('Failed to update cache stats:', error);
-    }
+  static getStats() {
+    const totalOps = this.stats.redisHits + this.stats.redisMisses + this.stats.memoryHits + this.stats.memoryMisses;
+    return {
+      healthy: this.isRedisHealthy,
+      memoryItems: memoryCache.size,
+      memoryBytes: 'Unknown (SimpleLRU)',
+      metrics: {
+        ...this.stats,
+        totalOps
+      },
+      hits: this.stats.redisHits + this.stats.memoryHits,
+      misses: this.stats.redisMisses + this.stats.memoryMisses,
+      savedBytes: 0
+    };
   }
 }
 
-// Cache key generators for consistency
-export class CacheKeys {
-  static song(songId: string, barId?: string): string {
-    return barId ? `song:${songId}:${barId}` : `song:${songId}`;
-  }
-
-  static search(query: string, filters: any = {}): string {
-    const filterStr = Object.keys(filters).length > 0 ? `:${JSON.stringify(filters)}` : '';
-    return `search:${Buffer.from(query).toString('base64')}${filterStr}`;
-  }
-
-  static popular(barId: string, limit: number, timeframe: string): string {
-    return `popular:${barId}:${limit}:${timeframe}`;
-  }
-
-  static recent(barId: string, limit: number): string {
-    return `recent:${barId}:${limit}`;
-  }
-
-  static trending(limit: number, source: string): string {
-    return `trending:${limit}:${source}`;
-  }
-
-  // Queue-related cache keys
-  static queueByBar(barId: string, filters: any, limit: number, offset: number, includeDetails: boolean): string {
-    const filterStr = Object.keys(filters).length > 0 ? `:${JSON.stringify(filters)}` : '';
-    return `queue:bar:${barId}:${limit}:${offset}:${includeDetails}${filterStr}`;
-  }
-
-  static currentlyPlaying(barId: string): string {
-    return `queue:playing:${barId}`;
-  }
-
-  static nextInQueue(barId: string): string {
-    return `queue:next:${barId}`;
-  }
-
-  static queueStats(barId: string, dateFrom?: Date, dateTo?: Date): string {
-    const dateStr = dateFrom && dateTo ? `:${dateFrom.toISOString()}:${dateTo.toISOString()}` : '';
-    return `queue:stats:${barId}${dateStr}`;
-  }
-
-  static popularFromQueue(barId: string, limit: number, timeframe: string): string {
-    return `queue:popular:${barId}:${limit}:${timeframe}`;
-  }
-
-  static recentFromQueue(barId: string, limit: number): string {
-    return `queue:recent:${barId}:${limit}`;
-  }
-}
-
-// Cache tags for invalidation
-export class CacheTags {
-  static song(songId: string): string {
-    return `song:${songId}`;
-  }
-  
-  static bar(barId: string): string {
-    return `bar:${barId}`;
-  }
-  
-  static user(userId: string): string {
-    return `user:${userId}`;
-  }
-  
-  static queue(barId: string): string {
-    return `queue:${barId}`;
-  }
-  
-  static search(): string {
-    return 'search';
-  }
-  
-  static popular(): string {
-    return 'popular';
-  }
-  
-  static trending(): string {
-    return 'trending';
-  }
-}
+CacheService.initialize();

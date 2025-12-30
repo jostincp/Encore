@@ -19,16 +19,16 @@ foreach ($port in $ports) {
         
         $pids = $connections | Select-Object -ExpandProperty OwningProcess -Unique
         
-        foreach ($pid in $pids) {
-            if ($pid -ne 0 -and $pid -ne 4) {  # No matar System Idle o System
+        foreach ($procId in $pids) {
+            if ($procId -ne 0 -and $procId -ne 4) {  # No matar System Idle o System
                 try {
-                    $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                    $process = Get-Process -Id $procId -ErrorAction SilentlyContinue
                     if ($process) {
-                        Write-Host "    Deteniendo proceso: $($process.Name) (PID: $pid)" -ForegroundColor Gray
-                        Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+                        Write-Host "    Deteniendo proceso: $($process.Name) (PID: $procId)" -ForegroundColor Gray
+                        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
                     }
                 } catch {
-                    Write-Host "    No se pudo detener PID $pid" -ForegroundColor Red
+                    Write-Host "    No se pudo detener PID $procId" -ForegroundColor Red
                 }
             }
         }

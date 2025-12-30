@@ -13,6 +13,29 @@ interface AuthenticatedSocket extends Socket {
   userId?: string;
   userRole?: string;
   barId?: string;
+  heartbeatInterval?: NodeJS.Timeout;
+  heartbeatTimeout?: NodeJS.Timeout;
+}
+
+// ... rest of imports/interfaces ...
+
+// Add startHeartbeat logic at the end of file (outside initializeSocketIO)
+
+// Heartbeat function
+function startHeartbeat(socket: AuthenticatedSocket) {
+  // Clear existing if any
+  if (socket.heartbeatInterval) clearInterval(socket.heartbeatInterval);
+  if (socket.heartbeatTimeout) clearTimeout(socket.heartbeatTimeout);
+
+  socket.heartbeatInterval = setInterval(() => {
+    socket.emit('ping-check');
+
+    // Wait for pong
+    socket.heartbeatTimeout = setTimeout(() => {
+      logger.warn(`Client ${socket.id} failed heartbeat, disconnecting`);
+      socket.disconnect(true);
+    }, 5000); // 5s timeout
+  }, 25000); // 25s interval
 }
 
 interface SocketData {
@@ -98,29 +121,88 @@ export function initializeSocketIO(io: SocketIOServer) {
 
       socket.emit('joined-bar', { barId, tableNumber });
       logger.info(`Socket ${socket.id} auto-joined bar ${barId} at table ${tableNumber || 'unknown'}`);
+
+      // Start Heartbeat for this client
+      startHeartbeat(socket);
     }
 
-    // Handle manual joining a bar room (fallback)
-    socket.on('join-bar', async (data: { barId: string; tableNumber?: string }) => {
-      try {
-        const { barId, tableNumber } = data;
-
-        socket.barId = barId;
-        socket.join(`bar-${barId}`);
-
-        // Add to bar connections
-        if (!barConnections.has(barId)) {
-          barConnections.set(barId, new Set());
+    socket.on('disconnect', () => {
+      logger.info(`Client disconnected: ${socket.id}`);
+      // Clean up connection tracking
+      if (socket.barId && barConnections.has(socket.barId)) {
+        barConnections.get(socket.barId)!.delete(socket.id);
+        if (barConnections.get(socket.barId)!.size === 0) {
+          barConnections.delete(socket.barId);
         }
-        barConnections.get(barId)!.add(socket.id);
+      }
 
-        socket.emit('joined-bar', { barId, tableNumber });
-        logger.info(`Socket ${socket.id} joined bar ${barId} at table ${tableNumber || 'unknown'}`);
+      // Stop heartbeat
+      if (socket.heartbeatInterval) {
+        clearInterval(socket.heartbeatInterval);
+      }
+      if (socket.heartbeatTimeout) {
+        clearTimeout(socket.heartbeatTimeout);
+      }
+      userConnections.delete(socket.id); // Keep this from original disconnect
+    });
 
+    // Pong handler
+    socket.on('pong-check', () => {
+      if (socket.heartbeatTimeout) {
+        clearTimeout(socket.heartbeatTimeout);
+        socket.heartbeatTimeout = undefined; // Use undefined instead of null for consistency with TS
+        // logger.debug(`Pong received from ${socket.id}`);
+      }
+    });
+
+    // Handle manual joining a bar room (fallback)
+    socket.on('join-bar', (data: { barId: string; tableNumber?: string }) => {
+      try {
+        const { barId: requestedBarId, tableNumber } = data;
+
+        // Leave previous rooms
+        if (socket.barId && socket.barId !== requestedBarId) {
+          socket.leave(`bar-${socket.barId}`);
+          if (barConnections.has(socket.barId)) {
+            barConnections.get(socket.barId)!.delete(socket.id);
+            if (barConnections.get(socket.barId)!.size === 0) {
+              barConnections.delete(socket.barId);
+            }
+          }
+        }
+
+        socket.barId = requestedBarId;
+        socket.join(`bar-${requestedBarId}`);
+
+        if (!barConnections.has(requestedBarId)) {
+          barConnections.set(requestedBarId, new Set());
+        }
+        barConnections.get(requestedBarId)!.add(socket.id);
+
+        socket.emit('joined-bar', { barId: requestedBarId, tableNumber });
+        logger.info(`Socket ${socket.id} joined bar ${requestedBarId}`);
+
+        // Ensure heartbeat is running if not already started
+        if (!socket.heartbeatInterval) {
+          startHeartbeat(socket);
+        }
       } catch (error) {
         logger.error('Error joining bar:', error);
         socket.emit('error', { message: 'Failed to join bar' });
       }
+    });
+
+    socket.on('leave-bar', (data: { barId: string }) => {
+      const { barId } = data;
+      socket.leave(`bar-${barId}`);
+      if (barConnections.has(barId)) {
+        barConnections.get(barId)!.delete(socket.id);
+        if (barConnections.get(barId)!.size === 0) {
+          barConnections.delete(barId);
+        }
+      }
+      socket.barId = undefined;
+      logger.info(`Socket ${socket.id} left bar ${barId}`);
     });
 
     // Handle adding song to queue (simplified)

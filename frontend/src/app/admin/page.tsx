@@ -243,8 +243,22 @@ export default function AdminPage() {
       transports: ['websocket', 'polling']
     });
 
+    // Listen for events
     socket.on('connect', () => {
       console.log('✅ Connected to queue-service WebSocket');
+      // Join bar room
+      if (realBar?.id) {
+        socket.emit('join-bar', { barId: realBar.id });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ Disconnected from queue-service WebSocket');
+    });
+
+    // Heartbeat pong
+    socket.on('ping-check', () => {
+      socket.emit('pong-check');
     });
 
     socket.on('queue-updated', (data: any) => {
