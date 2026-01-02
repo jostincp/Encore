@@ -88,6 +88,7 @@ app.post('/api/queue/add', async (req, res) => {
       title,
       artist,
       thumbnail,
+      table_id: req.body.table,  // ← Mesa que pidió la canción
       addedBy: 'Demo User',
       addedAt: new Date().toISOString(),
       isPriority: priority_play,
