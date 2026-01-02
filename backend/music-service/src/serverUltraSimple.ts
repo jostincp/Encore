@@ -11,6 +11,11 @@ import { AnalyticsService } from './services/analyticsService';
 import { barRateLimiter, ipRateLimiter } from './middleware/rateLimiter';
 import { circuitBreakerMiddleware, executeProtectedCall } from './middleware/circuitBreaker';
 import { redisClient } from './config/redis';
+import { normalizeQuery } from './utils/queryNormalizer';
+import cron from 'node-cron';
+
+// Importar cron jobs al iniciar el servidor
+import './jobs/precacheSearches';
 
 // Cargar variables de entorno desde backend/.env
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -63,32 +68,41 @@ app.get('/api/youtube/search', barRateLimiter, async (req, res) => {
       });
     }
 
-    // Normalizar query
-    const normalizedQuery = q.toString().toLowerCase().trim();
-    // V2 prefix para invalidar caché antiguo con formato incorrecto
-    const cacheKey = `yt:search:v2:${normalizedQuery}`;
+    // Normalizar query usando nueva función
+    const normalizedQuery = normalizeQuery(q);
+    const cacheKey = `search:${normalizedQuery}`;
 
-    // 1. Intentar Cache
-    const cachedResult = await CacheService.get<any>(cacheKey);
-    if (cachedResult) {
-      log('🧠 Cache HIT for query:', q);
+    // 1. Intentar leer desde caché Redis
+    const cached = await redisClient.get(cacheKey);
+    if (cached) {
+      const data = JSON.parse(cached);
+      log(`✅ Cache HIT: '${q}'`);
+
+      // Incrementar contador de hits
+      await redisClient.incr('cache:hits');
       quotaSavedToday += 100;
-
-      const resultVideos = cachedResult.videos || [];
 
       AnalyticsService.track({
         barId,
         searchQuery: normalizedQuery,
-        resultsCount: resultVideos.length,
+        resultsCount: data.results?.length || 0,
         cacheHit: true
       });
 
       return res.json({
         success: true,
-        data: cachedResult, // Ya tiene estructura { videos: [...] }
-        source: 'cache'
+        data: {
+          videos: data.results,
+          totalResults: data.results?.length || 0
+        },
+        source: 'cache',
+        cachedAt: data.cachedAt
       });
     }
+
+    // 2. Cache MISS - Incrementar contador
+    log(`❌ Cache MISS: '${q}' - Calling YouTube API`);
+    await redisClient.incr('cache:misses');
 
     // Si no hay API key, usar datos mock
     if (!YOUTUBE_API_KEY || process.env.YOUTUBE_USE_MOCK === 'true') {
@@ -154,8 +168,17 @@ app.get('/api/youtube/search', barRateLimiter, async (req, res) => {
       nextPageToken: data.nextPageToken
     };
 
-    // Guardar en Cache DATA TRANSFORMADA (TTL 24 horas)
-    await CacheService.set(cacheKey, responseData, 86400);
+    // 3. Guardar en Redis con TTL de 10 días
+    await redisClient.setex(
+      cacheKey,
+      864000, // 10 días
+      JSON.stringify({
+        query: q,
+        results: videos,
+        cachedAt: new Date().toISOString(),
+        ttl: 864000
+      })
+    );
 
     // Track Analytics
     AnalyticsService.track({
@@ -340,6 +363,59 @@ app.delete('/api/queue/:barId/:songId', async (req, res) => {
     return res.status(error.response?.status || 500).json(
       error.response?.data || { success: false, message: 'Queue service unavailable' }
     );
+  }
+});
+
+
+/**
+ * 📊 Endpoint de Estadísticas de Caché
+ */
+app.get('/api/cache/stats', async (req, res) => {
+  try {
+    const hits = parseInt(await redisClient.get('cache:hits') || '0');
+    const misses = parseInt(await redisClient.get('cache:misses') || '0');
+    const cronCost = parseInt(await redisClient.get('cron:last_cost') || '0');
+    const cronLastRun = await redisClient.get('cron:last_run') || 'Never';
+
+    const total = hits + misses;
+    const hitRate = total > 0 ? (hits / total) * 100 : 0;
+
+    // Quota real: (misses × 100) + costo del cron ejecutado
+    const quotaUsed = (misses * 100) + cronCost;
+
+    res.json({
+      success: true,
+      today: {
+        hits,
+        misses,
+        total,
+        hitRate: parseFloat(hitRate.toFixed(1)),
+        quotaUsed,
+        quotaLimit: 10000,
+        quotaRemaining: 10000 - quotaUsed,
+        cronLastRun,
+        cronCost
+      }
+    });
+  } catch (error: any) {
+    log('❌ Error getting cache stats:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving cache statistics'
+    });
+  }
+});
+
+/**
+ * 🔄 Cron: Reset diario de contadores (23:59)
+ */
+cron.schedule('59 23 * * *', async () => {
+  try {
+    await redisClient.set('cache:hits', '0');
+    await redisClient.set('cache:misses', '0');
+    log('📊 Contadores de caché reseteados');
+  } catch (error: any) {
+    log('❌ Error resetting cache counters:', error.message);
   }
 });
 
