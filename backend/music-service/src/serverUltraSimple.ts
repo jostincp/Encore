@@ -42,6 +42,11 @@ const log = (message: string, data?: any) => {
 let quotaSavedToday = 0;
 
 /**
+ * 🔄 Queue Service Configuration
+ */
+const QUEUE_SERVICE_URL = process.env.QUEUE_SERVICE_URL || 'http://localhost:3003';
+
+/**
  * 🔍 Búsqueda simple de YouTube
  */
 app.get('/api/youtube/search', barRateLimiter, async (req, res) => {
@@ -207,7 +212,7 @@ function extractArtistFromTitle(title: string): string {
 }
 
 /**
- * 🎵 Sistema de Cola (In-Memory legacy para dev)
+ * 🎵 Sistema de Cola - Legacy variables (still used by skip endpoint)
  */
 const devQueue: Record<string, any[]> = {};
 const devPoints: Record<string, Record<string, number>> = {};
@@ -217,66 +222,60 @@ function ensurePoints(barId: string, table: string) {
   if (!devPoints[barId][table]) devPoints[barId][table] = 100;
 }
 
-app.post('/api/queue/:barId/add', (req, res) => {
-  const barId = req.params.barId;
-  const { song_id, priority_play = false, points_used = 0, table = '1', cost } = req.body || {};
+/**
+ * 🔄 Queue Service Proxy Endpoints
+ * Forward requests to queue-service (port 3003) which stores full metadata in Redis
+ */
 
-  if (!song_id) return res.status(400).json({ success: false, message: 'song_id is required' });
-
-  if (!devQueue[barId]) devQueue[barId] = [];
-
-  const exists = devQueue[barId].some(e => e.song_id === song_id && e.status === 'pending');
-  if (exists) return res.status(409).json({ success: false, message: 'Song already in queue' });
-
-  ensurePoints(barId, table);
-  const toCharge = Number(cost || points_used || (priority_play ? 100 : 50));
-
-  if (devPoints[barId][table] < toCharge) {
-    return res.status(402).json({ success: false, message: 'Insufficient points' });
+// Override: POST /api/queue/:barId/add - Proxy to real queue-service
+app.post('/api/queue/:barId/add', async (req, res) => {
+  try {
+    log('🔄 Proxying queue add request (barId route) to queue-service', { barId: req.params.barId, body: req.body });
+    const response = await axios.post(`${QUEUE_SERVICE_URL}/api/queue/add`, req.body, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000
+    });
+    return res.status(response.status).json(response.data);
+  } catch (error: any) {
+    log('❌ Queue add proxy error (barId route):', error.message);
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { success: false, message: 'Queue service unavailable' }
+    );
   }
-
-  devPoints[barId][table] -= toCharge;
-
-  const entry = {
-    id: String(Date.now()),
-    bar_id: barId,
-    song_id,
-    priority_play: !!priority_play,
-    points_used: toCharge,
-    status: 'pending',
-    requested_at: new Date().toISOString(),
-    table
-  };
-
-  if (priority_play) {
-    const idx = devQueue[barId].findIndex(e => e.status === 'pending');
-    if (idx === -1) devQueue[barId].push(entry);
-    else devQueue[barId].splice(idx, 0, entry);
-  } else {
-    devQueue[barId].push(entry);
-  }
-
-  log('✅ Song added to queue', { barId, song_id });
-
-  redisClient.publish('queue:events', JSON.stringify({
-    barId,
-    eventType: 'queue_updated',
-    data: { type: 'song_added', entry, queueLength: devQueue[barId].length }
-  })).catch(err => log('❌ Redis publish error:', err));
-
-  return res.status(201).json({ success: true, data: entry });
 });
 
-app.get('/api/queue/:barId', (req, res) => {
-  const barId = req.params.barId;
-  const items = devQueue[barId] || [];
-  return res.json({ success: true, data: items, total: items.length });
+// Override: GET /api/queue/:barId - Proxy to real queue-service  
+app.get('/api/queue/:barId', async (req, res) => {
+  try {
+    const { barId } = req.params;
+    log('🔄 Proxying queue get request to queue-service', { barId });
+    const response = await axios.get(`${QUEUE_SERVICE_URL}/api/queue/${barId}`, {
+      timeout: 10000
+    });
+    return res.json(response.data);
+  } catch (error: any) {
+    log('❌ Queue get proxy error:', error.message);
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { success: false, message: 'Queue service unavailable', data: { queue: [] } }
+    );
+  }
 });
 
-app.get('/api/queue/bars/:barId', (req, res) => {
-  const barId = req.params.barId;
-  const items = devQueue[barId] || [];
-  return res.json({ success: true, data: items, total: items.length });
+// Override: POST /api/queue/add - Proxy to real queue-service (Generic fallback)
+app.post('/api/queue/add', async (req, res) => {
+  try {
+    log('🔄 Proxying queue add request to queue-service', { body: req.body });
+    const response = await axios.post(`${QUEUE_SERVICE_URL}/api/queue/add`, req.body, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000
+    });
+    return res.status(response.status).json(response.data);
+  } catch (error: any) {
+    log('❌ Queue add proxy error:', error.message);
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { success: false, message: 'Queue service unavailable' }
+    );
+  }
 });
 
 app.get('/api/points/:barId/:table', (req, res) => {
@@ -285,27 +284,69 @@ app.get('/api/points/:barId/:table', (req, res) => {
   return res.json({ success: true, data: { points: devPoints[barId][table] } });
 });
 
-app.post('/api/player/:barId/skip', (req, res) => {
-  const { barId } = req.params;
-  const q = devQueue[barId] || [];
-  const currentSong = q.find(e => e.status === 'playing') || q.find(e => e.status === 'pending');
+/**
+ * ⏭️ Skip Track Proxy
+ * Forwards skip request to queue-service's POP endpoint
+ */
+app.post('/api/player/:barId/skip', async (req, res) => {
+  try {
+    const { barId } = req.params;
+    log('⏭️ Proxying skip request to queue-service', { barId });
 
-  if (!currentSong) return res.status(400).json({ success: false, message: 'No hay canciones en la cola' });
+    // Call POP endpoint on queue-service
+    const response = await axios.post(`${QUEUE_SERVICE_URL}/api/queue/${barId}/pop`, {}, {
+      timeout: 10000
+    });
 
-  currentSong.status = 'completed';
-  const index = devQueue[barId].indexOf(currentSong);
-  if (index > -1) devQueue[barId].splice(index, 1);
+    // Publish event for realtime updates (optional, queue-service might do it too)
+    redisClient.publish('queue:events', JSON.stringify({
+      barId,
+      eventType: 'queue_updated',
+      data: { type: 'song_skipped', skippedSong: response.data.data }
+    })).catch(err => log('❌ Redis publish error:', err));
 
-  log('⏭️  Song skipped', { barId, songId: currentSong.song_id });
+    return res.json({
+      success: true,
+      skippedSong: response.data.data.id,
+      message: 'Song skipped successfully'
+    });
 
-  redisClient.publish('queue:events', JSON.stringify({
-    barId,
-    eventType: 'queue_updated',
-    data: { type: 'song_skipped', skippedSongId: currentSong.song_id, queueLength: devQueue[barId].length }
-  })).catch(err => log('❌ Redis publish error:', err));
+  } catch (error: any) {
+    log('❌ Queue skip proxy error:', error.message);
+    // If queue is empty (404), return success but with message
+    if (error.response?.status === 404) {
+      return res.status(400).json({ success: false, message: 'No hay canciones en la cola' });
+    }
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { success: false, message: 'Queue service unavailable' }
+    );
+  }
 
-  return res.json({ success: true, skippedSong: currentSong.song_id, remainingInQueue: devQueue[barId].length });
 });
+
+/**
+ * 🗑️ Proxy DELETE /api/queue/:barId/:songId -> QUEUE SERVICE
+ */
+app.delete('/api/queue/:barId/:songId', async (req, res) => {
+  try {
+    const { barId, songId } = req.params;
+    log(`🗑️ Proxying DELETE queue request for bar ${barId}, song ${songId}`);
+
+    const response = await axios.delete(`${QUEUE_SERVICE_URL}/api/queue/${barId}/${songId}`);
+    return res.json(response.data);
+
+  } catch (error: any) {
+    log('❌ Queue delete proxy error:', error.message);
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { success: false, message: 'Queue service unavailable' }
+    );
+  }
+});
+
+
+
+
+
 
 app.get('/health', (req, res) => {
   return res.json({

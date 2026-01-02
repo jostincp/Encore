@@ -620,7 +620,13 @@ export default function AdminPage() {
                                 try {
                                   const updatedQueue = currentQueue.filter(q => q.id !== item.id);
                                   setCurrentQueue(updatedQueue);
-                                  // TODO: Llamar al backend para remover permanentemente
+
+                                  // Llamar al backend
+                                  await fetch(`http://localhost:3002/api/queue/${realBar?.id}/${item.id}`, {
+                                    method: 'DELETE'
+                                  });
+                                  // No necesitamos refetch manual porque el socket actualizará
+
                                 } catch (error) {
                                   console.error('Error removing song:', error);
                                 }

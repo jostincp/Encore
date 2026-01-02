@@ -1,3 +1,4 @@
+console.log("!!! QUEUE SERVICE STARTING !!!");
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -67,7 +68,7 @@ app.post('/api/queue/add', async (req, res) => {
     // Verificar duplicados en Redis
     const deduplicationKey = `queue:${bar_id}:set`;
     const isDuplicate = await redis.sismember(deduplicationKey, song_id);
-    
+
     if (isDuplicate) {
       return res.status(409).json({
         success: false,
@@ -77,9 +78,9 @@ app.post('/api/queue/add', async (req, res) => {
 
     // Transacción atómica Redis
     const queueKey = priority_play ? `queue:${bar_id}:priority` : `queue:${bar_id}:standard`;
-    
+
     const multi = redis.multi();
-    
+
     // Añadir a la cola correspondiente
     multi.rpush(queueKey, JSON.stringify({
       id: song_id,
@@ -92,25 +93,33 @@ app.post('/api/queue/add', async (req, res) => {
       isPriority: priority_play,
       userId
     }));
-    
+
     // Añadir al set de deduplicación
     multi.sadd(deduplicationKey, song_id);
-    
+
     // Opcional: establecer TTL
     multi.expire(deduplicationKey, 3600); // 1 hora
-    
+
     const results = await multi.exec();
 
     if (results[0][1] > 0) {
       // Restar puntos (simulación)
       mockUserPoints[userId] -= cost;
-      
-      log('✅ Song added to queue successfully', { 
-        song_id, 
+
+      log('✅ Song added to queue successfully', {
+        song_id,
         position: results[0][1],
         cost,
         remainingPoints: mockUserPoints[userId]
       });
+
+      // Emitir evento de socket
+      const io = req.app.get('io');
+      if (io) {
+        io.to(bar_id).emit('queue-updated');
+        io.to(bar_id).emit('queueUpdate');
+        io.to(bar_id).emit('song-added', { title, artist });
+      }
 
       return res.json({
         success: true,
@@ -131,7 +140,7 @@ app.post('/api/queue/add', async (req, res) => {
 
   } catch (error) {
     log('❌ Error adding song to queue:', error);
-    
+
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -146,7 +155,7 @@ app.post('/api/queue/add', async (req, res) => {
 app.get('/api/queue/:barId', async (req, res) => {
   try {
     const { barId } = req.params;
-    
+
     log('📋 Getting queue', { barId });
 
     // Obtener canciones prioritarias y estándar
@@ -161,8 +170,8 @@ app.get('/api/queue/:barId', async (req, res) => {
       ...standardSongs.map(song => JSON.parse(song))
     ];
 
-    log('✅ Queue retrieved successfully', { 
-      barId, 
+    log('✅ Queue retrieved successfully', {
+      barId,
       totalSongs: allSongs.length,
       prioritySongs: prioritySongs.length,
       standardSongs: standardSongs.length
@@ -180,7 +189,7 @@ app.get('/api/queue/:barId', async (req, res) => {
 
   } catch (error) {
     log('❌ Error getting queue:', error);
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to get queue',
@@ -196,7 +205,7 @@ app.delete('/api/queue/:barId/:songId', async (req, res) => {
   try {
     const { barId, songId } = req.params;
     const userId = 'demo-user-123'; // Simulación
-    
+
     log('🗑️ Removing song from queue', { barId, songId });
 
     // Buscar y eliminar de ambas colas
@@ -235,16 +244,23 @@ app.delete('/api/queue/:barId/:songId', async (req, res) => {
     if (found) {
       // Remover del set de deduplicación
       await redis.srem(`queue:${barId}:set`, songId);
-      
+
       // Reembolsar puntos (simulación)
       const cost = removedSong.isPriority ? 25 : 10;
       mockUserPoints[userId] += cost;
 
-      log('✅ Song removed from queue successfully', { 
-        songId, 
+      log('✅ Song removed from queue successfully', {
+        songId,
         refundedPoints: cost,
         remainingPoints: mockUserPoints[userId]
       });
+
+      // Emitir evento de socket
+      const io = req.app.get('io');
+      if (io) {
+        io.to(barId).emit('queue-updated');
+        io.to(barId).emit('queueUpdate');
+      }
 
       return res.json({
         success: true,
@@ -263,10 +279,73 @@ app.delete('/api/queue/:barId/:songId', async (req, res) => {
 
   } catch (error) {
     log('❌ Error removing song from queue:', error);
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to remove song from queue',
+      error: error.message
+    });
+  }
+
+});
+
+/**
+ * ⏭️ Pop/Skip next song
+ * Removes the next song from the queue (priority first, then standard)
+ */
+app.post('/api/queue/:barId/pop', async (req, res) => {
+  try {
+    const { barId } = req.params;
+    const userId = 'demo-user-123';
+
+    log('⏭️ Popping next song from queue', { barId });
+
+    // Intentar sacar de prioritaria primero
+    let rawSong = await redis.lpop(`queue:${barId}:priority`);
+    let queueType = 'priority';
+
+    // Si no hay, sacar de estándar
+    if (!rawSong) {
+      rawSong = await redis.lpop(`queue:${barId}:standard`);
+      queueType = 'standard';
+    }
+
+    if (!rawSong) {
+      return res.status(404).json({
+        success: false,
+        message: 'Queue is empty'
+      });
+    }
+
+    const song = JSON.parse(rawSong);
+
+    // Remover del set de deduplicación
+    await redis.srem(`queue:${barId}:set`, song.id);
+
+    log('✅ Song popped successfully', {
+      songId: song.id,
+      title: song.title,
+      queueType
+    });
+
+    // Emitir evento de socket
+    const io = req.app.get('io');
+    if (io) {
+      io.to(barId).emit('queue-updated');
+      io.to(barId).emit('queueUpdate');
+    }
+
+    return res.json({
+      success: true,
+      message: 'Next song retrieved',
+      data: song
+    });
+
+  } catch (error) {
+    log('❌ Error popping song:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to pop song',
       error: error.message
     });
   }
@@ -279,7 +358,7 @@ app.get('/health', async (req, res) => {
   try {
     // Verificar conexión Redis
     await redis.ping();
-    
+
     return res.json({
       success: true,
       service: 'queue-service-simple',
@@ -310,7 +389,7 @@ app.get('/health', async (req, res) => {
 app.delete('/api/queue/:barId/clear', async (req, res) => {
   try {
     const { barId } = req.params;
-    
+
     log('🧹 Clearing queue', { barId });
 
     // Eliminar todas las claves relacionadas con la cola
@@ -331,7 +410,7 @@ app.delete('/api/queue/:barId/clear', async (req, res) => {
 
   } catch (error) {
     log('❌ Error clearing queue:', error);
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to clear queue',
@@ -343,7 +422,7 @@ app.delete('/api/queue/:barId/clear', async (req, res) => {
 // Error handling
 app.use((err, req, res, next) => {
   log('Express error:', err);
-  
+
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal server error',
@@ -366,14 +445,48 @@ app.use('*', (req, res) => {
   });
 });
 
+// Configuración Socket.IO
+const http = require('http');
+const { Server } = require('socket.io');
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*', // Permitir cualquier origen en desarrollo
+    methods: ['GET', 'POST']
+  }
+});
+
+io.on('connection', (socket) => {
+  log('🔌 Client connected to WebSocket');
+
+  socket.on('join_bar', (barId) => {
+    socket.join(barId);
+    log(`👤 Client joined bar room: ${barId}`);
+  });
+
+  socket.on('disconnect', () => {
+    // log('Client disconnected');
+  });
+});
+
+app.set('io', io);
+
+// Helper para emitir eventos
+const emitQueueUpdate = (barId) => {
+  io.to(barId).emit('queue-updated');
+  io.to(barId).emit('queueUpdate'); // Legacy support
+};
+
 // Start server
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   log(`🚀 Queue Service (Simple) started on port ${PORT}`);
   log(`🔗 Redis: ${process.env.REDIS_URL || 'localhost:6379'}`);
   log(`🌐 Server: http://localhost:${PORT}`);
   log(`📚 Health: http://localhost:${PORT}/health`);
   log(`🎵 Add song: POST http://localhost:${PORT}/api/queue/add`);
-  
+  log(`🔌 WebSocket: enabled`);
+
   // Verificar conexión Redis
   try {
     await redis.ping();

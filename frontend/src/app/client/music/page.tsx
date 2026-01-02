@@ -162,35 +162,25 @@ export default function ClientMusicPage() {
   const fetchQueue = async () => {
     const currentBarId = barId || 'test-bar';
     try {
-      // Usar music-service (3003) para obtener la cola real
+      // Obtener cola del queue-service (via proxy en music-service)
       const res = await fetch(`${API_URLS.musicBase}/queue/${currentBarId}`);
       const json = await res.json();
-      const items = json?.data || [];
+
+      // Los datos ya vienen con title, artist, thumbnail desde Redis
+      const items = json?.data?.queue || json?.data || [];
       setQueueItems(items);
 
-      // Fetch details for missing items
-      const missing = items.map((it: any) => it.song_id).filter((id: string) => !queueDetails[id]);
-      if (missing.length) {
-        const fetched = await Promise.all(
-          missing.map(async (id: string) => {
-            try {
-              // Usar music-service para detalles de video
-              const r = await fetch(`${API_URLS.musicBase}/youtube/video/${encodeURIComponent(id)}`);
-              const j = await r.json();
-              const d = j?.data || {};
-              const thumb = d?.thumbnail || `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
-              return d?.id ? { ...d, thumbnail: thumb } : { id, title: id, artist: '', thumbnail: thumb };
-            } catch {
-              return { id, title: id, artist: '', thumbnail: `https://img.youtube.com/vi/${id}/hqdefault.jpg` };
-            }
-          })
-        );
-        setQueueDetails((prev) => {
-          const next = { ...prev } as Record<string, any>;
-          for (const d of fetched) next[d.id] = d;
-          return next;
-        });
-      }
+      // Convertir a formato de detalles para compatibilidad con UI
+      const details: Record<string, any> = {};
+      items.forEach((item: any) => {
+        details[item.id || item.song_id] = {
+          id: item.id || item.song_id,
+          title: item.title || item.id || 'Unknown',
+          artist: item.artist || 'Unknown Artist',
+          thumbnail: item.thumbnail || `https://img.youtube.com/vi/${item.id || item.song_id}/hqdefault.jpg`
+        };
+      });
+      setQueueDetails(details);
     } catch (e) {
       console.error('Error fetching queue:', e);
     }
@@ -313,18 +303,21 @@ export default function ClientMusicPage() {
     }
 
     try {
-      // Usar music-service (3003) para añadir a la cola (DB persistence + Redis publish)
+      // Usar music-service (3002) para añadir a la cola (proxy to queue-service 3003)
       const res = await fetch(`${API_URLS.musicBase}/queue/${currentBarId}/add`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          bar_id: currentBarId, // Required by music-service
+          bar_id: currentBarId,
           song_id: song.id,
+          video_id: song.id,
+          title: song.title,           // ← Añadido: título de la canción
+          artist: song.artist,         // ← Añadido: artista
+          thumbnail: song.thumbnailUrl, // ← Añadido: thumbnail
           priority_play: isPriority,
           points_used: cost,
-          // requested_by: 'guest', // Handled by controller default
           table: currentTable
         })
       });
@@ -698,24 +691,29 @@ export default function ClientMusicPage() {
           ) : (
             <div className="space-y-3">
               {queueItems.map((it: any, idx: number) => {
-                const d = queueDetails[it.song_id];
+                const itemId = it.id || it.song_id;
+                const d = queueDetails[itemId];
                 return (
-                  <Card key={it.id} className="bg-card border-border">
+                  <Card key={itemId} className="bg-card border-border">
                     <CardContent className="p-3">
                       <div className="flex items-center gap-3">
                         <img
-                          src={d?.thumbnail || `https://img.youtube.com/vi/${it.song_id}/hqdefault.jpg`}
-                          alt={d?.title || it.song_id}
+                          src={d?.thumbnail || it.thumbnail || `https://img.youtube.com/vi/${itemId}/hqdefault.jpg`}
+                          alt={d?.title || it.title || itemId}
                           width={56}
                           height={42}
                           className="w-14 h-10 rounded-md object-cover"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="font-semibold truncate text-card-foreground">{d?.title || it.song_id}</div>
-                          <div className="text-xs text-muted-foreground truncate">{d?.artist || d?.channelTitle || ''}</div>
+                          <div className="font-semibold truncate text-card-foreground">{d?.title || it.title || itemId}</div>
+                          <div className="text-xs text-muted-foreground truncate">{d?.artist || it.artist || d?.channelTitle || ''}</div>
                         </div>
-                        <Badge variant="outline" className="text-xs bg-secondary text-secondary-foreground border-border">{it.status}</Badge>
-                        <span className="text-xs text-muted-foreground">{new Date(it.requested_at).toLocaleString()}</span>
+                        <Badge variant="outline" className="text-xs bg-secondary text-secondary-foreground border-border">
+                          {it.isPriority ? 'Prioridad' : 'En cola'}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(it.addedAt || it.requested_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       </div>
                     </CardContent>
                   </Card>
