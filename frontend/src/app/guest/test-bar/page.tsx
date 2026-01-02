@@ -39,24 +39,17 @@ export default function GuestBarQueuePage() {
       const items: QueueEntry[] = json.data || [];
       setItems(items);
 
-      // Fetch details for any song_id not yet cached
+      // Generar detalles básicos sin llamar a videos.list
       const missing = items
         .map((it) => it.song_id)
         .filter((id) => !details[id]);
       if (missing.length) {
-        const fetched = await Promise.all(
-          missing.map(async (id) => {
-            try {
-              const r = await fetch(`http://localhost:3002/api/youtube/video/${encodeURIComponent(id)}`);
-              const j = await r.json();
-              const d: VideoDetails = j?.data || {};
-              const thumb = d?.thumbnail || `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
-              return d?.id ? { ...d, thumbnail: thumb } : { id, title: id, artist: '', thumbnail: thumb };
-            } catch {
-              return { id, title: id, artist: '', thumbnail: `https://img.youtube.com/vi/${id}/hqdefault.jpg` };
-            }
-          })
-        );
+        const fetched = missing.map((id) => ({
+          id,
+          title: id,
+          artist: 'YouTube',
+          thumbnail: `https://img.youtube.com/vi/${id}/hqdefault.jpg`
+        }));
         setDetails((prev) => {
           const next = { ...prev } as Record<string, VideoDetails>;
           for (const d of fetched) next[d.id] = d;

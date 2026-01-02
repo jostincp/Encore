@@ -32,12 +32,7 @@ export interface SearchResponse {
   };
 }
 
-export interface VideoDetailsResponse {
-  success: boolean;
-  data: YouTubeVideo & {
-    duration?: string;
-  };
-}
+
 
 // Cliente API para Música
 class MusicService {
@@ -58,22 +53,6 @@ class MusicService {
       return response.data;
     } catch (error) {
       console.error('Error searching songs:', error);
-      throw this.handleError(error);
-    }
-  }
-
-  /**
-   * 🎵 Obtener detalles de un video específico
-   */
-  async getVideoDetails(videoId: string): Promise<VideoDetailsResponse> {
-    try {
-      const response = await axios.get(`${MUSIC_SERVICE_URL}/api/youtube/video/${videoId}`, {
-        timeout: 10000
-      });
-
-      return response.data;
-    } catch (error) {
-      console.error('Error getting video details:', error);
       throw this.handleError(error);
     }
   }
@@ -194,21 +173,6 @@ class MusicService {
   }
 
   /**
-   * ⚡ Utilidad: Formatear duración de YouTube (PT4M13S -> 4:13)
-   */
-  formatDuration(duration: string): string {
-    if (!duration) return 'Unknown';
-    
-    const match = duration.match(/PT(\d+M)?(\d+S)?/);
-    if (!match) return duration;
-
-    const minutes = parseInt(match[1]?.replace('M', '') || '0');
-    const seconds = parseInt(match[2]?.replace('S', '') || '0');
-
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }
-
-  /**
    * 🔍 Utilidad: Generar URL de YouTube
    */
   getYouTubeUrl(videoId: string): string {
@@ -220,15 +184,12 @@ class MusicService {
    */
   getHighQualityThumbnail(thumbnail: string): string {
     if (!thumbnail) return '';
-    
+
     // Convertir thumbnail de calidad media a alta
     return thumbnail.replace('/mqdefault.jpg', '/hqdefault.jpg')
-                    .replace('/default.jpg', '/hqdefault.jpg');
+      .replace('/default.jpg', '/hqdefault.jpg');
   }
 }
 
 // Exportar instancia singleton
 export const musicService = new MusicService();
-
-// Exportar tipos por separado
-export type { YouTubeVideo, SearchResponse, VideoDetailsResponse };

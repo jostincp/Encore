@@ -185,64 +185,6 @@ app.get('/api/youtube/search', barRateLimiter, async (req, res) => {
   }
 });
 
-/**
- * 🎵 Obtener detalles de un video específico
- */
-app.get('/api/youtube/video/:videoId', async (req, res) => {
-  try {
-    const { videoId } = req.params;
-
-    if (!YOUTUBE_API_KEY) {
-      return res.status(500).json({ success: false, message: 'YouTube API key not configured' });
-    }
-
-    const cacheKey = `${CacheKeys.VIDEO_PREFIX}${videoId}`;
-    const cachedVideo = await CacheService.get<any>(cacheKey);
-
-    if (cachedVideo) {
-      quotaSavedToday += 1;
-      log(`✅ VIDEO CACHE HIT: ${videoId}`);
-      return res.json({
-        success: true,
-        data: cachedVideo,
-        _cached: true,
-        _quotaSaved: quotaSavedToday
-      });
-    }
-
-    const response = await executeProtectedCall(async () => {
-      return await axios.get(`${YOUTUBE_API_BASE_URL}/videos`, {
-        params: { key: YOUTUBE_API_KEY, part: 'snippet,contentDetails', id: videoId },
-        timeout: 10000
-      });
-    });
-
-    if (response.data.items.length === 0) {
-      return res.status(404).json({ success: false, message: 'Video not found' });
-    }
-
-    const video = response.data.items[0];
-    const videoDetails = {
-      id: video.id,
-      title: video.snippet.title,
-      artist: extractArtistFromTitle(video.snippet.title),
-      thumbnail: video.snippet.thumbnails?.high?.url || video.snippet.thumbnails?.medium?.url,
-      channel: video.snippet.channelTitle,
-      publishedAt: video.snippet.publishedAt,
-      description: video.snippet.description,
-      duration: video.contentDetails?.duration,
-      source: 'youtube'
-    };
-
-    await CacheService.set(cacheKey, videoDetails, 604800);
-
-    return res.json({ success: true, data: videoDetails, _cached: false });
-
-  } catch (error: any) {
-    log('❌ YouTube video details error:', error.message);
-    return res.status(500).json({ success: false, message: 'Failed to get video details' });
-  }
-});
 
 /**
  * 🔧 Función auxiliar para extraer artista del título
