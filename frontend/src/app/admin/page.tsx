@@ -181,51 +181,23 @@ export default function AdminPage() {
         const response = await fetch(`http://localhost:3002/api/queue/${realBar.id}`);
         if (response.ok) {
           const data = await response.json();
-          const queueItems = data.data || [];
+          const queueItems = data.data?.queue || data.data || [];
 
-          // Obtener detalles de cada canción
-          const itemsWithDetails = await Promise.all(
-            queueItems.map(async (item: any) => {
-              try {
-                const videoRes = await fetch(`http://localhost:3002/api/youtube/video/${item.song_id}`);
-                if (videoRes.ok) {
-                  const videoData = await videoRes.json();
-                  return {
-                    ...item,
-                    song: {
-                      id: item.song_id,
-                      title: videoData.data?.title || item.song_id,
-                      artist: videoData.data?.artist || 'Unknown Artist',
-                      thumbnailUrl: videoData.data?.thumbnail || `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
-                      duration: videoData.data?.durationSeconds || 0,
-                      genre: 'Music'
-                    },
-                    isPriority: item.priority_play,
-                    tableNumber: item.table || '1',
-                    timestamp: item.requested_at
-                  };
-                }
-              } catch (err) {
-                console.error(`Error fetching details for ${item.song_id}:`, err);
-              }
-
-              // Fallback si falla la petición
-              return {
-                ...item,
-                song: {
-                  id: item.song_id,
-                  title: item.song_id,
-                  artist: 'Unknown',
-                  thumbnailUrl: `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
-                  duration: 0,
-                  genre: 'Music'
-                },
-                isPriority: item.priority_play,
-                tableNumber: item.table || '1',
-                timestamp: item.requested_at
-              };
-            })
-          );
+          // Usar datos que YA vienen de la cola (title, artist, thumbnail)
+          const itemsWithDetails = queueItems.map((item: any) => ({
+            ...item,
+            song: {
+              id: item.id || item.song_id,
+              title: item.title || item.id || 'Unknown',
+              artist: item.artist || 'Unknown Artist',
+              thumbnailUrl: item.thumbnail || `https://i.ytimg.com/vi/${item.id}/mqdefault.jpg`,
+              duration: 0,
+              genre: 'Music'
+            },
+            isPriority: item.isPriority || item.priority_play,
+            tableNumber: item.table || '1',
+            timestamp: item.addedAt || item.requested_at
+          }));
 
           setCurrentQueue(itemsWithDetails);
         }
@@ -514,49 +486,22 @@ export default function AdminPage() {
                         const response = await fetch(`http://localhost:3002/api/queue/${realBar?.id}`);
                         if (response.ok) {
                           const data = await response.json();
-                          const queueItems = data.data || [];
+                          const queueItems = data.data?.queue || data.data || [];
 
-                          const itemsWithDetails = await Promise.all(
-                            queueItems.map(async (item: any) => {
-                              try {
-                                const videoRes = await fetch(`http://localhost:3002/api/youtube/video/${item.song_id}`);
-                                if (videoRes.ok) {
-                                  const videoData = await videoRes.json();
-                                  return {
-                                    ...item,
-                                    song: {
-                                      id: item.song_id,
-                                      title: videoData.data?.title || item.song_id,
-                                      artist: videoData.data?.artist || 'Unknown Artist',
-                                      thumbnailUrl: videoData.data?.thumbnail || `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
-                                      duration: videoData.data?.durationSeconds || 0,
-                                      genre: 'Music'
-                                    },
-                                    isPriority: item.priority_play,
-                                    tableNumber: item.table || '1',
-                                    timestamp: item.requested_at
-                                  };
-                                }
-                              } catch (err) {
-                                console.error(`Error fetching details for ${item.song_id}:`, err);
-                              }
-
-                              return {
-                                ...item,
-                                song: {
-                                  id: item.song_id,
-                                  title: item.song_id,
-                                  artist: 'Unknown',
-                                  thumbnailUrl: `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
-                                  duration: 0,
-                                  genre: 'Music'
-                                },
-                                isPriority: item.priority_play,
-                                tableNumber: item.table || '1',
-                                timestamp: item.requested_at
-                              };
-                            })
-                          );
+                          const itemsWithDetails = queueItems.map((item: any) => ({
+                            ...item,
+                            song: {
+                              id: item.id || item.song_id,
+                              title: item.title || item.id || 'Unknown',
+                              artist: item.artist || 'Unknown Artist',
+                              thumbnailUrl: item.thumbnail || `https://i.ytimg.com/vi/${item.id}/mqdefault.jpg`,
+                              duration: 0,
+                              genre: 'Music'
+                            },
+                            isPriority: item.isPriority || item.priority_play,
+                            tableNumber: item.table || '1',
+                            timestamp: item.addedAt || item.requested_at
+                          }));
 
                           setCurrentQueue(itemsWithDetails);
                         }
@@ -570,49 +515,22 @@ export default function AdminPage() {
                         const response = await fetch(`http://localhost:3002/api/queue/${realBar?.id}`);
                         if (response.ok) {
                           const data = await response.json();
-                          const queueItems = data.data || [];
+                          const queueItems = data.data?.queue || data.data || [];
 
-                          const itemsWithDetails = await Promise.all(
-                            queueItems.map(async (item: any) => {
-                              try {
-                                const videoRes = await fetch(`http://localhost:3002/api/youtube/video/${item.song_id}`);
-                                if (videoRes.ok) {
-                                  const videoData = await videoRes.json();
-                                  return {
-                                    ...item,
-                                    song: {
-                                      id: item.song_id,
-                                      title: videoData.data?.title || item.song_id,
-                                      artist: videoData.data?.artist || 'Unknown Artist',
-                                      thumbnailUrl: videoData.data?.thumbnail || `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
-                                      duration: videoData.data?.durationSeconds || 0,
-                                      genre: 'Music'
-                                    },
-                                    isPriority: item.priority_play,
-                                    tableNumber: item.table || '1',
-                                    timestamp: item.requested_at
-                                  };
-                                }
-                              } catch (err) {
-                                console.error(`Error fetching details for ${item.song_id}:`, err);
-                              }
-
-                              return {
-                                ...item,
-                                song: {
-                                  id: item.song_id,
-                                  title: item.song_id,
-                                  artist: 'Unknown',
-                                  thumbnailUrl: `https://i.ytimg.com/vi/${item.song_id}/mqdefault.jpg`,
-                                  duration: 0,
-                                  genre: 'Music'
-                                },
-                                isPriority: item.priority_play,
-                                tableNumber: item.table || '1',
-                                timestamp: item.requested_at
-                              };
-                            })
-                          );
+                          const itemsWithDetails = queueItems.map((item: any) => ({
+                            ...item,
+                            song: {
+                              id: item.id || item.song_id,
+                              title: item.title || item.id || 'Unknown',
+                              artist: item.artist || 'Unknown Artist',
+                              thumbnailUrl: item.thumbnail || `https://i.ytimg.com/vi/${item.id}/mqdefault.jpg`,
+                              duration: 0,
+                              genre: 'Music'
+                            },
+                            isPriority: item.isPriority || item.priority_play,
+                            tableNumber: item.table || '1',
+                            timestamp: item.addedAt || item.requested_at
+                          }));
 
                           setCurrentQueue(itemsWithDetails);
                         }
