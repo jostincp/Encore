@@ -44,7 +44,7 @@ Esta guía documenta todos los microservicios de Encore, su estado actual, respo
 #### **Stack Tecnológico:**
 ```javascript
 - Node.js 20+ (Runtime)
-- Express.js 5.1.0 (Framework)
+- Express.js 4.18.2 (Framework estable)
 - Redis 7.x (Cache)
 - Axios (HTTP client)
 - YouTube Data API v3 (External API)
@@ -101,7 +101,7 @@ curl "http://localhost:3002/api/youtube/search?q=queen"
 #### **Stack Tecnológico:**
 ```javascript
 - Node.js 20+ (Runtime)
-- Express.js 5.1.0 (Framework)
+- Express.js 4.18.2 (Framework estable)
 - Redis 7.x (Colas y cache)
 - ioredis (Redis client avanzado)
 - JWT (Autenticación interna)
@@ -231,7 +231,7 @@ curl http://localhost:3004/
 #### **Stack Tecnológico:**
 ```javascript
 - Node.js 20+ (Runtime)
-- Express.js 5.1.0 (Framework)
+- Express.js 4.18.2 (Framework estable)
 - JWT (Tokens)
 - bcrypt (Password hashing)
 - PostgreSQL (User data)

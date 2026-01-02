@@ -105,7 +105,7 @@ graph TB
 **Stack Tecnológico:**
 ```javascript
 - Node.js 20+ (Performance y ecosistema npm)
-- Express.js 5.1.0 (Middleware flexible)
+- Express.js 4.18.2 (Framework estable y robusto)
 - Redis 7.x (Cache y rate limiting)
 - Axios (HTTP client robusto)
 - TypeScript (Type safety)

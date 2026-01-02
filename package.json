@@ -81,5 +81,9 @@
     "@types/better-sqlite3": "^7.6.13",
     "better-sqlite3": "^12.2.0",
     "dotenv": "^17.2.2"
+  },
+  "overrides": {
+    "@types/express": "4.17.21",
+    "@types/express-serve-static-core": "4.17.43"
   }
 }

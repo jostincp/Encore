@@ -135,7 +135,7 @@ graph TB
 ### **Backend Layer**
 ```javascript
 ✅ Node.js 20+ - Runtime JavaScript
-✅ Express.js 5.1.0 - Framework web
+✅ Express.js 4.18.2 - Framework web estable
 ✅ Redis 7.x - Cache y colas
 ✅ PostgreSQL 15 - Base de datos principal
 ✅ JWT - Autenticación entre servicios
