@@ -89,11 +89,23 @@ app.get('/api/youtube/search', barRateLimiter, async (req, res) => {
         cacheHit: true
       });
 
+      // Asegurar que los resultados tengan el formato correcto con 'id'
+      const videos = (data.results || []).map((item: any) => ({
+        id: item.videoId || item.id,  // Compatibilidad con ambos formatos
+        title: item.title,
+        artist: item.artist,
+        thumbnail: item.thumbnail,
+        channel: item.channel,
+        publishedAt: item.publishedAt,
+        description: item.description || '',
+        source: 'youtube'
+      }));
+
       return res.json({
         success: true,
         data: {
-          videos: data.results,
-          totalResults: data.results?.length || 0
+          videos,
+          totalResults: videos.length
         },
         source: 'cache',
         cachedAt: data.cachedAt
