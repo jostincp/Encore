@@ -1,0 +1,42 @@
+# Gemini CLI - Archivos a Ignorar
+# Este archivo evita que Gemini indexe archivos sensibles o innecesarios
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# Dependencias y builds
+node_modules/
+dist/
+build/
+.next/
+out/
+
+# IDE y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs y temporales
+*.log
+logs/
+tmp/
+.cache/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+
+# Docker volumes
+data/
+volumes/

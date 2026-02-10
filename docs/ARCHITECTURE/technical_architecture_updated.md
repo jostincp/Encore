@@ -254,7 +254,7 @@ Frontend → Queue Service → Redis (LPUSH/RPOP) → Frontend (polling)
 
 ### **📋 Planificado (Próximos 3 meses)**
 - **📋 Points Service + Stripe** - Pagos reales
-- **📋 Menu Service 3D** - Three.js integration
+- **📋 Menu Service 3D** - Google model-viewer integration
 - **📋 Analytics Service** - Métricas avanzadas
 - **📋 Mobile App** - React Native
 

@@ -128,7 +128,7 @@ Welcome to the comprehensive documentation for Encore, a digital jukebox platfor
 
 ### **📋 Planned Implementation**
 - **💳 Points Service** - Stripe payment integration
-- **🍽️ Menu Service** - 3D menu with Three.js
+- **🍽️ Menu Service** - 3D menu with Google model-viewer
 - **📱 Mobile App** - React Native application
 
 ---

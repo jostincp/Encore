@@ -61,7 +61,7 @@ Encore resuelve la fragmentación en el consumo de música digital al proporcion
 - **Framework**: React 19 + Next.js 15
 - **Lenguaje**: TypeScript
 - **Estilos**: Tailwind CSS + Shadcn UI
-- **3D**: Three.js + React Three Fiber
+- **3D**: Google model-viewer (Web Components)
 - **Estado**: Zustand
 - **Animaciones**: Framer Motion
 - **PWA**: next-pwa
@@ -268,7 +268,7 @@ npm run deploy               # Despliegue a staging
 - Shadcn UI / Radix UI
 - Framer Motion
 - Zustand
-- Three.js / React Three Fiber
+- Google model-viewer (Web Components)
 - Socket.IO Client
 - next-pwa
 

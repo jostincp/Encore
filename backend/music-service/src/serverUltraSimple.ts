@@ -296,6 +296,23 @@ app.get('/api/queue/:barId', async (req, res) => {
   }
 });
 
+// Override: GET /api/queue/:barId/now-playing - Proxy to get currently playing song
+app.get('/api/queue/:barId/now-playing', async (req, res) => {
+  try {
+    const { barId } = req.params;
+    log('🔄 Proxying now-playing request to queue-service', { barId });
+    const response = await axios.get(`${QUEUE_SERVICE_URL}/api/queue/${barId}/now-playing`, {
+      timeout: 10000
+    });
+    return res.json(response.data);
+  } catch (error: any) {
+    log('❌ Now-playing proxy error:', error.message);
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { success: true, data: null, message: 'No song currently playing' }
+    );
+  }
+});
+
 // Override: POST /api/queue/add - Proxy to real queue-service (Generic fallback)
 app.post('/api/queue/add', async (req, res) => {
   try {

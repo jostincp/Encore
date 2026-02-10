@@ -76,8 +76,8 @@ Aquí es donde viven la aplicación del cliente (móvil-first) y el dashboard de
 •	Gestión de Estado: Zustand.
 •	Por qué: Extremadamente ligero y simple. Perfecto para manejar estados globales (como datos del usuario, estado de la cola) sin la complejidad de Redux.
 •	Renderizado 3D (Menú Interactivo):
-•	Motor: Three.js. La librería estándar para 3D en la web.
-•	Wrapper para React: React Three Fiber (R3F). Permite construir escenas 3D de manera declarativa y con componentes de React, haciendo el proceso mucho más intuitivo.
+•	Motor: Google model-viewer. Web Components estándar para renderizar modelos 3D interactivos en la web.
+•	Por qué: Permite integrar modelos glTF/GLB con rotación 360°, zoom y carga optimizada sin depender de librerías externas pesadas. Funciona de forma nativa en navegadores modernos.
 •	Plataforma Final: Progressive Web App (PWA).
 •	Por qué: Permite que la aplicación sea "instalable" en el escritorio o pantalla de inicio del móvil, funcionar offline (para ver el menú sin conexión, por ejemplo) y enviar notificaciones push, todo sin pasar por las tiendas de aplicaciones.
 2. Backend (El Cerebro del Sistema)

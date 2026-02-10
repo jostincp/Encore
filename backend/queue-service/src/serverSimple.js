@@ -122,14 +122,51 @@ app.post('/api/queue/add', async (req, res) => {
         io.to(bar_id).emit('song-added', { title, artist });
       }
 
+      // 🎵 AUTO-START: Si es la primera canción y no hay nada reproduciéndose, iniciar automáticamente
+      const nowPlayingKey = `queue:${bar_id}:nowPlaying`;
+      const nowPlaying = await redis.get(nowPlayingKey);
+      const isFirstSong = results[0][1] === 1; // Position 1 = primera canción
+      let autoStarted = false;
+
+      if (!nowPlaying && isFirstSong) {
+        log('🎬 Auto-starting playback: First song added to empty queue');
+
+        // Sacar la canción que acabamos de agregar
+        const rawSong = await redis.lpop(queueKey);
+
+        if (rawSong) {
+          const songToPlay = JSON.parse(rawSong);
+
+          // Marcar como "now playing"
+          await redis.set(nowPlayingKey, rawSong);
+
+          // Remover del set de deduplicación
+          await redis.srem(deduplicationKey, song_id);
+
+          autoStarted = true;
+
+          log('✅ Auto-start successful', {
+            songId: songToPlay.id,
+            title: songToPlay.title
+          });
+
+          // Emitir evento de inicio de reproducción
+          if (io) {
+            io.to(bar_id).emit('now-playing', songToPlay);
+            io.to(bar_id).emit('queue-updated');
+          }
+        }
+      }
+
       return res.json({
         success: true,
-        message: `Song "${title}" added to queue${priority_play ? ' with priority' : ''}`,
+        message: `Song "${title}" added to queue${priority_play ? ' with priority' : ''}${autoStarted ? ' and playback started' : ''}`,
         data: {
           position: results[0][1],
           cost,
           remainingPoints: mockUserPoints[userId],
-          isPriority: priority_play
+          isPriority: priority_play,
+          autoStarted
         }
       });
     } else {
@@ -199,6 +236,46 @@ app.get('/api/queue/:barId', async (req, res) => {
   }
 });
 
+
+/**
+ * 🎵 Obtener canción actualmente reproduciéndose
+ */
+app.get('/api/queue/:barId/now-playing', async (req, res) => {
+  try {
+    const { barId } = req.params;
+
+    log('🎵 Getting now playing song', { barId });
+
+    const nowPlayingKey = `queue:${barId}:nowPlaying`;
+    const rawSong = await redis.get(nowPlayingKey);
+
+    if (!rawSong) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No song currently playing'
+      });
+    }
+
+    const song = JSON.parse(rawSong);
+
+    log('✅ Now playing song retrieved', { songId: song.id, title: song.title });
+
+    return res.json({
+      success: true,
+      data: song
+    });
+
+  } catch (error) {
+    log('❌ Error getting now playing song:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get now playing song',
+      error: error.message
+    });
+  }
+});
 /**
  * 🗑️ Eliminar canción de la cola
  */

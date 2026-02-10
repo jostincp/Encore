@@ -1,0 +1,39 @@
+/**
+ * 🎵 Obtener canción actualmente reproduciéndose
+ */
+app.get('/api/queue/:barId/now-playing', async (req, res) => {
+    try {
+        const { barId } = req.params;
+
+        log('🎵 Getting now playing song', { barId });
+
+        const nowPlayingKey = `queue:${barId}:nowPlaying`;
+        const rawSong = await redis.get(nowPlayingKey);
+
+        if (!rawSong) {
+            return res.json({
+                success: true,
+                data: null,
+                message: 'No song currently playing'
+            });
+        }
+
+        const song = JSON.parse(rawSong);
+
+        log('✅ Now playing song retrieved', { songId: song.id, title: song.title });
+
+        return res.json({
+            success: true,
+            data: song
+        });
+
+    } catch (error) {
+        log('❌ Error getting now playing song:', error);
+
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to get now playing song',
+            error: error.message
+        });
+    }
+});

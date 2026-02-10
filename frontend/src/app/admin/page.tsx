@@ -56,6 +56,7 @@ export default function AdminPage() {
   });
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [currentQueue, setCurrentQueue] = useState<any[]>([]);
+  const [nowPlayingSong, setNowPlayingSong] = useState<any | null>(null);
   const [playerMode, setPlayerMode] = useState<'external' | 'embedded'>('external');
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -204,6 +205,36 @@ export default function AdminPage() {
       } catch (error) {
         console.error('Error fetching queue:', error);
       }
+
+      // Fetch now-playing song
+      try {
+        const nowPlayingResponse = await fetch(`http://localhost:3002/api/queue/${realBar.id}/now-playing`);
+        if (nowPlayingResponse.ok) {
+          const nowPlayingData = await nowPlayingResponse.json();
+          if (nowPlayingData.success && nowPlayingData.data) {
+            const song = nowPlayingData.data;
+            setNowPlayingSong({
+              id: song.id || song.song_id || song.video_id,
+              song: {
+                id: song.id || song.song_id || song.video_id,
+                title: song.title || 'Unknown',
+                artist: song.artist || 'Unknown Artist',
+                thumbnailUrl: song.thumbnail || `https://i.ytimg.com/vi/${song.id || song.video_id}/mqdefault.jpg`,
+                duration: 0,
+                genre: 'Music'
+              },
+              isPriority: song.isPriority || song.priority_play || false,
+              tableNumber: song.table || '1',
+              timestamp: song.addedAt || song.requested_at,
+              status: 'playing'
+            });
+          } else {
+            setNowPlayingSong(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching now-playing:', error);
+      }
     };
 
 
@@ -240,6 +271,28 @@ export default function AdminPage() {
 
     socket.on('song-added', (data: any) => {
       console.log('🎵 Song added event:', data);
+      fetchQueue();
+    });
+
+    socket.on('now-playing', (data: any) => {
+      console.log('🎬 Now playing event:', data);
+      if (data) {
+        setNowPlayingSong({
+          id: data.id || data.song_id || data.video_id,
+          song: {
+            id: data.id || data.song_id || data.video_id,
+            title: data.title || 'Unknown',
+            artist: data.artist || 'Unknown Artist',
+            thumbnailUrl: data.thumbnail || `https://i.ytimg.com/vi/${data.id || data.video_id}/mqdefault.jpg`,
+            duration: 0,
+            genre: 'Music'
+          },
+          isPriority: data.isPriority || data.priority_play || false,
+          tableNumber: data.table || '1',
+          timestamp: data.addedAt || data.requested_at,
+          status: 'playing'
+        });
+      }
       fetchQueue();
     });
 
@@ -477,9 +530,9 @@ export default function AdminPage() {
               </CardHeader>
               <CardContent>
                 {/* Hybrid Music Player */}
-                {currentQueue.length > 0 && (currentQueue[0].status === 'playing' || currentQueue[0].status === 'pending') ? (
+                {nowPlayingSong ? (
                   <HybridMusicPlayer
-                    currentSong={currentQueue[0]}
+                    currentSong={nowPlayingSong}
                     onSkip={async () => {
                       try {
                         await fetch(`http://localhost:3002/api/player/${realBar?.id}/skip`, { method: 'POST' });

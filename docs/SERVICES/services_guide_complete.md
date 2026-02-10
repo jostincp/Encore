@@ -270,7 +270,7 @@ curl http://localhost:3004/
   - Gestión de categorías
   - Control de inventario
   - Precios y disponibilidad
-🎨 Stack: Node.js + Express + PostgreSQL + Three.js
+🎨 Stack: Node.js + Express + PostgreSQL + Google model-viewer
 ```
 
 ### **Analytics Service (Puerto 3006)**
@@ -414,7 +414,7 @@ Frontend:
 
 ### **Mediano Plazo (1-2 meses):**
 1. **Desarrollar Points Service** - Stripe integration
-2. **Crear Menu Service** - Three.js 3D menu
+2. **Crear Menu Service** - Google model-viewer 3D menu
 3. **Implementar Analytics** - Dashboards y métricas
 
 ### **Largo Plazo (3+ meses):**
