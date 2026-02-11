@@ -146,7 +146,7 @@ Frontend:
 Backend API:
   Provider: Railway / Local
   Runtime: Node.js 20
-  Servicios: 6 microservicios (puertos 3001-3006)
+  Servicios: 6 microservicios (puertos 3001-3007)
 
 Database:
   Provider: Local PostgreSQL / Supabase
@@ -165,9 +165,9 @@ Cache:
 | [[Auth-Service]] | 3001 | Express + JWT |
 | [[Music-Service]] | 3002 | Express + YouTube API |
 | [[Queue-Service]] | 3003 | Express + Socket.IO |
-| [[Points-Service]] | 3004 | Express + Stripe |
+| [[Points-Service]] | 3006 | Express + Stripe |
 | [[Menu-Service]] | 3005 | Express + PostgreSQL |
-| [[Analytics-Service]] | 3006 | Express + Agregación |
+| [[Analytics-Service]] | 3007 | Express + Agregación |
 
 ---
 

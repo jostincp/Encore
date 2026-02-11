@@ -27,9 +27,9 @@ graph TB
         H[Music Service - Puerto 3002]
         I[Queue Service - Puerto 3003]
         J[Auth Service - Puerto 3001]
-        K[Points Service - Puerto 3004]
+        K[Points Service - Puerto 3006]
         L[Menu Service - Puerto 3005]
-        M[Analytics Service - Puerto 3006]
+        M[Analytics Service - Puerto 3007]
     end
     
     subgraph "External APIs"
@@ -102,17 +102,17 @@ graph TB
 - **Tecnologías:** Node.js, JWT, bcrypt
 - **Estado:** 🔄 Implementación básica funcional
 
-### **✅ Points Service (Puerto 3007) - COMPLETO**
+### **✅ Points Service (Puerto 3006) - COMPLETO**
 - **Responsabilidad:** Sistema de puntos y pagos
 - **Tecnologías:** Node.js, Stripe API
 - **Estado:** ✅ Integración con Stripe operativa
 
-### **✅ Menu Service (Puerto 3006) - COMPLETO**
+### **✅ Menu Service (Puerto 3005) - COMPLETO**
 - **Responsabilidad:** Menú digital y productos
 - **Tecnologías:** Node.js, PostgreSQL
 - **Estado:** ✅ CRUD de productos operativo
 
-### **✅ Analytics Service (Puerto 3005) - COMPLETO**
+### **✅ Analytics Service (Puerto 3007) - COMPLETO**
 - **Responsabilidad:** Métricas y reportes
 - **Tecnologías:** Node.js, PostgreSQL, dashboards
 - **Estado:** ✅ Analytics básicos operativos

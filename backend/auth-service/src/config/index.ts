@@ -15,7 +15,7 @@ export const config = {
   // Server configuration
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  
+
   // Database configuration (supports DATABASE_URL fallback)
   database: (() => {
     const url = process.env.DATABASE_URL;
@@ -49,7 +49,7 @@ export const config = {
       connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT || '2000', 10),
     };
   })(),
-  
+
   // JWT configuration
   jwt: {
     secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key',
@@ -59,7 +59,7 @@ export const config = {
     issuer: process.env.JWT_ISSUER || 'musicbar-auth',
     audience: process.env.JWT_AUDIENCE || 'musicbar-users',
   },
-  
+
   // Redis configuration
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
@@ -69,7 +69,7 @@ export const config = {
     keyPrefix: process.env.REDIS_KEY_PREFIX || 'musicbar:auth:',
     ttl: parseInt(process.env.REDIS_TTL || '3600', 10), // 1 hour default
   },
-  
+
   // Email configuration
   email: {
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
@@ -79,28 +79,28 @@ export const config = {
     password: process.env.EMAIL_PASSWORD,
     from: process.env.EMAIL_FROM || 'noreply@musicbar.com',
   },
-  
+
   // Rate limiting configuration
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
     max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10), // limit each IP to 100 requests per windowMs
     message: process.env.RATE_LIMIT_MESSAGE || 'Too many requests from this IP, please try again later.',
   },
-  
+
   // CORS configuration
   cors: {
     origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'http://localhost:3004'],
     credentials: true,
   },
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:3004'],
-  
+
   // Security configuration
   security: {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
     maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5', 10),
     lockoutDuration: parseInt(process.env.LOCKOUT_DURATION || '900000', 10), // 15 minutes
   },
-  
+
   // Logging configuration
   logging: {
     level: process.env.LOG_LEVEL || 'info',
@@ -108,14 +108,14 @@ export const config = {
     maxSize: process.env.LOG_MAX_SIZE || '10m',
     maxFiles: parseInt(process.env.LOG_MAX_FILES || '5', 10),
   },
-  
+
   // Service URLs
   services: {
     menuService: process.env.MENU_SERVICE_URL || 'http://localhost:3002',
     musicService: process.env.MUSIC_SERVICE_URL || 'http://localhost:3003',
-    pointsService: process.env.POINTS_SERVICE_URL || 'http://localhost:3004',
+    pointsService: process.env.POINTS_SERVICE_URL || 'http://localhost:3006',
     queueService: process.env.QUEUE_SERVICE_URL || 'http://localhost:3005',
-    analyticsService: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3006',
+    analyticsService: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3007',
   },
 };
 

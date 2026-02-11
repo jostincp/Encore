@@ -34,9 +34,9 @@ Bienvenido a la documentación central del proyecto **Encore**, la plataforma de
 1. [[Auth-Service|Auth Service]] (puerto 3001): Autenticación JWT
 2. [[Music-Service|Music Service]] (puerto 3002): Búsqueda YouTube + Caché Redis  
 3. [[Queue-Service|Queue Service]] (puerto 3003): Cola musical + WebSocket
-4. [[Points-Service|Points Service]] (puerto 3004): Puntos y pagos (planeado)
+4. [[Points-Service|Points Service]] (puerto 3006): Puntos y pagos (planeado)
 5. [[Menu-Service|Menu Service]] (puerto 3005): Menú 3D (planeado)
-6. [[Analytics-Service|Analytics Service]] (puerto 3006): Métricas (planeado)
+6. [[Analytics-Service|Analytics Service]] (puerto 3007): Métricas (planeado)
 
 ---
 

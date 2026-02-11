@@ -59,3 +59,32 @@ Si solo necesitas trabajar en una parte del sistema:
 
 > [!TIP] Testing
 > Para ejecutar las pruebas, utiliza `npm run test` o `npm run test:unit` para pruebas unitarias rápidas.
+
+## 5. Verificar que Todo Funcione
+
+Una vez levantado el stack, utiliza estos scripts de PowerShell para validar que los servicios responden correctamente.
+
+### Verificación rápida
+Comprueba el estado de **todos** los servicios (Auth, Music, Queue, Points, Menu, Analytics, Frontend) y los contenedores Docker (Redis, PostgreSQL):
+
+```powershell
+.\check-services.ps1
+```
+
+Salida esperada: lista de servicios con ✅ OK o ❌ No responde, más resumen final.
+
+### Diagnóstico detallado
+Si algún servicio no responde, este script revisa la causa raíz servicio por servicio:
+
+```powershell
+.\diagnose-services.ps1
+```
+
+Verifica para cada servicio:
+- ✅ Directorio y archivos (`src/server.ts`, `package.json`, `.env`)
+- ✅ Dependencias instaladas (`node_modules`)
+- ✅ Puerto escuchando
+- ✅ Dependencias compartidas (`backend/shared`)
+
+> [!NOTE] Ambos scripts están en la raíz del proyecto
+> Ejecútalos desde `C:\www\Encore` con PowerShell.

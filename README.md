@@ -146,7 +146,7 @@ NEXT_PUBLIC_MUSIC_SERVICE_URL=http://localhost:3002
 NEXT_PUBLIC_QUEUE_SERVICE_URL=http://localhost:3003
 
 # YouTube API
-NEXT_PUBLIC_YOUTUBE_API_KEY=AIzaSyDmB98_1mo0doDBWwETyd-4iOacHNu3avc
+NEXT_PUBLIC_YOUTUBE_API_KEY=your_youtube_api_key_here
 ```
 
 ### 📖 Documentación Completa de Variables
@@ -201,9 +201,9 @@ encore/
 │   ├── music-service/       # Puerto 3002 - YouTube API
 │   ├── queue-service/       # Puerto 3003 - Redis colas
 │   ├── auth-service/        # Puerto 3001 - JWT auth
-│   ├── points-service/      # Puerto 3004 - Stripe pagos
+│   ├── points-service/      # Puerto 3006 - Stripe pagos
 │   ├── menu-service/        # Puerto 3005 - Menú 3D
-│   ├── analytics-service/   # Puerto 3006 - Métricas
+│   ├── analytics-service/   # Puerto 3007 - Métricas
 │   └── shared/              # Código compartido
 ├── docs/                    # Documentación completa
 │   ├── ARCHITECTURE/        # Arquitectura técnica

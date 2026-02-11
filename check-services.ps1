@@ -6,9 +6,9 @@ $services = @(
     @{Name="Auth Service"; Port=3001; Path="/health"}
     @{Name="Music Service"; Port=3002; Path="/health"}
     @{Name="Queue Service"; Port=3003; Path="/health"}
-    @{Name="Points Service"; Port=3004; Path="/api/health"}
-    @{Name="Analytics Service"; Port=3005; Path="/api/v1/health"}
-    @{Name="Menu Service"; Port=3006; Path="/health"}
+    @{Name="Points Service"; Port=3006; Path="/health"}
+    @{Name="Analytics Service"; Port=3007; Path="/api/v1/health"}
+    @{Name="Menu Service"; Port=3005; Path="/health"}
 )
 
 Write-Host ""

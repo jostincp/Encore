@@ -8,9 +8,9 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 $services = @(
-    @{Name = "Points Service"; Path = "backend/points-service"; Port = 3004 }
-    @{Name = "Analytics Service"; Path = "backend/analytics-service"; Port = 3005 }
-    @{Name = "Menu Service"; Path = "backend/menu-service"; Port = 3006 }
+    @{Name = "Points Service"; Path = "backend/points-service"; Port = 3006 }
+    @{Name = "Analytics Service"; Path = "backend/analytics-service"; Port = 3007 }
+    @{Name = "Menu Service"; Path = "backend/menu-service"; Port = 3005 }
 )
 
 foreach ($service in $services) {

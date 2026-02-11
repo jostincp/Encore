@@ -41,9 +41,9 @@ graph TB
         H[Music Service - Puerto 3002]
         I[Queue Service - Puerto 3003]
         J[Auth Service - Puerto 3001]
-        K[Points Service - Puerto 3004]
+        K[Points Service - Puerto 3006]
         L[Menu Service - Puerto 3005]
-        M[Analytics Service - Puerto 3006]
+        M[Analytics Service - Puerto 3007]
     end
     
     subgraph "External APIs"

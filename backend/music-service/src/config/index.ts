@@ -40,9 +40,9 @@ export const spotifyConfig = {
 export const services = {
   auth: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
   queue: process.env.QUEUE_SERVICE_URL || 'http://localhost:3003',
-  points: process.env.POINTS_SERVICE_URL || 'http://localhost:3004',
+  points: process.env.POINTS_SERVICE_URL || 'http://localhost:3006',
   menu: process.env.MENU_SERVICE_URL || 'http://localhost:3005',
-  analytics: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3006'
+  analytics: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3007'
 };
 
 // Logging Configuration

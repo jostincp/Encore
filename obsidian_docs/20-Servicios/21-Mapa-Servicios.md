@@ -17,9 +17,9 @@ Tabla de referencia de los servicios backend y sus puntos de entrada.
 | **[[Auth-Service]]** | `3001` | ✅ Implementado | Autenticación, gestión de usuarios, JWT | JWT, Bcrypt |
 | **[[Music-Service]]** | `3002` | ✅ Implementado | Búsqueda de canciones, metadata, caché | YouTube API, [[Redis]] |
 | **[[Queue-Service]]** | `3003` | ✅ Implementado | Cola de reproducción, "Now Playing", auto-start | Socket.IO, [[Redis]] |
-| **[[Points-Service]]** | `3004` | 🔜 En desarrollo | Gestión de saldo, compras de créditos | Stripe / Mercado Pago |
+| **[[Points-Service]]** | `3006` | 🔜 En desarrollo | Gestión de saldo, compras de créditos | Stripe / Mercado Pago |
 | **[[Menu-Service]]** | `3005` | 🔜 Planeado | Catálogo de productos, assets 3D | [[PostgreSQL]], model-viewer |
-| **[[Analytics-Service]]** | `3006` | 🔜 Planeado | Métricas de uso, canciones más pedidas | Agregación de datos |
+| **[[Analytics-Service]]** | `3007` | 🔜 Planeado | Métricas de uso, canciones más pedidas | Agregación de datos |
 
 ## Frontend
 
@@ -142,13 +142,13 @@ io.to('bar:bar123').emit('now-playing', songData);
 ## Puertos de Desarrollo
 
 ```bash
-Frontend:      http://localhost:3004
-Auth Service:  http://localhost:3001
-Music Service: http://localhost:3002
-Queue Service: http://localhost:3003
-Points Service: (no implementado aún)
-Menu Service:   (no implementado aún)
-Analytics:      (no implementado aún)
+Frontend:        http://localhost:3004
+Auth Service:    http://localhost:3001
+Music Service:   http://localhost:3002
+Queue Service:   http://localhost:3003
+Menu Service:    http://localhost:3005 (no implementado aún)
+Points Service:  http://localhost:3006 (no implementado aún)
+Analytics:       http://localhost:3007 (no implementado aún)
 ```
 
 ---

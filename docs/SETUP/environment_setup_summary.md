@@ -86,7 +86,7 @@ JWT_SECRET=prod_jwt_super_secure_key_$(openssl rand -hex 32)
 ### **API Keys**
 ```bash
 # YouTube API (funcional)
-YOUTUBE_API_KEY=AIzaSyDmB98_1mo0doDBWwETyd-4iOacHNu3avc
+YOUTUBE_API_KEY=your_youtube_api_key_here
 
 # Spotify API (configurado)
 SPOTIFY_CLIENT_ID=your_spotify_client_id_here

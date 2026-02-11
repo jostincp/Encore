@@ -164,9 +164,9 @@ VERBOSE_LOGGING=false
 # External Service URLs
 MUSIC_SERVICE_URL=http://localhost:3002
 QUEUE_SERVICE_URL=http://localhost:3003
-POINTS_SERVICE_URL=http://localhost:3004
+POINTS_SERVICE_URL=http://localhost:3006
 MENU_SERVICE_URL=http://localhost:3005
-ANALYTICS_SERVICE_URL=http://localhost:3006
+ANALYTICS_SERVICE_URL=http://localhost:3007
 
 # Health Check Configuration
 HEALTH_CHECK_INTERVAL=30000

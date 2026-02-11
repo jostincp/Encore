@@ -5,7 +5,7 @@ tags:
   - analytics
   - metricas
 last_updated: 2026-02-09
-puerto: 3006
+puerto: 3007
 status: planned
 ---
 

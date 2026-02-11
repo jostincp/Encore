@@ -103,7 +103,7 @@ export interface Config {
  * Default configuration values
  */
 const defaultConfig: Partial<Config> = {
-  PORT: 3005,
+  PORT: 3007,
   NODE_ENV: 'development',
   API_VERSION: 'v1',
   SERVICE_NAME: 'analytics-service',
@@ -138,8 +138,8 @@ const defaultConfig: Partial<Config> = {
   // External services defaults
   USER_SERVICE_URL: 'http://localhost:3001',
   MUSIC_SERVICE_URL: 'http://localhost:3002',
-  MENU_SERVICE_URL: 'http://localhost:3003',
-  QUEUE_SERVICE_URL: 'http://localhost:3004',
+  MENU_SERVICE_URL: 'http://localhost:3005',
+  QUEUE_SERVICE_URL: 'http://localhost:3003',
   NOTIFICATION_SERVICE_URL: 'http://localhost:3006',
 
   // WebSocket defaults

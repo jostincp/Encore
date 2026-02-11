@@ -14,9 +14,9 @@ Esta guía documenta todos los microservicios de Encore, su estado actual, respo
 | **Queue Service** | 3003 | ✅ **COMPLETO** | Gestión de cola y puntos | Node.js + Express + Redis |
 | **Frontend** | 3004 | ✅ **COMPLETO** | UI y experiencia de usuario | Next.js + React + TypeScript |
 | **Auth Service** | 3001 | ✅ **COMPLETO** | Autenticación y autorización | Node.js + Express + JWT |
-| **Analytics Service** | 3005 | ✅ **COMPLETO** | Métricas y reportes | Node.js + Express + PostgreSQL |
-| **Menu Service** | 3006 | ✅ **COMPLETO** | Menú digital y productos | Node.js + Express + PostgreSQL |
-| **Points Service** | 3007 | ✅ **COMPLETO** | Sistema de puntos y pagos | Node.js + Express + Stripe |
+| **Analytics Service** | 3007 | ✅ **COMPLETO** | Métricas y reportes | Node.js + Express + PostgreSQL |
+| **Menu Service** | 3005 | ✅ **COMPLETO** | Menú digital y productos | Node.js + Express + PostgreSQL |
+| **Points Service** | 3006 | ✅ **COMPLETO** | Sistema de puntos y pagos | Node.js + Express + Stripe |
 
 **Progreso General:** 7/7 servicios completos (100%)
 
@@ -58,7 +58,7 @@ Esta guía documenta todos los microservicios de Encore, su estado actual, respo
 
 #### **Configuración:**
 ```env
-YOUTUBE_API_KEY=AIzaSyDmB98_1mo0doDBWwETyd-4iOacHNu3avc
+YOUTUBE_API_KEY=your_youtube_api_key_here
 YOUTUBE_API_BASE_URL=https://www.googleapis.com/youtube/v3
 YOUTUBE_MAX_RESULTS=25
 YOUTUBE_CACHE_TTL=3600
@@ -251,7 +251,7 @@ curl http://localhost:3004/
 
 ## 📋 Servicios Planificados
 
-### **Points Service (Puerto 3004)**
+### **Points Service (Puerto 3006)**
 ```javascript
 📋 Estado: PLANIFICADO
 🎯 Responsabilidades:
@@ -273,7 +273,7 @@ curl http://localhost:3004/
 🎨 Stack: Node.js + Express + PostgreSQL + Google model-viewer
 ```
 
-### **Analytics Service (Puerto 3006)**
+### **Analytics Service (Puerto 3007)**
 ```javascript
 📋 Estado: PLANIFICADO
 🎯 Responsabilidades:

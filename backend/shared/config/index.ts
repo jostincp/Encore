@@ -231,16 +231,16 @@ const getConfig = (): Config => {
         url: process.env.QUEUE_SERVICE_URL || 'http://localhost:3003'
       },
       points: {
-        port: parseInt(process.env.POINTS_SERVICE_PORT || '3004'),
-        url: process.env.POINTS_SERVICE_URL || 'http://localhost:3004'
+        port: parseInt(process.env.POINTS_SERVICE_PORT || '3006'),
+        url: process.env.POINTS_SERVICE_URL || 'http://localhost:3006'
       },
       analytics: {
-        port: parseInt(process.env.ANALYTICS_SERVICE_PORT || '3005'),
-        url: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3005'
+        port: parseInt(process.env.ANALYTICS_SERVICE_PORT || '3007'),
+        url: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3007'
       },
       menu: {
-        port: parseInt(process.env.MENU_SERVICE_PORT || '3006'),
-        url: process.env.MENU_SERVICE_URL || 'http://localhost:3006'
+        port: parseInt(process.env.MENU_SERVICE_PORT || '3005'),
+        url: process.env.MENU_SERVICE_URL || 'http://localhost:3005'
       }
     },
 

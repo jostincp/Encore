@@ -53,8 +53,8 @@ class PointsServiceClient {
   private readonly timeout: number = 5000; // 5 segundos timeout
 
   constructor() {
-    this.baseUrl = process.env.POINTS_SERVICE_URL || 'http://localhost:3004';
-    
+    this.baseUrl = process.env.POINTS_SERVICE_URL || 'http://localhost:3006';
+
     this.client = axios.create({
       baseURL: this.baseUrl,
       timeout: this.timeout,
@@ -104,15 +104,15 @@ class PointsServiceClient {
       const start = Date.now();
       const response = await this.client.get('/health');
       const latency = Date.now() - start;
-      
-      return { 
-        healthy: response.status === 200, 
-        latency 
+
+      return {
+        healthy: response.status === 200,
+        latency
       };
     } catch (error) {
-      return { 
-        healthy: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      return {
+        healthy: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
@@ -131,7 +131,7 @@ class PointsServiceClient {
       });
 
       const response = await this.client.post('/api/points/deduct', request);
-      
+
       if (response.data.success) {
         logger.info('✅ Points deducted successfully', {
           userId: request.userId,
@@ -176,7 +176,7 @@ class PointsServiceClient {
       });
 
       const response = await this.client.post('/api/points/refund', request);
-      
+
       if (response.data.success) {
         logger.info('✅ Points refunded successfully', {
           userId: request.userId,
@@ -233,7 +233,7 @@ class PointsServiceClient {
   async hasSufficientPoints(userId: string, barId: string, requiredAmount: number): Promise<boolean> {
     try {
       const balanceResponse = await this.getBalance(userId, barId);
-      
+
       if (!balanceResponse.success || balanceResponse.balance === undefined) {
         return false;
       }
@@ -261,7 +261,7 @@ class PointsServiceClient {
   }> {
     try {
       const response = await this.client.get(`/api/points/costs/${barId}`);
-      
+
       return response.data.costs || {
         standardSong: 10,
         prioritySong: 25,

@@ -417,9 +417,9 @@ export const createConfig = (): Config => {
     },
 
     storage: {
-      reportsPath: getEnvVar('STORAGE_REPORTS_PATH', 
+      reportsPath: getEnvVar('STORAGE_REPORTS_PATH',
         path.join(process.cwd(), 'storage', 'reports')),
-      tempPath: getEnvVar('STORAGE_TEMP_PATH', 
+      tempPath: getEnvVar('STORAGE_TEMP_PATH',
         path.join(process.cwd(), 'storage', 'temp')),
       maxFileSize: getEnvNumber('STORAGE_MAX_FILE_SIZE', 104857600), // 100MB
       allowedFormats: getEnvArray('STORAGE_ALLOWED_FORMATS', [
@@ -441,7 +441,7 @@ export const createConfig = (): Config => {
         retries: getEnvNumber('MUSIC_SERVICE_RETRIES', 3)
       },
       menuService: {
-        baseUrl: getEnvVar('MENU_SERVICE_URL', 'http://localhost:3004'),
+        baseUrl: getEnvVar('MENU_SERVICE_URL', 'http://localhost:3005'),
         timeout: getEnvNumber('MENU_SERVICE_TIMEOUT', 5000),
         retries: getEnvNumber('MENU_SERVICE_RETRIES', 3)
       },
