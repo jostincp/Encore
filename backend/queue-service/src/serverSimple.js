@@ -538,9 +538,30 @@ const io = new Server(server, {
 io.on('connection', (socket) => {
   log('🔌 Client connected to WebSocket');
 
-  socket.on('join_bar', (barId) => {
-    socket.join(barId);
-    log(`👤 Client joined bar room: ${barId}`);
+  // Extraer barId desde query params (auto-join)
+  const queryBarId = socket.handshake.query.barId;
+  if (queryBarId) {
+    socket.join(queryBarId);
+    log(`👤 Client auto-joined bar room: ${queryBarId}`);
+  }
+
+  // Handler unificado para join (acepta string o { barId })
+  const handleJoinBar = (data) => {
+    const barId = typeof data === 'string' ? data : data?.barId;
+    if (barId) {
+      socket.join(barId);
+      socket.emit('joined-bar', { barId });
+      log(`👤 Client joined bar room: ${barId}`);
+    }
+  };
+
+  // Escuchar ambos nombres de evento para compatibilidad
+  socket.on('join_bar', handleJoinBar);
+  socket.on('join-bar', handleJoinBar);
+
+  // Heartbeat
+  socket.on('ping-check', () => {
+    socket.emit('pong-check');
   });
 
   socket.on('disconnect', () => {
