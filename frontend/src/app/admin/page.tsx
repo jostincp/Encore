@@ -535,13 +535,38 @@ export default function AdminPage() {
                     currentSong={nowPlayingSong}
                     onSkip={async () => {
                       try {
-                        await fetch(`http://localhost:3002/api/player/${realBar?.id}/skip`, { method: 'POST' });
+                        // Llamar al endpoint de skip que actualiza now-playing
+                        const skipRes = await fetch(`http://localhost:3002/api/player/${realBar?.id}/skip`, { method: 'POST' });
+                        if (skipRes.ok) {
+                          const skipData = await skipRes.json();
+                          // Actualizar now-playing con la siguiente canción (o null si cola vacía)
+                          if (skipData.data) {
+                            const song = skipData.data;
+                            setNowPlayingSong({
+                              id: song.id || song.song_id || song.video_id,
+                              song: {
+                                id: song.id || song.song_id || song.video_id,
+                                title: song.title || 'Unknown',
+                                artist: song.artist || 'Unknown Artist',
+                                thumbnailUrl: song.thumbnail || `https://i.ytimg.com/vi/${song.id || song.video_id}/mqdefault.jpg`,
+                                duration: 0,
+                                genre: 'Music'
+                              },
+                              isPriority: song.isPriority || false,
+                              tableNumber: song.table_id || song.table || '1',
+                              timestamp: song.addedAt || new Date().toISOString(),
+                              status: 'playing'
+                            });
+                          } else {
+                            setNowPlayingSong(null);
+                          }
+                        }
+                        // Refrescar cola
                         const response = await fetch(`http://localhost:3002/api/queue/${realBar?.id}`);
                         if (response.ok) {
                           const data = await response.json();
                           const queueItems = data.data?.queue || data.data || [];
-
-                          const itemsWithDetails = queueItems.map((item: any) => ({
+                          setCurrentQueue(queueItems.map((item: any) => ({
                             ...item,
                             song: {
                               id: item.id || item.song_id,
@@ -554,9 +579,7 @@ export default function AdminPage() {
                             isPriority: item.isPriority || item.priority_play,
                             tableNumber: item.table || '1',
                             timestamp: item.addedAt || item.requested_at
-                          }));
-
-                          setCurrentQueue(itemsWithDetails);
+                          })));
                         }
                       } catch (error) {
                         console.error('Error skipping song:', error);
@@ -564,13 +587,37 @@ export default function AdminPage() {
                     }}
                     onMarkPlayed={async () => {
                       try {
-                        await fetch(`http://localhost:3002/api/player/${realBar?.id}/skip`, { method: 'POST' });
+                        // Ya Sonó = mismo flujo que skip (avanzar a la siguiente)
+                        const skipRes = await fetch(`http://localhost:3002/api/player/${realBar?.id}/skip`, { method: 'POST' });
+                        if (skipRes.ok) {
+                          const skipData = await skipRes.json();
+                          if (skipData.data) {
+                            const song = skipData.data;
+                            setNowPlayingSong({
+                              id: song.id || song.song_id || song.video_id,
+                              song: {
+                                id: song.id || song.song_id || song.video_id,
+                                title: song.title || 'Unknown',
+                                artist: song.artist || 'Unknown Artist',
+                                thumbnailUrl: song.thumbnail || `https://i.ytimg.com/vi/${song.id || song.video_id}/mqdefault.jpg`,
+                                duration: 0,
+                                genre: 'Music'
+                              },
+                              isPriority: song.isPriority || false,
+                              tableNumber: song.table_id || song.table || '1',
+                              timestamp: song.addedAt || new Date().toISOString(),
+                              status: 'playing'
+                            });
+                          } else {
+                            setNowPlayingSong(null);
+                          }
+                        }
+                        // Refrescar cola
                         const response = await fetch(`http://localhost:3002/api/queue/${realBar?.id}`);
                         if (response.ok) {
                           const data = await response.json();
                           const queueItems = data.data?.queue || data.data || [];
-
-                          const itemsWithDetails = queueItems.map((item: any) => ({
+                          setCurrentQueue(queueItems.map((item: any) => ({
                             ...item,
                             song: {
                               id: item.id || item.song_id,
@@ -583,9 +630,7 @@ export default function AdminPage() {
                             isPriority: item.isPriority || item.priority_play,
                             tableNumber: item.table || '1',
                             timestamp: item.addedAt || item.requested_at
-                          }));
-
-                          setCurrentQueue(itemsWithDetails);
+                          })));
                         }
                       } catch (error) {
                         console.error('Error marking as played:', error);

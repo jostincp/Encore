@@ -313,6 +313,42 @@ app.get('/api/queue/:barId/now-playing', async (req, res) => {
   }
 });
 
+// Override: POST /api/queue/:barId/pop - Proxy skip/next to queue-service
+app.post('/api/queue/:barId/pop', async (req, res) => {
+  try {
+    const { barId } = req.params;
+    log('🔄 Proxying pop/skip request to queue-service', { barId });
+    const response = await axios.post(`${QUEUE_SERVICE_URL}/api/queue/${barId}/pop`, req.body, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000
+    });
+    return res.json(response.data);
+  } catch (error: any) {
+    log('❌ Pop/skip proxy error:', error.message);
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { success: false, message: 'Queue service unavailable' }
+    );
+  }
+});
+
+// Override: POST /api/player/:barId/skip - Alias for pop (admin compatibility)
+app.post('/api/player/:barId/skip', async (req, res) => {
+  try {
+    const { barId } = req.params;
+    log('🔄 Proxying player skip to queue-service pop', { barId });
+    const response = await axios.post(`${QUEUE_SERVICE_URL}/api/queue/${barId}/pop`, req.body, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 10000
+    });
+    return res.json(response.data);
+  } catch (error: any) {
+    log('❌ Player skip proxy error:', error.message);
+    return res.status(error.response?.status || 500).json(
+      error.response?.data || { success: false, message: 'Queue service unavailable' }
+    );
+  }
+});
+
 // Override: POST /api/queue/add - Proxy to real queue-service (Generic fallback)
 app.post('/api/queue/add', async (req, res) => {
   try {

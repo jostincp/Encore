@@ -368,15 +368,14 @@ app.delete('/api/queue/:barId/:songId', async (req, res) => {
 });
 
 /**
- * ⏭️ Pop/Skip next song
- * Removes the next song from the queue (priority first, then standard)
+ * ⏭️ Skip/Next: Avanzar a la siguiente canción
+ * Saca la siguiente canción de la cola y la pone como now-playing
  */
 app.post('/api/queue/:barId/pop', async (req, res) => {
   try {
     const { barId } = req.params;
-    const userId = 'demo-user-123';
 
-    log('⏭️ Popping next song from queue', { barId });
+    log('⏭️ Skipping to next song', { barId });
 
     // Intentar sacar de prioritaria primero
     let rawSong = await redis.lpop(`queue:${barId}:priority`);
@@ -388,10 +387,25 @@ app.post('/api/queue/:barId/pop', async (req, res) => {
       queueType = 'standard';
     }
 
+    const nowPlayingKey = `queue:${barId}:nowPlaying`;
+
     if (!rawSong) {
-      return res.status(404).json({
-        success: false,
-        message: 'Queue is empty'
+      // Cola vacía - limpiar now-playing
+      await redis.del(nowPlayingKey);
+
+      log('📭 Queue is empty, clearing now-playing');
+
+      // Emitir eventos
+      const io = req.app.get('io');
+      if (io) {
+        io.to(barId).emit('now-playing', null);
+        io.to(barId).emit('queue-updated');
+      }
+
+      return res.json({
+        success: true,
+        message: 'Queue is empty, playback stopped',
+        data: null
       });
     }
 
@@ -400,30 +414,33 @@ app.post('/api/queue/:barId/pop', async (req, res) => {
     // Remover del set de deduplicación
     await redis.srem(`queue:${barId}:set`, song.id);
 
-    log('✅ Song popped successfully', {
+    // Actualizar now-playing con la nueva canción
+    await redis.set(nowPlayingKey, rawSong);
+
+    log('✅ Now playing updated', {
       songId: song.id,
       title: song.title,
       queueType
     });
 
-    // Emitir evento de socket
+    // Emitir eventos WebSocket
     const io = req.app.get('io');
     if (io) {
+      io.to(barId).emit('now-playing', song);
       io.to(barId).emit('queue-updated');
-      io.to(barId).emit('queueUpdate');
     }
 
     return res.json({
       success: true,
-      message: 'Next song retrieved',
+      message: 'Next song is now playing',
       data: song
     });
 
   } catch (error) {
-    log('❌ Error popping song:', error);
+    log('❌ Error skipping song:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to pop song',
+      message: 'Failed to skip song',
       error: error.message
     });
   }
