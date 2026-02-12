@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { 
-  generateQRCodes, 
-  generateSingleQR, 
+import {
+  generateQRCodes,
+  generateSingleQR,
   downloadQRCodes,
   validateQRCode,
-  getBarQRCodes
+  getBarQRCodes,
+  deleteQRCodes
 } from '../controllers/qrController';
 import { authenticate, requireRole } from '../middleware/auth';
 import { UserRole } from '../constants/roles';
@@ -26,7 +27,7 @@ router.use(authenticate);
  *   "errorCorrectionLevel": "M"
  * }
  */
-router.post('/generate', 
+router.post('/generate',
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   generateQRCodes
 );
@@ -41,7 +42,7 @@ router.post('/generate',
  *   "baseUrl": "https://encoreapp.pro"
  * }
  */
-router.post('/generate-single', 
+router.post('/generate-single',
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   generateSingleQR
 );
@@ -57,7 +58,7 @@ router.post('/generate-single',
  *   "width": 600
  * }
  */
-router.post('/download', 
+router.post('/download',
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   downloadQRCodes
 );
@@ -66,9 +67,23 @@ router.post('/download',
  * GET /api/qr/bar/:barId
  * Obtener QR codes existentes de un bar
  */
-router.get('/bar/:barId', 
+router.get('/bar/:barId',
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   getBarQRCodes
+);
+
+/**
+ * DELETE /api/qr/delete
+ * Eliminar QR codes por números de mesa
+ * 
+ * Body:
+ * {
+ *   "tableNumbers": [1, 2, 5]
+ * }
+ */
+router.delete('/delete',
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
+  deleteQRCodes
 );
 
 /**

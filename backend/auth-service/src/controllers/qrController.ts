@@ -329,6 +329,55 @@ export const getBarQRCodes = async (req: RequestWithUser, res: Response): Promis
   }
 };
 
+/**
+ * Eliminar QR codes de mesas específicas.
+ * @route DELETE /api/qr/delete
+ */
+export const deleteQRCodes = async (req: RequestWithUser, res: Response): Promise<void> => {
+  try {
+    const barId = req.user?.barId;
+    const { tableNumbers } = req.body;
+
+    if (!barId) {
+      res.status(400).json({ success: false, message: 'Bar ID no encontrado en el usuario' });
+      return;
+    }
+
+    if (!Array.isArray(tableNumbers) || tableNumbers.length === 0) {
+      res.status(400).json({ success: false, message: 'Debes enviar un array de números de mesa' });
+      return;
+    }
+
+    // Validar que todos sean números
+    const validNumbers = tableNumbers.filter((n: any) => typeof n === 'number' && n > 0);
+    if (validNumbers.length === 0) {
+      res.status(400).json({ success: false, message: 'Números de mesa inválidos' });
+      return;
+    }
+
+    const result = await query(
+      `DELETE FROM qr_codes WHERE bar_id = $1 AND table_number = ANY($2)`,
+      [barId, validNumbers]
+    );
+
+    const deletedCount = (result as any).rowCount || validNumbers.length;
+    logger.info(`Deleted ${deletedCount} QR codes for bar: ${barId}, tables: ${validNumbers.join(', ')}`);
+
+    res.json({
+      success: true,
+      message: `${deletedCount} código(s) QR eliminado(s)`,
+      deletedTables: validNumbers
+    });
+  } catch (error: any) {
+    logger.error('Error deleting QR codes:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar códigos QR',
+      ...(process.env.NODE_ENV === 'development' && { error: error.message })
+    });
+  }
+};
+
 // Función auxiliar para guardar en BD
 async function saveQRCodesToDatabase(barId: string, qrCodes: QRCodeData[]) {
   try {

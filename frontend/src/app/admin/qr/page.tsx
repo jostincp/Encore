@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { QRCodeCanvas } from 'qrcode.react';
 import { motion } from 'framer-motion';
-import { QrCode, Settings, Download, Eye, Printer, Copy, X, ArrowLeft } from 'lucide-react';
+import { QrCode, Settings, Download, Eye, Printer, ArrowLeft, Trash2, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
 import { AdminLayout, PageContainer } from '@/components/ui/layout';
 import QRGeneratorCanvas from '@/components/QRGeneratorCanvas';
 import { useAppStore } from '@/stores/useAppStore';
@@ -28,32 +29,17 @@ interface GeneratedQR {
   lastScanned?: Date;
 }
 
-interface QRConfig {
-  size: number;
-  margin: number;
-  level: 'L' | 'M' | 'Q' | 'H';
-  includeMargin: boolean;
-  bgColor: string;
-  fgColor: string;
-}
-
 export default function AdminQRPage() {
   const router = useRouter();
-  const { user, setUser } = useAppStore();
+  const { user } = useAppStore();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
   const [generatedQRCodes, setGeneratedQRCodes] = useState<GeneratedQR[]>([]);
   const [barId, setBarId] = useState<string>('');
   const [barName, setBarName] = useState<string>('Encore Bar');
   const [totalTables, setTotalTables] = useState<number>(20);
   const [isGeneratingAll, setIsGeneratingAll] = useState<boolean>(false);
-  const [qrConfig, setQRConfig] = useState<QRConfig>({
-    size: 256,
-    margin: 4,
-    level: 'H',
-    includeMargin: true,
-    bgColor: '#ffffff',
-    fgColor: '#000000'
-  });
+  const [generationProgress, setGenerationProgress] = useState<number>(0);
+  const [selectedForDeletion, setSelectedForDeletion] = useState<Set<number>>(new Set());
 
   // Obtener el barId del usuario/admin
   useEffect(() => {
@@ -84,13 +70,11 @@ export default function AdminQRPage() {
             }
           }
         } else {
-          // Si no hay bar, usar un ID temporal para desarrollo
           setBarId('demo-bar-' + Date.now());
           setBarName('Demo Bar');
         }
       } catch (error) {
         console.error('Error fetching bar data:', error);
-        // Usar ID temporal para desarrollo
         setBarId('demo-bar-' + Date.now());
         setBarName('Demo Bar');
       }
@@ -139,16 +123,81 @@ export default function AdminQRPage() {
 
   const handleGenerateQR = (tableNumber: number, qrData: GeneratedQR) => {
     setGeneratedQRCodes(prev => {
-      // Reemplazar si ya existe para esa mesa
       const filtered = prev.filter(qr => qr.tableNumber !== tableNumber);
       return [...filtered, qrData].sort((a, b) => a.tableNumber - b.tableNumber);
     });
-
     showSuccessToast(`QR generado para Mesa ${tableNumber}`);
   };
 
+  /** Alterna selección de un QR para eliminación */
+  const toggleSelectForDeletion = (tableNumber: number) => {
+    setSelectedForDeletion(prev => {
+      const next = new Set(prev);
+      if (next.has(tableNumber)) {
+        next.delete(tableNumber);
+      } else {
+        next.add(tableNumber);
+      }
+      return next;
+    });
+  };
+
+  /** Selecciona o deselecciona todos los QR */
+  const toggleSelectAll = () => {
+    if (selectedForDeletion.size === generatedQRCodes.length) {
+      setSelectedForDeletion(new Set());
+    } else {
+      setSelectedForDeletion(new Set(generatedQRCodes.map(qr => qr.tableNumber)));
+    }
+  };
+
+  /** Elimina los QR seleccionados (backend + estado local) */
+  const handleDeleteSelected = async () => {
+    if (selectedForDeletion.size === 0) {
+      showErrorToast('Selecciona al menos un código QR para eliminar');
+      return;
+    }
+
+    const tableNumbers = Array.from(selectedForDeletion);
+    const confirmMsg = tableNumbers.length === 1
+      ? `¿Eliminar el código QR de la Mesa ${tableNumbers[0]}?`
+      : `¿Eliminar ${tableNumbers.length} códigos QR? (Mesas: ${tableNumbers.sort((a, b) => a - b).join(', ')})`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('encore_access_token');
+      if (token && barId && !barId.startsWith('demo-bar-')) {
+        const response = await fetch('http://localhost:3001/api/qr/delete', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ tableNumbers })
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+          showErrorToast(data.message || 'Error al eliminar del servidor');
+          return;
+        }
+      }
+
+      // Actualizar estado local
+      setGeneratedQRCodes(prev => prev.filter(qr => !selectedForDeletion.has(qr.tableNumber)));
+      setSelectedForDeletion(new Set());
+      showSuccessToast(`${tableNumbers.length} código(s) QR eliminado(s)`);
+    } catch (error) {
+      console.error('Error deleting QR codes:', error);
+      showErrorToast('Error al conectar con el servidor para eliminar');
+    }
+  };
+
+  /** Genera todos los QR codes vía backend y muestra progreso */
   const generateAllQRCodes = async () => {
     setIsGeneratingAll(true);
+    setGenerationProgress(0);
 
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('encore_access_token');
@@ -158,7 +207,11 @@ export default function AdminQRPage() {
         return;
       }
 
-      // Llamar al backend para generar y guardar QR codes
+      // Progreso simulado mientras espera respuesta del backend
+      const progressInterval = setInterval(() => {
+        setGenerationProgress(prev => Math.min(prev + 5, 90));
+      }, 200);
+
       const response = await fetch('http://localhost:3001/api/qr/generate', {
         method: 'POST',
         headers: {
@@ -168,18 +221,18 @@ export default function AdminQRPage() {
         body: JSON.stringify({
           numberOfTables: totalTables,
           baseUrl: window.location.origin,
-          width: qrConfig.size,
-          errorCorrectionLevel: qrConfig.level
+          width: 300,
+          errorCorrectionLevel: 'H'
         })
       });
 
+      clearInterval(progressInterval);
       const data = await response.json();
 
       if (!data.success) {
         throw new Error(data.error || 'Error al generar QR codes');
       }
 
-      // Convertir los QR codes del backend al formato local
       const newQRCodes: GeneratedQR[] = data.qrCodes.map((qr: any) => ({
         id: `qr-${qr.tableNumber}-${Date.now()}`,
         tableNumber: qr.tableNumber,
@@ -191,61 +244,66 @@ export default function AdminQRPage() {
       }));
 
       setGeneratedQRCodes(newQRCodes);
+      setGenerationProgress(100);
       showSuccessToast(`✅ Generados y guardados ${totalTables} códigos QR`);
     } catch (error) {
       console.error('Error generating QR codes:', error);
       showErrorToast(error instanceof Error ? error.message : 'Error al generar códigos QR');
     } finally {
-      setIsGeneratingAll(false);
+      setTimeout(() => {
+        setIsGeneratingAll(false);
+        setGenerationProgress(0);
+      }, 1000);
     }
   };
 
-  const downloadAllQRCodes = () => {
+  /** Descarga el ZIP de QR codes desde el backend */
+  const downloadAllQRCodes = async () => {
     if (generatedQRCodes.length === 0) {
       showErrorToast('No hay códigos QR generados');
       return;
     }
 
-    // Crear un documento HTML con todos los QRs para imprimir
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Códigos QR - ${barId}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          .qr-container { display: inline-block; text-align: center; margin: 20px; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
-          .qr-code { margin: 10px 0; }
-          .table-info { font-weight: bold; margin-top: 10px; }
-          .bar-info { font-size: 12px; color: #666; margin-top: 5px; }
-          @media print { .qr-container { page-break-inside: avoid; } }
-        </style>
-      </head>
-      <body>
-        <h1>Códigos QR - ${barName}</h1>
-        <p>Total de mesas: ${generatedQRCodes.length}</p>
-        ${generatedQRCodes.map(qr => `
-          <div class="qr-container">
-            <div class="table-info">Mesa ${qr.tableNumber}</div>
-            <div class="qr-code">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(qr.qrData)}" alt="QR Mesa ${qr.tableNumber}">
-            </div>
-            <div class="bar-info">${barName}</div>
-          </div>
-        `).join('')}
-      </body>
-      </html>
-    `;
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('encore_access_token');
+      if (!token) {
+        showErrorToast('No hay token de autenticación');
+        return;
+      }
 
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `qr-codes-${barName.replace(/\s+/g, '-')}.html`;
-    link.click();
-    URL.revokeObjectURL(url);
+      showSuccessToast('Preparando descarga...');
 
-    showSuccessToast('Códigos QR listos para imprimir');
+      const response = await fetch('http://localhost:3001/api/qr/download', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          numberOfTables: generatedQRCodes.length,
+          baseUrl: window.location.origin,
+          width: 600
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al descargar');
+      }
+
+      // Descargar el ZIP
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `qr-codes-${barName.replace(/\s+/g, '-')}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      showSuccessToast('Códigos QR descargados como ZIP');
+    } catch (error) {
+      console.error('Error downloading QR codes:', error);
+      showErrorToast('Error al descargar. Verifica que el backend esté corriendo.');
+    }
   };
 
   const printQRCodes = () => {
@@ -253,9 +311,7 @@ export default function AdminQRPage() {
       showErrorToast('No hay códigos QR generados');
       return;
     }
-
     downloadAllQRCodes();
-    showSuccessToast('Abriendo vista de impresión...');
   };
 
   return (
@@ -287,7 +343,7 @@ export default function AdminQRPage() {
               </p>
               {barId && (
                 <Badge variant="outline" className="mt-2">
-                  {barName} - ID: {barId}
+                  {barName} - ID: {barId.substring(0, 8)}...
                 </Badge>
               )}
             </div>
@@ -315,10 +371,36 @@ export default function AdminQRPage() {
               disabled={generatedQRCodes.length === 0}
             >
               <Download className="h-4 w-4 mr-2" />
-              Descargar
+              Descargar ZIP
             </Button>
           </div>
         </motion.div>
+
+        {/* Barra de progreso de generación */}
+        {isGeneratingAll && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-6"
+          >
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <Progress value={generationProgress} className="h-3" />
+                  </div>
+                  <span className="text-sm font-medium min-w-[4rem] text-right">
+                    {Math.round(generationProgress)}%
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2 text-center">
+                  Generando {totalTables} códigos QR...
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
         <Tabs defaultValue="single" className="space-y-6">
           <TabsList>
@@ -338,6 +420,11 @@ export default function AdminQRPage() {
                 barName={barName}
                 onGenerate={handleGenerateQR}
                 maxTables={totalTables}
+                existingTableNumbers={generatedQRCodes.map(qr => qr.tableNumber)}
+                onDelete={(tableNumbers) => {
+                  setGeneratedQRCodes(prev => prev.filter(qr => !tableNumbers.includes(qr.tableNumber)));
+                  showSuccessToast(`${tableNumbers.length} código(s) QR eliminado(s)`);
+                }}
               />
             </motion.div>
           </TabsContent>
@@ -400,7 +487,36 @@ export default function AdminQRPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span>Vista Previa de Códigos QR</span>
-                    <Badge variant="secondary">{generatedQRCodes.length} generados</Badge>
+                    <div className="flex items-center gap-2">
+                      {generatedQRCodes.length > 0 && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={toggleSelectAll}
+                            className="text-xs"
+                          >
+                            {selectedForDeletion.size === generatedQRCodes.length ? (
+                              <><CheckSquare className="h-4 w-4 mr-1" /> Deseleccionar Todo</>
+                            ) : (
+                              <><Square className="h-4 w-4 mr-1" /> Seleccionar Todo</>
+                            )}
+                          </Button>
+                          {selectedForDeletion.size > 0 && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={handleDeleteSelected}
+                              className="text-xs"
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Eliminar ({selectedForDeletion.size})
+                            </Button>
+                          )}
+                        </>
+                      )}
+                      <Badge variant="secondary">{generatedQRCodes.length} generados</Badge>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -413,15 +529,35 @@ export default function AdminQRPage() {
                   ) : (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                       {generatedQRCodes.map((qr) => (
-                        <div key={qr.tableNumber} className="text-center p-4 border rounded-lg">
-                          <div className="mb-2">
-                            <img
-                              src={`https://api.qrserver.com/v1/create-qr-code/?size=128x128&data=${encodeURIComponent(qr.qrData)}`}
-                              alt={`QR Mesa ${qr.tableNumber}`}
-                              className="mx-auto"
+                        <div
+                          key={qr.tableNumber}
+                          onClick={() => toggleSelectForDeletion(qr.tableNumber)}
+                          className={`text-center p-4 border rounded-lg cursor-pointer transition-all hover:shadow-md ${selectedForDeletion.has(qr.tableNumber)
+                            ? 'border-destructive bg-destructive/5 ring-2 ring-destructive/20'
+                            : 'hover:border-primary/30'
+                            }`}
+                        >
+                          {/* Checkbox de selección */}
+                          <div className="flex justify-end mb-1">
+                            {selectedForDeletion.has(qr.tableNumber) ? (
+                              <CheckSquare className="h-4 w-4 text-destructive" />
+                            ) : (
+                              <Square className="h-4 w-4 text-muted-foreground/40" />
+                            )}
+                          </div>
+                          <div className="mb-2 flex justify-center">
+                            <QRCodeCanvas
+                              value={qr.qrData}
+                              size={128}
+                              bgColor="#ffffff"
+                              fgColor="#000000"
+                              level="H"
+                              includeMargin
                             />
                           </div>
-                          <Badge variant="outline">Mesa {qr.tableNumber}</Badge>
+                          <Badge variant={selectedForDeletion.has(qr.tableNumber) ? 'destructive' : 'outline'}>
+                            Mesa {qr.tableNumber}
+                          </Badge>
                           <p className="text-xs text-muted-foreground mt-1">
                             {new Date(qr.createdAt).toLocaleTimeString()}
                           </p>

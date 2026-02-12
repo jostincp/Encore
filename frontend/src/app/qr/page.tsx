@@ -2,12 +2,11 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { QrCode, Camera, AlertCircle, CheckCircle, ArrowLeft, Link, Unlink } from 'lucide-react';
+import { QrCode, Camera, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/stores/useAppStore';
 import { useToast } from '@/hooks/useToast';
 import { useQRConnection } from '@/hooks/useQRConnection';
@@ -17,70 +16,100 @@ import { validateTableNumber } from '@/utils/validation';
 import BackButton from '@/components/ui/back-button';
 import { Layout, PageContainer } from '@/components/ui/layout';
 
+/**
+ * Extrae barId y table de una URL QR o de un JSON legacy.
+ * Soporta ambos formatos para retrocompatibilidad.
+ */
+function parseQRData(raw: string): { barId: string; table: number } | null {
+  // Formato 1: URL directa (estándar actual)
+  // Ej: https://encoreapp.pro/client/music?barId=uuid&table=5
+  try {
+    const url = new URL(raw);
+    const barId = url.searchParams.get('barId');
+    const table = url.searchParams.get('table');
+    if (barId && table) {
+      const tableNum = parseInt(table, 10);
+      if (!isNaN(tableNum) && tableNum > 0) {
+        return { barId, table: tableNum };
+      }
+    }
+  } catch {
+    // No es una URL válida, intentar JSON
+  }
+
+  // Formato 2: JSON compacto (legacy)
+  // Ej: {"b":"bar-123","t":"5","v":"1.0"}
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed.b && parsed.t) {
+      const tableNum = parseInt(parsed.t, 10);
+      if (!isNaN(tableNum) && tableNum > 0) {
+        return { barId: parsed.b, table: tableNum };
+      }
+    }
+  } catch {
+    // No es JSON
+  }
+
+  return null;
+}
+
 export default function QRAccessPage() {
-  const [isScanning, setIsScanning] = useState(false);
   const [manualTable, setManualTable] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const { error: showErrorToast, success: showSuccessToast } = useToast();
   const { setUser, setTableNumber, connectWebSocket } = useAppStore();
   const router = useRouter();
-  const { isConnected, barId, disconnect, connectManually } = useQRConnection();
+  const { barId, connectManually } = useQRConnection();
 
-  const handleQRScan = async (qrData: string) => {
+  /** Procesa los datos escaneados del QR (URL o JSON) */
+  const handleQRScan = async (qrRawData: string) => {
+    const parsed = parseQRData(qrRawData);
+
+    if (!parsed) {
+      showErrorToast('Código QR inválido. Escanea un QR de mesa de Encore.');
+      return;
+    }
+
+    if (!validateTableNumber(parsed.table)) {
+      showErrorToast('Número de mesa inválido');
+      return;
+    }
+
+    setIsConnecting(true);
     try {
-      // Parsear datos del QR
-      const qrInfo = JSON.parse(qrData);
-      
-      if (qrInfo.b && qrInfo.t) {
-        const tableNum = parseInt(qrInfo.t);
-        if (isNaN(tableNum) || !validateTableNumber(tableNum)) {
-          showErrorToast('Número de mesa inválido');
-          return;
-        }
+      await connectManually(parsed.barId, parsed.table);
 
-        setIsConnecting(true);
-        try {
-          // Usar el hook de conexión QR para conectar automáticamente
-          await connectManually(qrInfo.b, tableNum);
-          
-          // Configurar usuario y mesa
-          const userId = `client_${Date.now()}`;
-          setUser({
-            id: userId,
-            role: 'client',
-            tableNumber: tableNum,
-            points: 100, // Puntos iniciales
-            sessionId: `session_${Date.now()}`
-          });
-          setTableNumber(tableNum);
-          
-          // Conectar WebSocket
-          connectWebSocket();
-          
-          showSuccessToast(`¡Conectado a la Mesa ${tableNum}!`);
-          
-          // Redirigir al hub del cliente
-          setTimeout(() => {
-            router.push('/client');
-          }, 1000);
-          
-        } catch (error: unknown) {
-          const errorMessage = error instanceof Error ? error.message : 
-                              typeof error === 'string' ? error :
-                              'Error al conectar con la mesa';
-          showErrorToast(errorMessage);
-        } finally {
-          setIsConnecting(false);
-        }
-      } else {
-        showErrorToast('Código QR inválido');
-      }
-    } catch (error) {
-      showErrorToast('Error al leer el código QR');
+      // Configurar usuario y mesa
+      const userId = `client_${Date.now()}`;
+      setUser({
+        id: userId,
+        role: 'client',
+        tableNumber: parsed.table,
+        points: 100,
+        sessionId: `session_${Date.now()}`
+      });
+      setTableNumber(parsed.table);
+
+      connectWebSocket();
+      showSuccessToast(`¡Conectado a la Mesa ${parsed.table}!`);
+
+      // Redirigir a la vista del cliente
+      setTimeout(() => {
+        router.push(`/client/music?barId=${parsed.barId}&table=${parsed.table}`);
+      }, 1000);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message :
+        typeof error === 'string' ? error :
+          'Error al conectar con la mesa';
+      showErrorToast(errorMessage);
+    } finally {
+      setIsConnecting(false);
     }
   };
 
+  /** Conexión manual ingresando número de mesa */
   const handleManualEntry = () => {
     if (!manualTable.trim()) {
       showErrorToast('Por favor ingresa un número de mesa');
@@ -94,77 +123,53 @@ export default function QRAccessPage() {
     }
 
     if (!barId) {
-      showErrorToast('No se detectó el Bar ID. Abre el enlace desde el QR del bar o asegúrate de tener parámetros válidos.');
+      showErrorToast('No se detectó el Bar ID. Abre el enlace desde el QR del bar.');
       return;
     }
 
-    const qrData = JSON.stringify({
-      b: barId,
-      t: tableNum,
-      v: '1.0',
-      ts: Date.now()
-    });
-
-    handleQRScan(qrData);
-  };
-
-  const startQRScanner = () => {
-    setIsScanning(true);
-    // Simular escaneo exitoso después de 3 segundos
-    setTimeout(() => {
-      const mockTableNumber = Math.floor(Math.random() * 20) + 1;
-      const mockBarId = barId || 'dev-bar';
-      const qrData = JSON.stringify({
-        b: mockBarId,
-        t: mockTableNumber,
-        v: '1.0',
-        ts: Date.now()
-      });
-      setIsScanning(false);
-      handleQRScan(qrData);
-    }, 3000);
+    // Construir URL estándar y procesarla
+    const qrUrl = `${window.location.origin}/client/music?barId=${barId}&table=${tableNum}`;
+    handleQRScan(qrUrl);
   };
 
   return (
     <>
-    <Layout background="gradient" animate>
-      <PageContainer className="flex items-center justify-center min-h-screen p-4">
-        <div className="w-full max-w-md mx-auto">
-          {/* Header */}
-          <motion.div
-            className="text-center mb-8"
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-          >
-            {/* Botón de retroceso común con soporte click/touch/teclado */}
-            <BackButton label="Volver" />
-            
-            <div className="bg-primary/10 p-4 rounded-full w-16 h-16 mx-auto mb-4">
-              <QrCode className="h-8 w-8 text-primary mx-auto" />
-            </div>
-            <h1 className="text-3xl font-bold mb-2">Acceso a Mesa</h1>
-            <p className="text-muted-foreground">
-              Escanea el código QR de tu mesa o ingresa el número manualmente
-            </p>
-          </motion.div>
+      <Layout background="gradient" animate>
+        <PageContainer className="flex items-center justify-center min-h-screen p-4">
+          <div className="w-full max-w-md mx-auto">
+            {/* Header */}
+            <motion.div
+              className="text-center mb-8"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+            >
+              <BackButton label="Volver" />
 
-          {/* QR Scanner Card */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="mb-6"
-          >
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Camera className="h-5 w-5" />
-                  Escanear QR
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!isScanning ? (
+              <div className="bg-primary/10 p-4 rounded-full w-16 h-16 mx-auto mb-4">
+                <QrCode className="h-8 w-8 text-primary mx-auto" />
+              </div>
+              <h1 className="text-3xl font-bold mb-2">Acceso a Mesa</h1>
+              <p className="text-muted-foreground">
+                Escanea el código QR de tu mesa o ingresa el número manualmente
+              </p>
+            </motion.div>
+
+            {/* QR Scanner Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="mb-6"
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Camera className="h-5 w-5" />
+                    Escanear QR
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
                   <div className="text-center">
                     <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 mb-4">
                       <QrCode className="h-16 w-16 text-muted-foreground/50 mx-auto mb-4" />
@@ -172,113 +177,90 @@ export default function QRAccessPage() {
                         Apunta tu cámara al código QR de la mesa
                       </p>
                     </div>
-                    <Button 
+                    <Button
                       onClick={() => setShowScanner(true)}
                       disabled={isConnecting}
                       className="w-full"
                     >
                       <Camera className="h-4 w-4 mr-2" />
-                      Activar Cámara
+                      {isConnecting ? 'Conectando...' : 'Activar Cámara'}
                     </Button>
                   </div>
-                ) : (
-                  <div className="text-center">
-                    <div className="border-2 border-primary rounded-lg p-8 mb-4 bg-primary/5">
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                        className="h-16 w-16 mx-auto mb-4"
-                      >
-                        <QrCode className="h-16 w-16 text-primary" />
-                      </motion.div>
-                      <p className="text-sm text-primary font-medium">
-                        Escaneando código QR...
-                      </p>
-                    </div>
-                    <Button 
-                      variant="outline"
-                      onClick={() => setIsScanning(false)}
-                      className="w-full"
-                    >
-                      Cancelar
-                    </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Manual Entry Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle>Ingreso Manual</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label htmlFor="table-number">Número de Mesa</Label>
+                    <Input
+                      id="table-number"
+                      type="number"
+                      placeholder="Ej: 5"
+                      value={manualTable}
+                      onChange={(e) => setManualTable(e.target.value)}
+                      disabled={isConnecting}
+                      min="1"
+                      max="99"
+                    />
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </motion.div>
+                  <Button
+                    onClick={handleManualEntry}
+                    disabled={isConnecting || !manualTable.trim()}
+                    className="w-full"
+                  >
+                    {isConnecting ? (
+                      <>
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                          className="h-4 w-4 mr-2"
+                        >
+                          <AlertCircle className="h-4 w-4" />
+                        </motion.div>
+                        Conectando...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Conectar a Mesa
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
 
-          {/* Manual Entry Card */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-          >
-            <Card>
-              <CardHeader>
-                <CardTitle>Ingreso Manual</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="table-number">Número de Mesa</Label>
-                  <Input
-                    id="table-number"
-                    type="number"
-                    placeholder="Ej: 5"
-                    value={manualTable}
-                    onChange={(e) => setManualTable(e.target.value)}
-                    disabled={isConnecting}
-                    min="1"
-                    max="99"
-                  />
-                </div>
-                <Button 
-                  onClick={handleManualEntry}
-                  disabled={isConnecting || !manualTable.trim()}
-                  className="w-full"
-                >
-                  {isConnecting ? (
-                    <>
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        className="h-4 w-4 mr-2"
-                      >
-                        <AlertCircle className="h-4 w-4" />
-                      </motion.div>
-                      Conectando...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Conectar a Mesa
-                    </>
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* Help Text */}
-          <motion.div
-            className="text-center mt-6"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
-          >
-            <p className="text-xs text-muted-foreground">
-              ¿No encuentras el código QR? Pregunta al personal del bar por el número de tu mesa
-            </p>
-          </motion.div>
-        </div>
-      </PageContainer>
-    </Layout>
-    {/* QR Scanner Modal */}
-    <QRScanner
-      isOpen={showScanner}
-      onClose={() => setShowScanner(false)}
-      onScan={handleQRScan}
-    />
+            {/* Help Text */}
+            <motion.div
+              className="text-center mt-6"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.6, delay: 0.6 }}
+            >
+              <p className="text-xs text-muted-foreground">
+                ¿No encuentras el código QR? Pregunta al personal del bar por el número de tu mesa
+              </p>
+            </motion.div>
+          </div>
+        </PageContainer>
+      </Layout>
+      {/* QR Scanner Modal */}
+      <QRScanner
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleQRScan}
+      />
     </>
   );
 }

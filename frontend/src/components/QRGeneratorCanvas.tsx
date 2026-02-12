@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { motion } from 'framer-motion';
-import { Download, Copy, Settings, QrCode as QrCodeIcon, Eye, RefreshCw, Check, X, Share2 } from 'lucide-react';
+import { Download, Copy, Settings, QrCode as QrCodeIcon, Share2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,7 +17,10 @@ interface QRGeneratorCanvasProps {
   barId: string;
   barName?: string;
   onGenerate?: (tableNumber: number, qrData: QRData) => void;
+  onDelete?: (tableNumbers: number[]) => void;
   maxTables?: number;
+  /** Mesas que ya tienen QR generado (desde el padre) */
+  existingTableNumbers?: number[];
 }
 
 interface QRData {
@@ -39,11 +43,13 @@ interface QRConfig {
   fgColor: string;
 }
 
-export default function QRGeneratorCanvas({ 
-  barId, 
+export default function QRGeneratorCanvas({
+  barId,
   barName = 'Encore Bar',
   onGenerate,
-  maxTables = 50 
+  onDelete,
+  maxTables = 50,
+  existingTableNumbers = []
 }: QRGeneratorCanvasProps) {
   const [qrConfig, setQRConfig] = useState<QRConfig>({
     size: 256,
@@ -53,92 +59,61 @@ export default function QRGeneratorCanvas({
     bgColor: '#ffffff',
     fgColor: '#000000'
   });
-  
+
   const [generatedQRs, setGeneratedQRs] = useState<QRData[]>([]);
   const [selectedTable, setSelectedTable] = useState<number>(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewMode, setPreviewMode] = useState<'single' | 'grid' | 'list'>('single');
   const [selectedQRs, setSelectedQRs] = useState<string[]>([]);
-  
+
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
-  // Generar QR usando Canvas API (simulado)
-  const generateQRCode = (data: string, size: number = 256): string => {
-    // Crear un canvas para el QR
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return '';
+  /** Construye la URL que se codifica en el QR */
+  const buildQRUrl = useCallback((tableNumber: number): string => {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'https://encoreapp.pro';
+    return `${base}/client/music?barId=${barId}&table=${tableNumber}`;
+  }, [barId]);
 
-    canvas.width = size;
-    canvas.height = size;
+  /** Verifica si una mesa ya tiene QR (local o del padre) */
+  const tableHasQR = useCallback((tableNumber: number): boolean => {
+    const inLocal = generatedQRs.some(qr => qr.tableNumber === tableNumber);
+    const inParent = existingTableNumbers.includes(tableNumber);
+    return inLocal || inParent;
+  }, [generatedQRs, existingTableNumbers]);
 
-    // Fondo
-    ctx.fillStyle = qrConfig.bgColor;
-    ctx.fillRect(0, 0, size, size);
-
-    // Generar patrón QR simulado basado en los datos
-    const hash = data.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const cellSize = Math.floor(size / 25);
-    
-    ctx.fillStyle = qrConfig.fgColor;
-    
-    // Generar patrón QR-like
-    for (let i = 0; i < 25; i++) {
-      for (let j = 0; j < 25; j++) {
-        // Patrones de esquina (marcadores de posición)
-        if ((i < 7 && j < 7) || (i < 7 && j > 17) || (i > 17 && j < 7)) {
-          if ((i === 0 || i === 6 || j === 0 || j === 6) || 
-              (i >= 2 && i <= 4 && j >= 2 && j <= 4)) {
-            ctx.fillRect(i * cellSize, j * cellSize, cellSize, cellSize);
-          }
-        } else {
-          // Patrón basado en datos
-          const shouldFill = (hash + i * j) % 3 === 0 || (hash + i + j) % 4 === 0;
-          if (shouldFill) {
-            ctx.fillRect(i * cellSize, j * cellSize, cellSize, cellSize);
-          }
-        }
-      }
-    }
-
-    // Agregar texto pequeño en el centro
-    ctx.fillStyle = qrConfig.fgColor;
-    ctx.font = '10px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('Encore', size / 2, size / 2);
-
-    return canvas.toDataURL();
-  };
-
-  // Generar QR para mesa específica
+  /** Genera datos para una mesa específica */
   const generateQR = async (tableNumber: number) => {
     if (!barId) {
       showErrorToast('Bar ID no disponible');
       return;
     }
 
+    if (tableHasQR(tableNumber)) {
+      showErrorToast(`La Mesa ${tableNumber} ya tiene un código QR. Elimínalo primero.`);
+      return;
+    }
+
     try {
       setIsGenerating(true);
+      const url = buildQRUrl(tableNumber);
 
       const qrData: QRData = {
         id: `qr-${tableNumber}-${Date.now()}`,
         tableNumber,
-        qrData: `${window.location.origin}/client/music?barId=${barId}&table=${tableNumber}`, // URL directa
-        qrUrl: `${window.location.origin}/client/music?barId=${barId}&table=${tableNumber}`,
+        qrData: url,
+        qrUrl: url,
         isActive: true,
         createdAt: new Date(),
         scannedCount: 0
       };
 
-      // Actualizar estado
       setGeneratedQRs(prev => {
         const filtered = prev.filter(qr => qr.tableNumber !== tableNumber);
-        return [...filtered, qrData];
+        return [...filtered, qrData].sort((a, b) => a.tableNumber - b.tableNumber);
       });
 
       onGenerate?.(tableNumber, qrData);
       showSuccessToast(`Código QR generado para Mesa ${tableNumber}`);
-
     } catch (error) {
       console.error('Error generating QR:', error);
       showErrorToast('Error al generar código QR');
@@ -147,18 +122,33 @@ export default function QRGeneratorCanvas({
     }
   };
 
-  // Generar QR para todas las mesas
+  /** Genera QR para todas las mesas */
   const generateAllQRCodes = async () => {
+    if (!barId) {
+      showErrorToast('Bar ID no disponible');
+      return;
+    }
+
     try {
       setIsGenerating(true);
-      
+      const newQRs: QRData[] = [];
+
       for (let i = 1; i <= maxTables; i++) {
-        await generateQR(i);
-        await new Promise(resolve => setTimeout(resolve, 50));
+        const url = buildQRUrl(i);
+        newQRs.push({
+          id: `qr-${i}-${Date.now()}`,
+          tableNumber: i,
+          qrData: url,
+          qrUrl: url,
+          isActive: true,
+          createdAt: new Date(),
+          scannedCount: 0
+        });
       }
 
+      setGeneratedQRs(newQRs);
+      newQRs.forEach(qr => onGenerate?.(qr.tableNumber, qr));
       showSuccessToast(`Se generaron ${maxTables} códigos QR`);
-
     } catch (error) {
       console.error('Error generating all QRs:', error);
       showErrorToast('Error al generar todos los códigos QR');
@@ -167,72 +157,70 @@ export default function QRGeneratorCanvas({
     }
   };
 
-  // Descargar QR individual con diseño personalizado
-  const downloadQR = (qr: QRData, format: 'png' | 'pdf' = 'png') => {
-    if (format === 'png') {
-      downloadQRAsPNG(qr);
-    } else {
-      showSuccessToast('Función PDF en desarrollo');
+  /** Descarga un QR como PNG con diseño profesional */
+  const downloadQR = (qr: QRData) => {
+    // Buscar el canvas renderizado por qrcode.react
+    const container = document.getElementById(`qr-canvas-${qr.tableNumber}`);
+    const sourceCanvas = container?.querySelector('canvas');
+    if (!sourceCanvas) {
+      showErrorToast('QR no encontrado. Genera el QR primero.');
+      return;
     }
-  };
 
-  const downloadQRAsPNG = (qr: QRData) => {
+    // Crear canvas con diseño profesional
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const size = qrConfig.size + 120;
-    canvas.width = size;
-    canvas.height = size + 60;
+    const padding = 60;
+    const headerHeight = 80;
+    const footerHeight = 45;
+    const qrSize = qrConfig.size;
+    canvas.width = qrSize + padding * 2;
+    canvas.height = qrSize + headerHeight + footerHeight + padding;
 
-    // Fondo blanco con borde
-    ctx.fillStyle = qrConfig.bgColor;
+    // Fondo blanco con borde redondeado
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
     ctx.strokeStyle = '#e5e7eb';
     ctx.lineWidth = 2;
     ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
 
-    // Título del bar
+    // Nombre del bar
     ctx.fillStyle = '#1f2937';
-    ctx.font = 'bold 20px Arial';
+    ctx.font = 'bold 22px Arial, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(barName, canvas.width / 2, 40);
+    ctx.fillText(barName, canvas.width / 2, 45);
 
     // Número de mesa
-    ctx.font = '18px Arial';
+    ctx.font = '16px Arial, sans-serif';
+    ctx.fillStyle = '#6b7280';
     ctx.fillText(`Mesa ${qr.tableNumber}`, canvas.width / 2, 70);
 
-    // Generar y dibujar QR real
-    const qrImageData = generateQRCode(qr.qrData, qrConfig.size);
-    const img = new Image();
-    img.onload = () => {
-      ctx.drawImage(img, (canvas.width - qrConfig.size) / 2, 90, qrConfig.size, qrConfig.size);
-      
-      // Instrucciones
-      ctx.font = '14px Arial';
-      ctx.fillStyle = '#6b7280';
-      ctx.fillText('Escanea para conectar', canvas.width / 2, canvas.height - 20);
-      ctx.fillText('y seleccionar música', canvas.width / 2, canvas.height - 5);
+    // Dibujar QR real desde el canvas de qrcode.react
+    ctx.drawImage(sourceCanvas, padding, headerHeight, qrSize, qrSize);
 
-      // Descargar
-      const link = document.createElement('a');
-      link.download = `qr-mesa-${qr.tableNumber}-${barName.replace(/\s+/g, '-')}.png`;
-      link.href = canvas.toDataURL();
-      link.click();
+    // Instrucciones
+    ctx.font = '13px Arial, sans-serif';
+    ctx.fillStyle = '#9ca3af';
+    ctx.fillText('Escanea para pedir música', canvas.width / 2, qrSize + headerHeight + 25);
 
-      showSuccessToast(`QR Mesa ${qr.tableNumber} descargado`);
-    };
-    img.src = qrImageData;
+    // Descargar
+    const link = document.createElement('a');
+    link.download = `qr-mesa-${qr.tableNumber}-${barName.replace(/\s+/g, '-')}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+
+    showSuccessToast(`QR Mesa ${qr.tableNumber} descargado`);
   };
 
-  // Copiar datos QR
+  /** Copia la URL del QR al portapapeles */
   const copyQRData = (qr: QRData) => {
     navigator.clipboard.writeText(qr.qrUrl);
     showSuccessToast('URL del QR copiada al portapapeles');
   };
 
-  // Compartir QR
+  /** Comparte el QR usando Web Share API o copia al portapapeles */
   const shareQR = async (qr: QRData) => {
     if (navigator.share) {
       try {
@@ -242,8 +230,7 @@ export default function QRGeneratorCanvas({
           url: qr.qrUrl
         });
         showSuccessToast('QR compartido exitosamente');
-      } catch (error) {
-        console.error('Error sharing QR:', error);
+      } catch {
         copyQRData(qr);
       }
     } else {
@@ -251,54 +238,43 @@ export default function QRGeneratorCanvas({
     }
   };
 
-  // Eliminar QR
   const deleteQR = (qrId: string) => {
     setGeneratedQRs(prev => prev.filter(qr => qr.id !== qrId));
     setSelectedQRs(prev => prev.filter(id => id !== qrId));
     showSuccessToast('Código QR eliminado');
   };
 
-  // Toggle selección
   const toggleQRSelection = (qrId: string) => {
-    setSelectedQRs(prev => 
-      prev.includes(qrId) 
+    setSelectedQRs(prev =>
+      prev.includes(qrId)
         ? prev.filter(id => id !== qrId)
         : [...prev, qrId]
     );
   };
 
-  // Seleccionar todos
-  const selectAll = () => {
-    setSelectedQRs(generatedQRs.map(qr => qr.id));
-  };
+  const selectAll = () => setSelectedQRs(generatedQRs.map(qr => qr.id));
+  const deselectAll = () => setSelectedQRs([]);
 
-  // Deseleccionar todos
-  const deselectAll = () => {
-    setSelectedQRs([]);
-  };
-
-  // Descargar seleccionados
   const downloadSelected = () => {
-    selectedQRs.forEach(qrId => {
-      const qr = generatedQRs.find(q => q.id === qrId);
-      if (qr) {
-        setTimeout(() => downloadQR(qr), 100);
-      }
+    const qrsToDownload = generatedQRs.filter(qr => selectedQRs.includes(qr.id));
+    qrsToDownload.forEach((qr, i) => {
+      setTimeout(() => downloadQR(qr), i * 200);
     });
   };
 
-  // Renderizar QR real
-  const renderQRCode = (qr: QRData, size: number = 200) => {
-    const qrImageData = generateQRCode(qr.qrData, size);
-    return (
-      <img 
-        src={qrImageData} 
-        alt={`QR Mesa ${qr.tableNumber}`}
-        className="w-full h-full object-contain"
-        style={{ maxWidth: size, maxHeight: size }}
+  /** Renderiza un QR real usando qrcode.react */
+  const renderQRCode = (qr: QRData, size: number = 200) => (
+    <div id={`qr-canvas-${qr.tableNumber}`}>
+      <QRCodeCanvas
+        value={qr.qrData}
+        size={size}
+        bgColor={qrConfig.bgColor}
+        fgColor={qrConfig.fgColor}
+        level={qrConfig.level}
+        includeMargin={qrConfig.includeMargin}
       />
-    );
-  };
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -314,9 +290,9 @@ export default function QRGeneratorCanvas({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <Label htmlFor="qr-size">Tamaño</Label>
-              <Select 
-                value={qrConfig.size.toString()} 
-                onValueChange={(value) => setQRConfig(prev => ({...prev, size: parseInt(value)}))}
+              <Select
+                value={qrConfig.size.toString()}
+                onValueChange={(value) => setQRConfig(prev => ({ ...prev, size: parseInt(value) }))}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -329,12 +305,12 @@ export default function QRGeneratorCanvas({
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div>
               <Label htmlFor="qr-level">Corrección de Errores</Label>
-              <Select 
-                value={qrConfig.level} 
-                onValueChange={(value: 'L' | 'M' | 'Q' | 'H') => setQRConfig(prev => ({...prev, level: value}))}
+              <Select
+                value={qrConfig.level}
+                onValueChange={(value: 'L' | 'M' | 'Q' | 'H') => setQRConfig(prev => ({ ...prev, level: value }))}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -354,7 +330,7 @@ export default function QRGeneratorCanvas({
                 id="qr-bg"
                 type="color"
                 value={qrConfig.bgColor}
-                onChange={(e) => setQRConfig(prev => ({...prev, bgColor: e.target.value}))}
+                onChange={(e) => setQRConfig(prev => ({ ...prev, bgColor: e.target.value }))}
               />
             </div>
 
@@ -364,7 +340,7 @@ export default function QRGeneratorCanvas({
                 id="qr-fg"
                 type="color"
                 value={qrConfig.fgColor}
-                onChange={(e) => setQRConfig(prev => ({...prev, fgColor: e.target.value}))}
+                onChange={(e) => setQRConfig(prev => ({ ...prev, fgColor: e.target.value }))}
               />
             </div>
           </div>
@@ -374,7 +350,7 @@ export default function QRGeneratorCanvas({
               type="checkbox"
               id="include-margin"
               checked={qrConfig.includeMargin}
-              onChange={(e) => setQRConfig(prev => ({...prev, includeMargin: e.target.checked}))}
+              onChange={(e) => setQRConfig(prev => ({ ...prev, includeMargin: e.target.checked }))}
               className="rounded"
             />
             <Label htmlFor="include-margin">Incluir margen</Label>
@@ -390,33 +366,27 @@ export default function QRGeneratorCanvas({
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3">
             <div className="flex items-center space-x-2 flex-1">
-              <Label htmlFor="table-select">Mesa:</Label>
-              <Select 
-                value={selectedTable.toString()} 
-                onValueChange={(value) => setSelectedTable(parseInt(value))}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: maxTables }, (_, i) => i + 1).map(num => (
-                    <SelectItem key={num} value={num.toString()}>
-                      Mesa {num}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <Button 
+              <Label htmlFor="table-number-input">Número de Mesa:</Label>
+              <Input
+                id="table-number-input"
+                type="number"
+                min="1"
+                value={selectedTable || ''}
+                onChange={(e) => setSelectedTable(parseInt(e.target.value, 10) || 0)}
+                placeholder="Ej: 5"
+                className="w-28"
+              />
+
+              <Button
                 onClick={() => generateQR(selectedTable)}
-                disabled={isGenerating}
+                disabled={isGenerating || tableHasQR(selectedTable)}
               >
                 <QrCodeIcon className="h-4 w-4 mr-2" />
                 Generar
               </Button>
             </div>
 
-            <Button 
+            <Button
               onClick={generateAllQRCodes}
               disabled={isGenerating}
               variant="outline"
@@ -424,6 +394,13 @@ export default function QRGeneratorCanvas({
               Generar Todos ({maxTables})
             </Button>
           </div>
+
+          {/* Aviso si la mesa ya tiene QR */}
+          {tableHasQR(selectedTable) && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-400">
+              ⚠️ La Mesa {selectedTable} ya tiene un código QR. Elimínalo desde la <strong>Vista Previa</strong> para regenerarlo.
+            </div>
+          )}
 
           {/* Vista previa del QR seleccionado */}
           {generatedQRs.find(qr => qr.tableNumber === selectedTable) && (
@@ -433,6 +410,9 @@ export default function QRGeneratorCanvas({
                 <div className="inline-block p-4 bg-white rounded-lg border">
                   {renderQRCode(generatedQRs.find(qr => qr.tableNumber === selectedTable)!, qrConfig.size)}
                 </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {buildQRUrl(selectedTable)}
+                </p>
               </div>
             </div>
           )}
@@ -461,10 +441,10 @@ export default function QRGeneratorCanvas({
         </CardHeader>
         <CardContent>
           {generatedQRs.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <QrCodeIcon className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+            <div className="text-center py-8 text-muted-foreground">
+              <QrCodeIcon className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No hay códigos QR generados</p>
-              <p className="text-sm">Usa el generador para crear códigos para tus mesas</p>
+              <p className="text-sm mt-2">Usa el generador para crear códigos para tus mesas</p>
             </div>
           ) : (
             <Tabs value={previewMode} onValueChange={(value) => setPreviewMode(value as 'single' | 'grid' | 'list')}>
@@ -481,7 +461,7 @@ export default function QRGeneratorCanvas({
                       key={qr.id}
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className={`border rounded-lg p-4 space-y-3 ${selectedQRs.includes(qr.id) ? 'ring-2 ring-blue-500' : ''}`}
+                      className={`border rounded-lg p-4 space-y-3 ${selectedQRs.includes(qr.id) ? 'ring-2 ring-primary' : ''}`}
                     >
                       <div className="flex items-center justify-between">
                         <h3 className="font-semibold">Mesa {qr.tableNumber}</h3>
@@ -502,12 +482,9 @@ export default function QRGeneratorCanvas({
                         {renderQRCode(qr, 200)}
                       </div>
 
-                      <div className="text-xs text-gray-500 space-y-1">
+                      <div className="text-xs text-muted-foreground space-y-1">
                         <p>Creado: {qr.createdAt.toLocaleDateString()}</p>
-                        <p>Escaneado: {qr.scannedCount || 0} veces</p>
-                        {qr.lastScanned && (
-                          <p>Último: {new Date(qr.lastScanned).toLocaleDateString()}</p>
-                        )}
+                        <p className="truncate">{qr.qrUrl}</p>
                       </div>
 
                       <div className="flex gap-2">
@@ -537,14 +514,13 @@ export default function QRGeneratorCanvas({
                     <motion.div
                       key={qr.id}
                       whileHover={{ scale: 1.05 }}
-                      className={`relative p-3 border rounded-lg cursor-pointer transition-all ${
-                        selectedQRs.includes(qr.id) ? 'ring-2 ring-blue-500 border-blue-500' : 'border-gray-200'
-                      }`}
+                      className={`relative p-3 border rounded-lg cursor-pointer transition-all ${selectedQRs.includes(qr.id) ? 'ring-2 ring-primary border-primary' : 'border-border'
+                        }`}
                       onClick={() => toggleQRSelection(qr.id)}
                     >
                       <div className="text-center">
                         <div className="text-sm font-bold mb-1">M{qr.tableNumber}</div>
-                        <div className="aspect-square bg-gray-50 rounded mb-1 flex items-center justify-center">
+                        <div className="aspect-square bg-gray-50 rounded mb-1 flex items-center justify-center overflow-hidden">
                           {renderQRCode(qr, 60)}
                         </div>
                         {qr.isActive && (
@@ -561,9 +537,8 @@ export default function QRGeneratorCanvas({
                   {generatedQRs.map((qr) => (
                     <div
                       key={qr.id}
-                      className={`flex items-center justify-between p-3 border rounded-lg ${
-                        selectedQRs.includes(qr.id) ? 'bg-blue-50 border-blue-500' : 'border-gray-200'
-                      }`}
+                      className={`flex items-center justify-between p-3 border rounded-lg ${selectedQRs.includes(qr.id) ? 'bg-primary/5 border-primary' : 'border-border'
+                        }`}
                     >
                       <div className="flex items-center gap-3">
                         <input
@@ -574,8 +549,8 @@ export default function QRGeneratorCanvas({
                         />
                         <div>
                           <div className="font-medium">Mesa {qr.tableNumber}</div>
-                          <div className="text-sm text-gray-500">
-                            {qr.scannedCount || 0} escaneos • {qr.isActive ? 'Activo' : 'Inactivo'}
+                          <div className="text-sm text-muted-foreground truncate max-w-xs">
+                            {qr.qrUrl}
                           </div>
                         </div>
                       </div>

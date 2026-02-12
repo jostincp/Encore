@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, X, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 
 interface QRScannerProps {
   onScan: (data: string) => void;
@@ -14,106 +13,113 @@ interface QRScannerProps {
   isOpen: boolean;
 }
 
+/**
+ * Escáner QR real usando html5-qrcode.
+ * Lee QR codes con la cámara trasera del dispositivo.
+ */
 export function QRScanner({ onScan, onClose, isOpen }: QRScannerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState<string>('');
   const [lastScanned, setLastScanned] = useState<string>('');
+  const [isInitializing, setIsInitializing] = useState(false);
+  const scannerRef = useRef<any>(null);
+  const containerRef = useRef<string>('qr-reader-container');
 
+  const stopScanner = useCallback(async () => {
+    try {
+      if (scannerRef.current) {
+        const state = scannerRef.current.getState();
+        // Estado 2 = SCANNING, 3 = PAUSED
+        if (state === 2 || state === 3) {
+          await scannerRef.current.stop();
+        }
+        scannerRef.current.clear();
+        scannerRef.current = null;
+      }
+    } catch (err) {
+      // Ignorar errores al detener (ya detenido, etc.)
+      console.warn('Error stopping scanner:', err);
+      scannerRef.current = null;
+    }
+  }, []);
+
+  const startScanner = useCallback(async () => {
+    if (scannerRef.current) return;
+
+    setError('');
+    setIsInitializing(true);
+
+    try {
+      // Importación dinámica para evitar SSR issues
+      const { Html5Qrcode } = await import('html5-qrcode');
+
+      const scanner = new Html5Qrcode(containerRef.current);
+      scannerRef.current = scanner;
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+          disableFlip: false
+        },
+        (decodedText: string) => {
+          // QR escaneado exitosamente
+          setLastScanned(decodedText);
+          onScan(decodedText);
+
+          // Detener escáner después de un scan exitoso
+          setTimeout(() => {
+            stopScanner();
+            onClose();
+          }, 1500);
+        },
+        () => {
+          // Ignorar errores de decodificación (cada frame que no tiene QR)
+        }
+      );
+    } catch (err: any) {
+      console.error('Error starting QR scanner:', err);
+
+      if (err?.message?.includes('NotAllowedError') || err?.name === 'NotAllowedError') {
+        setError('Permiso de cámara denegado. Habilita la cámara en la configuración del navegador.');
+      } else if (err?.message?.includes('NotFoundError') || err?.name === 'NotFoundError') {
+        setError('No se encontró una cámara en el dispositivo.');
+      } else {
+        setError('No se pudo iniciar la cámara. Verifica los permisos.');
+      }
+
+      scannerRef.current = null;
+    } finally {
+      setIsInitializing(false);
+    }
+  }, [onScan, onClose, stopScanner]);
+
+  // Iniciar/detener escáner cuando se abre/cierra el modal
   useEffect(() => {
     if (isOpen) {
-      startCamera();
+      // Pequeño delay para que el DOM renderice el contenedor
+      const timer = setTimeout(() => startScanner(), 300);
+      return () => clearTimeout(timer);
     } else {
-      stopCamera();
+      stopScanner();
     }
+  }, [isOpen, startScanner, stopScanner]);
 
+  // Limpieza al desmontar
+  useEffect(() => {
     return () => {
-      stopCamera();
+      stopScanner();
     };
-  }, [isOpen]);
-
-  const startCamera = async () => {
-    try {
-      setError('');
-      setIsScanning(true);
-      
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      });
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-
-      // Iniciar escaneo simulado
-      startSimulatedScanning();
-      
-    } catch (err) {
-      setError('No se pudo acceder a la cámara');
-      setIsScanning(false);
-      console.error('Camera error:', err);
-    }
-  };
-
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    setIsScanning(false);
-  };
-
-  const startSimulatedScanning = () => {
-    // Simular escaneo de QR con datos de prueba
-    const simulatedQRCodes = [
-      JSON.stringify({ b: 'bar-123', t: '5', v: '1.0' }),
-      JSON.stringify({ b: 'bar-demo', t: '12', v: '1.0' }),
-      JSON.stringify({ b: 'test-bar', t: '8', v: '1.0' })
-    ];
-
-    let scanCount = 0;
-    const scanInterval = setInterval(() => {
-      if (scanCount < 3) {
-        const randomQR = simulatedQRCodes[Math.floor(Math.random() * simulatedQRCodes.length)];
-        setLastScanned(randomQR);
-        onScan(randomQR);
-        scanCount++;
-        
-        // Parar después de 3 escaneos simulados
-        if (scanCount >= 3) {
-          clearInterval(scanInterval);
-          setTimeout(() => {
-            stopCamera();
-            onClose();
-          }, 2000);
-        }
-      }
-    }, 3000);
-
-    // Limpiar intervalo si el componente se desmonta
-    return () => clearInterval(scanInterval);
-  };
+  }, [stopScanner]);
 
   const handleManualInput = () => {
-    // Para desarrollo: permitir entrada manual de datos QR
-    const manualData = prompt('Ingresa los datos del QR (formato JSON):');
-    if (manualData) {
-      try {
-        // Validar que sea JSON válido
-        JSON.parse(manualData);
-        setLastScanned(manualData);
-        onScan(manualData);
-        stopCamera();
-        onClose();
-      } catch (e) {
-        setError('Formato de QR inválido');
-      }
+    const manualUrl = prompt('Ingresa la URL del QR (ej: https://encoreapp.pro/client/music?barId=...&table=5):');
+    if (manualUrl) {
+      setLastScanned(manualUrl);
+      onScan(manualUrl);
+      stopScanner();
+      onClose();
     }
   };
 
@@ -143,7 +149,7 @@ export function QRScanner({ onScan, onClose, isOpen }: QRScannerProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  stopCamera();
+                  stopScanner();
                   onClose();
                 }}
               >
@@ -151,61 +157,47 @@ export function QRScanner({ onScan, onClose, isOpen }: QRScannerProps) {
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Video Preview */}
-              <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
-                <video
-                  ref={videoRef}
-                  className="w-full h-full object-cover"
-                  autoPlay
-                  playsInline
-                  muted
-                />
-                
-                {/* Overlay de escaneo */}
-                {isScanning && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-48 h-48 border-2 border-white/50 rounded-lg">
-                      <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-white"></div>
-                      <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-white"></div>
-                      <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-white"></div>
-                      <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-white"></div>
+              {/* Contenedor del escáner de cámara */}
+              <div className="relative rounded-lg overflow-hidden bg-black min-h-[300px]">
+                <div id={containerRef.current} className="w-full" />
+
+                {/* Overlay de inicialización */}
+                {isInitializing && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                    <div className="text-center text-white">
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                        className="mx-auto mb-2"
+                      >
+                        <Camera className="h-8 w-8" />
+                      </motion.div>
+                      <p className="text-sm">Iniciando cámara...</p>
                     </div>
                   </div>
                 )}
 
-                {/* Estado de escaneo */}
-                <div className="absolute top-4 left-4 right-4">
-                  {isScanning && (
+                {/* Badge de estado */}
+                <div className="absolute top-2 left-2 right-2 z-10">
+                  {lastScanned ? (
+                    <Badge className="bg-green-500 text-white">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      QR Escaneado
+                    </Badge>
+                  ) : !error && !isInitializing ? (
                     <Badge variant="secondary" className="animate-pulse">
                       <Camera className="h-3 w-3 mr-1" />
                       Escaneando...
                     </Badge>
-                  )}
-                  
-                  {lastScanned && (
-                    <Badge variant="success" className="bg-green-500 text-white">
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      QR Escaneado
-                    </Badge>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
-              {/* Barra de progreso simulada */}
-              {isScanning && (
-                <div className="space-y-2">
-                  <Progress value={Math.random() * 100} className="h-2" />
-                  <p className="text-xs text-center text-muted-foreground">
-                    Buscando código QR...
-                  </p>
-                </div>
-              )}
-
               {/* Mensaje de error */}
               {error && (
-                <div className="flex items-center gap-2 text-red-500 text-sm">
-                  <AlertCircle className="h-4 w-4" />
-                  {error}
+                <div className="flex items-center gap-2 text-destructive text-sm p-3 bg-destructive/10 rounded-lg">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  <span>{error}</span>
                 </div>
               )}
 
@@ -220,8 +212,11 @@ export function QRScanner({ onScan, onClose, isOpen }: QRScannerProps) {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={startCamera}
-                  disabled={isScanning}
+                  onClick={() => {
+                    stopScanner();
+                    setTimeout(() => startScanner(), 500);
+                  }}
+                  disabled={isInitializing}
                   className="flex-1"
                 >
                   <Camera className="h-4 w-4 mr-2" />
