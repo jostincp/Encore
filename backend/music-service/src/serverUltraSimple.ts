@@ -163,16 +163,18 @@ app.get('/api/youtube/search', barRateLimiter, async (req, res) => {
     const data = response.data;
 
     // Transformar items a formato simplificado para el frontend (Videos Array)
-    const videos = (data.items || []).map((item: any) => ({
-      id: item.id?.videoId || item.id,
-      title: item.snippet?.title,
-      artist: extractArtistFromTitle(item.snippet?.title || ''),
-      thumbnail: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url,
-      channel: item.snippet?.channelTitle,
-      publishedAt: item.snippet?.publishedAt,
-      description: item.snippet?.description,
-      source: 'youtube'
-    })).filter((v: any) => v.id); // Filtrar resultados sin ID
+    const videos = sortByOfficialChannel(
+      (data.items || []).map((item: any) => ({
+        id: item.id?.videoId || item.id,
+        title: item.snippet?.title,
+        artist: extractArtistFromTitle(item.snippet?.title || ''),
+        thumbnail: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url,
+        channel: item.snippet?.channelTitle,
+        publishedAt: item.snippet?.publishedAt,
+        description: item.snippet?.description,
+        source: 'youtube'
+      })).filter((v: any) => v.id) // Filtrar resultados sin ID
+    );
 
     const responseData = {
       videos, // Array de videos
@@ -244,6 +246,24 @@ function extractArtistFromTitle(title: string): string {
     }
   }
   return title.trim();
+}
+
+/**
+ * 🏆 Prioriza canales oficiales sobre re-uploads de fans.
+ * VEVO > YouTube Music Topic > resto.
+ */
+function getOfficialScore(channel: string): number {
+  if (!channel) return 0;
+  const ch = channel.toLowerCase();
+  if (ch.includes('vevo')) return 3;
+  if (ch.endsWith('- topic') || ch.endsWith(' topic')) return 2;
+  return 0;
+}
+
+function sortByOfficialChannel(videos: any[]): any[] {
+  return [...videos].sort((a, b) => {
+    return getOfficialScore(b.channel) - getOfficialScore(a.channel);
+  });
 }
 
 /**

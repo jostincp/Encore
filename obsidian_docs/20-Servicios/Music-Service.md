@@ -4,7 +4,7 @@ tags:
   - backend
   - musica
   - youtube
-last_updated: 2026-02-09
+last_updated: 2026-02-11
 puerto: 3002
 status: implemented
 ---
@@ -16,7 +16,9 @@ Microservicio encargado de búsqueda de música, integración con APIs externas 
 ## Propósito
 
 - Buscar canciones via YouTube Data API v3
+- **Priorizar canales oficiales** (VEVO, Topic) sobre re-uploads de fans
 - Cachear resultados en [[Redis]] para optimizar cuota
+- Normalizar queries (acentos, emojis, caracteres especiales)
 - Actuar como proxy hacia [[Queue-Service]]
 - Gestionar metadata de canciones
 
@@ -24,10 +26,10 @@ Microservicio encargado de búsqueda de música, integración con APIs externas 
 
 | Método | Ruta | Descripción | Auth |
 |--------|------|-------------|------|
-| GET | `/api/music/search` | Buscar canciones | ❌ |
-| GET | `/api/music/song/:id` | Obtener metadata de canción | ❌ |
+| GET | `/api/youtube/search` | Buscar canciones (con priorización oficial) | ❌ |
 | POST | `/api/queue/:barId/add` | Agregar a cola (proxy) | ✅ |
 | GET | `/api/queue/:barId` | Obtener cola (proxy) | ❌ |
+| GET | `/api/cache/stats` | Estadísticas de caché y cuota | ❌ |
 
 ## Variables de Entorno
 
@@ -80,18 +82,30 @@ sequenceDiagram
 ### Estrategia de Caching
 
 ```typescript
-// Key pattern
-const cacheKey = `search:${query.toLowerCase()}`;
+// Query normalizada (acentos, emojis, espacios → underscore)
+const normalizedQuery = normalizeQuery(q); // 'Maluma Éxitos!' → 'maluma_exitos'
+const cacheKey = `search:${normalizedQuery}`;
 
 // TTL: 10 días (864000 segundos)
 await redisClient.setex(cacheKey, 864000, JSON.stringify(results));
 ```
+
+### Priorización de Canales Oficiales
+
+Antes de cachear, los resultados se reordenan con `sortByOfficialChannel()`:
+
+| Canal | Score | Ejemplo |
+|-------|-------|---------|
+| VEVO | 3 | BadBunnyVEVO |
+| Topic | 2 | Bad Bunny - Topic |
+| Otro | 0 | FanUploads2026 |
 
 ### Beneficios
 
 - ✅ Reduce 98% de llamadas a YouTube API
 - ✅ Respuestas instantáneas (<10ms vs ~200ms)
 - ✅ Ahorra cuota diaria
+- ✅ Canales oficiales siempre aparecen primero
 
 > [!TIP] Monitoreo de Cuota
 > Implementar endpoint `/api/music/quota` para ver cuota restante del día.

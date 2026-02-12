@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import MusicPage from '@/components/MusicPage';
 import { useQRConnection } from '@/hooks/useQRConnection';
 import { useSearchParams } from 'next/navigation';
@@ -101,7 +101,14 @@ export default function ClientMusicPage() {
   const [nowPlaying, setNowPlaying] = useState<any | null>(null);
   const [points, setPoints] = useState<number>(100);
 
-  const debouncedSearch = useDebounce(searchTerm, 300);
+  const debouncedSearch = useDebounce(searchTerm, 500);
+
+  // AbortController para cancelar búsquedas anteriores (evita race conditions)
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Caché de sesión para evitar búsquedas repetidas
+  const SESSION_CACHE_PREFIX = 'encore_search_';
+  const SESSION_CACHE_TTL = 30 * 60 * 1000; // 30 minutos
 
   // Obtener información del bar para personalizar experiencia
   useEffect(() => {
@@ -241,25 +248,50 @@ export default function ClientMusicPage() {
         return;
       }
 
+      // 1. Verificar caché de sesión antes de llamar al API
+      try {
+        const cacheKey = `${SESSION_CACHE_PREFIX}${debouncedSearch.toLowerCase().trim()}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const isExpired = Date.now() - parsed.timestamp > SESSION_CACHE_TTL;
+          if (!isExpired) {
+            setSongs(parsed.results);
+            return;
+          }
+          sessionStorage.removeItem(cacheKey);
+        }
+      } catch { /* sessionStorage no disponible */ }
+
+      // 2. Cancelar búsqueda anterior si existe
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       setIsSearching(true);
       try {
-        // Usar music-service (3003) para búsqueda
         const response = await axios.get(`${API_URLS.musicBase}/youtube/search`, {
           params: { q: debouncedSearch, maxResults: 25 },
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token') || 'demo-token'}`
-          }
+          },
+          signal: controller.signal
         });
+
+        // Si esta búsqueda fue cancelada, no actualizar resultados
+        if (controller.signal.aborted) return;
 
         // Transformar respuesta de la API a formato Song
         const apiSongs: Song[] = response.data.data.videos.map((item: any) => ({
           id: item.id,
           title: item.title,
           artist: item.artist || item.channel || 'Unknown Artist',
-          duration: item.durationSeconds || 0, // Usar durationSeconds si está disponible
+          duration: item.durationSeconds || 0,
           thumbnailUrl: item.thumbnail,
-          genre: 'Unknown', // La API no proporciona género
-          previewUrl: '', // YouTube no proporciona preview
+          genre: 'Unknown',
+          previewUrl: '',
           isExplicit: false,
           popularity: 0,
           album: '',
@@ -270,12 +302,25 @@ export default function ClientMusicPage() {
         }));
 
         setSongs(apiSongs);
-      } catch (err) {
+
+        // 3. Guardar en caché de sesión
+        try {
+          const cacheKey = `${SESSION_CACHE_PREFIX}${debouncedSearch.toLowerCase().trim()}`;
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            results: apiSongs,
+            timestamp: Date.now()
+          }));
+        } catch { /* sessionStorage lleno */ }
+      } catch (err: any) {
+        // Ignorar errores de búsquedas canceladas
+        if (err?.name === 'CanceledError' || controller.signal.aborted) return;
         console.error('Error searching songs:', err);
         error('Error al buscar canciones');
         setSongs([]);
       } finally {
-        setIsSearching(false);
+        if (!controller.signal.aborted) {
+          setIsSearching(false);
+        }
       }
     };
 
@@ -602,8 +647,8 @@ export default function ClientMusicPage() {
 
           <TabsContent value="random" className="mt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {songs
-                .sort(() => Math.random() - 0.5)
+              {[...songs]
+                .sort((a, b) => a.id.localeCompare(b.id) * (a.id > b.id ? -1 : 1))
                 .slice(0, 6)
                 .map((song: any, index: number) => (
                   <motion.div

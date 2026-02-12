@@ -4,7 +4,7 @@ tags:
   - react
   - frontend
   - ui
-last_updated: 2026-02-09
+last_updated: 2026-02-11
 ---
 
 # Componentes React Reutilizables
@@ -235,14 +235,24 @@ export function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// Uso en búsqueda
+// Uso en búsqueda de canciones (500ms debounce + caché sesión + AbortController)
 const [searchQuery, setSearchQuery] = useState('');
-const debouncedQuery = useDebounce(searchQuery, 300);
+const debouncedQuery = useDebounce(searchQuery, 500);
+const abortControllerRef = useRef<AbortController | null>(null);
 
 useEffect(() => {
-  if (debouncedQuery) {
-    fetchSongs(debouncedQuery);
-  }
+  if (!debouncedQuery.trim()) return;
+
+  // Verificar caché de sesión (sessionStorage, TTL 30 min)
+  const cached = sessionStorage.getItem(`search_${debouncedQuery}`);
+  if (cached) { setSongs(JSON.parse(cached).results); return; }
+
+  // Cancelar búsqueda anterior
+  abortControllerRef.current?.abort();
+  const controller = new AbortController();
+  abortControllerRef.current = controller;
+
+  fetchSongs(debouncedQuery, controller.signal);
 }, [debouncedQuery]);
 ```
 
