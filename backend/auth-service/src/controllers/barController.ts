@@ -1,8 +1,14 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { getPool } from '../../../shared/database';
 import logger from '../../../shared/utils/logger';
 import { AuthenticatedRequest } from '../../../shared/types/auth';
-import { UserRole } from '../../../shared/types/index';
+import { UserRole } from '../constants/roles';
+
+/** Genera un token único de 16 caracteres hexadecimales (32 chars) */
+function generateQRToken(): string {
+  return crypto.randomBytes(16).toString('hex');
+}
 
 /**
  * Obtener información de un bar para personalizar la experiencia del cliente
@@ -95,7 +101,7 @@ export class BarController {
         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
         RETURNING id, name, description, address, phone, email, owner_id, created_at
       `, [name, description, address, phone, email, ownerId]);
-      
+
       const bar = result.rows[0];
 
       // Crear configuración por defecto en bar_settings
@@ -130,14 +136,14 @@ export class BarController {
   static async getMyBars(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       logger.info('getMyBars called', { user: req.user });
-      
+
       if (!req.user) {
         throw new Error('User not authenticated in controller');
       }
 
       const userId = req.user.userId;
       const pool = getPool();
-      
+
       const result = await pool.query(`
         SELECT id, name, description, address, phone, email, owner_id, is_active, created_at, updated_at
         FROM bars
@@ -465,12 +471,15 @@ export class BarController {
         return;
       }
 
-      // Crear mesa
+      // Generar token único para el QR de la mesa
+      const qrToken = generateQRToken();
+
+      // Crear mesa con token
       const result = await pool.query(`
-        INSERT INTO tables (bar_id, table_number, capacity, is_active, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, NOW(), NOW())
-        RETURNING id, bar_id, table_number, capacity, is_active, created_at
-      `, [barId, table_number, capacity, is_active]);
+        INSERT INTO tables (bar_id, table_number, capacity, is_active, qr_token, qr_created_at, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), NOW())
+        RETURNING id, bar_id, table_number, capacity, is_active, qr_token, qr_created_at, qr_scan_count, created_at
+      `, [barId, table_number, capacity, is_active, qrToken]);
 
       const table = result.rows[0];
 
@@ -526,7 +535,7 @@ export class BarController {
 
       // Verificar que la mesa existe
       const tableResult = await pool.query(
-        'SELECT table_number FROM tables WHERE id = $1 AND bar_id = $2',
+        'SELECT table_number, qr_token FROM tables WHERE id = $1 AND bar_id = $2',
         [tableId, barId]
       );
 
@@ -538,21 +547,31 @@ export class BarController {
         return;
       }
 
-      // Generar URL del QR
-      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const qrUrl = `${baseUrl}/client/music?b=${barId}&t=${tableId}`;
+      const tableRow = tableResult.rows[0];
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3004';
 
-      // Aquí se podría integrar una librería de QR como qrcode.js
-      // Por ahora, devolver la URL que será usada para generar el QR en el frontend
+      // Si no tiene token, generar uno
+      let qrToken = tableRow.qr_token;
+      if (!qrToken) {
+        qrToken = generateQRToken();
+        await pool.query(
+          `UPDATE tables SET qr_token = $1, qr_created_at = NOW(), updated_at = NOW() WHERE id = $2`,
+          [qrToken, tableId]
+        );
+      }
+
+      // URL del QR apunta al endpoint de validación por token
+      const qrUrl = `${baseUrl}/api/t/${qrToken}`;
 
       res.json({
         success: true,
         data: {
           barId,
           tableId,
-          tableNumber: tableResult.rows[0].table_number,
+          tableNumber: tableRow.table_number,
+          qrToken,
           qrUrl,
-          qrData: qrUrl // Datos que se usarán para generar el código QR
+          qrData: qrUrl
         },
         message: 'Código QR generado exitosamente'
       });
@@ -600,7 +619,9 @@ export class BarController {
       }
 
       const result = await pool.query(`
-        SELECT id, bar_id, table_number, capacity, is_active, created_at, updated_at
+        SELECT id, bar_id, table_number, capacity, is_active,
+               qr_token, qr_created_at, qr_scan_count, qr_last_scanned,
+               created_at, updated_at
         FROM tables
         WHERE bar_id = $1
         ORDER BY table_number
@@ -617,6 +638,143 @@ export class BarController {
         success: false,
         message: 'Error interno del servidor'
       });
+    }
+  }
+
+  /**
+   * Rotar token QR de una mesa (invalida el QR viejo, genera uno nuevo)
+   */
+  static async rotateTableQR(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { barId, tableId } = req.params;
+      const userId = req.user!.userId;
+      const userRole = req.user!.role;
+
+      const pool = getPool();
+
+      // Verificar permisos
+      const barResult = await pool.query(
+        'SELECT owner_id FROM bars WHERE id = $1',
+        [barId]
+      );
+
+      if (barResult.rows.length === 0) {
+        res.status(404).json({ success: false, message: 'Bar no encontrado' });
+        return;
+      }
+
+      if (userRole !== UserRole.ADMIN && barResult.rows[0].owner_id !== userId) {
+        res.status(403).json({ success: false, message: 'No tienes permisos' });
+        return;
+      }
+
+      // Verificar que la mesa existe
+      const tableResult = await pool.query(
+        'SELECT id, table_number, qr_token FROM tables WHERE id = $1 AND bar_id = $2',
+        [tableId, barId]
+      );
+
+      if (tableResult.rows.length === 0) {
+        res.status(404).json({ success: false, message: 'Mesa no encontrada' });
+        return;
+      }
+
+      // Generar nuevo token (el viejo queda inválido automáticamente)
+      const newToken = generateQRToken();
+      const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3004';
+
+      await pool.query(
+        `UPDATE tables 
+         SET qr_token = $1, qr_created_at = NOW(), qr_scan_count = 0, updated_at = NOW()
+         WHERE id = $2`,
+        [newToken, tableId]
+      );
+
+      const oldToken = tableResult.rows[0].qr_token;
+      logger.info(`QR rotated for table ${tableId}: ${oldToken} → ${newToken}`);
+
+      res.json({
+        success: true,
+        data: {
+          tableId,
+          tableNumber: tableResult.rows[0].table_number,
+          qrToken: newToken,
+          qrUrl: `${baseUrl}/api/t/${newToken}`,
+          previousToken: oldToken
+        },
+        message: `QR de Mesa ${tableResult.rows[0].table_number} rotado. El QR anterior ya no es válido.`
+      });
+
+    } catch (error) {
+      logger.error('Error rotating table QR:', error);
+      res.status(500).json({ success: false, message: 'Error interno del servidor' });
+    }
+  }
+
+  /**
+   * Obtener analytics de escaneos QR para un bar
+   */
+  static async getTableAnalytics(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      const { barId } = req.params;
+      const userId = req.user!.userId;
+      const userRole = req.user!.role;
+
+      const pool = getPool();
+
+      // Verificar permisos
+      const barResult = await pool.query('SELECT owner_id FROM bars WHERE id = $1', [barId]);
+
+      if (barResult.rows.length === 0) {
+        res.status(404).json({ success: false, message: 'Bar no encontrado' });
+        return;
+      }
+
+      if (userRole !== UserRole.ADMIN && barResult.rows[0].owner_id !== userId) {
+        res.status(403).json({ success: false, message: 'No tienes permisos' });
+        return;
+      }
+
+      // Resumen por mesa
+      const tablesResult = await pool.query(`
+        SELECT t.id, t.table_number, t.qr_token, t.qr_scan_count,
+               t.qr_last_scanned, t.qr_created_at, t.is_active,
+               COUNT(qs.id) AS total_scans
+        FROM tables t
+        LEFT JOIN qr_scans qs ON qs.table_id = t.id
+        WHERE t.bar_id = $1
+        GROUP BY t.id
+        ORDER BY t.table_number
+      `, [barId]);
+
+      // Scans de las últimas 24 horas
+      const recentScans = await pool.query(`
+        SELECT COUNT(*) AS count
+        FROM qr_scans
+        WHERE bar_id = $1 AND scanned_at > NOW() - INTERVAL '24 hours'
+      `, [barId]);
+
+      // Total scans históricos
+      const totalScans = await pool.query(`
+        SELECT COUNT(*) AS count FROM qr_scans WHERE bar_id = $1
+      `, [barId]);
+
+      res.json({
+        success: true,
+        data: {
+          tables: tablesResult.rows,
+          summary: {
+            totalTables: tablesResult.rows.length,
+            activeTables: tablesResult.rows.filter((t: any) => t.is_active).length,
+            totalScans: parseInt(totalScans.rows[0].count),
+            scansLast24h: parseInt(recentScans.rows[0].count)
+          }
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error getting table analytics:', error);
+      res.status(500).json({ success: false, message: 'Error interno del servidor' });
     }
   }
 }

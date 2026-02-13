@@ -15,16 +15,32 @@ import { useRouter } from 'next/navigation';
 import { validateTableNumber } from '@/utils/validation';
 import BackButton from '@/components/ui/back-button';
 import { Layout, PageContainer } from '@/components/ui/layout';
+import { API_ENDPOINTS } from '@/utils/constants';
 
 /**
  * Extrae barId y table de una URL QR o de un JSON legacy.
  * Soporta ambos formatos para retrocompatibilidad.
  */
-function parseQRData(raw: string): { barId: string; table: number } | null {
-  // Formato 1: URL directa (estándar actual)
-  // Ej: https://encoreapp.pro/client/music?barId=uuid&table=5
+type QRResult = { barId: string; table: number } | { token: string } | null;
+
+/**
+ * Extrae datos de una URL QR (Token o Legacy) o JSON.
+ */
+function parseQRData(raw: string): QRResult {
+  // Formato 3: URL con Token (Nuevo estándar)
+  // Ej: https://encoreapp.pro/api/t/a1b2c3d4e5f6g7h8
   try {
     const url = new URL(raw);
+    if (url.pathname.startsWith('/api/t/')) {
+      const parts = url.pathname.split('/');
+      const token = parts[parts.length - 1];
+      if (token && token.length >= 16) {
+        return { token };
+      }
+    }
+
+    // Formato 1: URL directa (Legacy)
+    // Ej: https://encoreapp.pro/client/music?barId=uuid&table=5
     const barId = url.searchParams.get('barId');
     const table = url.searchParams.get('table');
     if (barId && table) {
@@ -37,7 +53,7 @@ function parseQRData(raw: string): { barId: string; table: number } | null {
     // No es una URL válida, intentar JSON
   }
 
-  // Formato 2: JSON compacto (legacy)
+  // Formato 2: JSON compacto (Legacy)
   // Ej: {"b":"bar-123","t":"5","v":"1.0"}
   try {
     const parsed = JSON.parse(raw);
@@ -65,44 +81,63 @@ export default function QRAccessPage() {
 
   /** Procesa los datos escaneados del QR (URL o JSON) */
   const handleQRScan = async (qrRawData: string) => {
-    const parsed = parseQRData(qrRawData);
-
-    if (!parsed) {
-      showErrorToast('Código QR inválido. Escanea un QR de mesa de Encore.');
-      return;
-    }
-
-    if (!validateTableNumber(parsed.table)) {
-      showErrorToast('Número de mesa inválido');
-      return;
-    }
-
     setIsConnecting(true);
     try {
-      await connectManually(parsed.barId, parsed.table);
+      const parsed = parseQRData(qrRawData);
 
-      // Configurar usuario y mesa
+      if (!parsed) {
+        throw new Error('Código QR inválido. Escanea un QR de mesa de Encore.');
+      }
+
+      let targetBarId: string;
+      let targetTable: number;
+
+      // Si es un token, validarlo con el backend
+      if ('token' in parsed) {
+        const response = await fetch(`${API_ENDPOINTS.base || 'http://localhost:3001'}/api/t/${parsed.token}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+          throw new Error(data.message || 'Error al validar token QR');
+        }
+
+        targetBarId = data.data.barId;
+        targetTable = data.data.tableNumber;
+      } else {
+        // Es legacy (barId + table)
+        targetBarId = parsed.barId;
+        targetTable = parsed.table;
+      }
+
+      if (!validateTableNumber(targetTable)) {
+        throw new Error('Número de mesa inválido');
+      }
+
+      await connectManually(targetBarId, targetTable);
+
+      // Configurar usuario y mesa (simulado para cliente anónimo)
       const userId = `client_${Date.now()}`;
       setUser({
         id: userId,
         role: 'client',
-        tableNumber: parsed.table,
+        tableNumber: targetTable,
         points: 100,
         sessionId: `session_${Date.now()}`
       });
-      setTableNumber(parsed.table);
+      setTableNumber(targetTable);
 
       connectWebSocket();
-      showSuccessToast(`¡Conectado a la Mesa ${parsed.table}!`);
+      showSuccessToast(`¡Conectado a la Mesa ${targetTable}!`);
 
       // Redirigir a la vista del cliente
       setTimeout(() => {
-        router.push(`/client/music?barId=${parsed.barId}&table=${parsed.table}`);
+        router.push(`/client/music?barId=${targetBarId}&table=${targetTable}`);
       }, 1000);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message :
-        typeof error === 'string' ? error :
-          'Error al conectar con la mesa';
+      console.error('QR Scan Error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error al conectar con la mesa';
       showErrorToast(errorMessage);
     } finally {
       setIsConnecting(false);

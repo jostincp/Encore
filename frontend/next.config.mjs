@@ -86,11 +86,15 @@ const nextConfig = {
     return [
       {
         source: '/api/auth/:path*',
-        destination: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/,'') + '/api/auth/:path*',
+        destination: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '') + '/api/auth/:path*',
       },
       {
         source: '/api/health',
-        destination: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/,'') + '/api/health',
+        destination: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '') + '/api/health',
+      },
+      {
+        source: '/api/t/:path*',
+        destination: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '') + '/api/t/:path*',
       },
     ];
   },

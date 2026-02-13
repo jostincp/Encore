@@ -2,7 +2,7 @@ import { Router } from 'express';
 import authRoutes from './auth';
 import userRoutes from './users';
 import barRoutes from './bars';
-import qrRoutes from './qr';
+import tokenValidationRoutes from './tokenValidation';
 import { healthCheck } from '../middleware/healthCheck';
 
 const router: Router = Router();
@@ -14,9 +14,10 @@ router.get('/auth/health', healthCheck);
 
 // API routes
 router.use('/auth', authRoutes);
+router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/bars', barRoutes);
-router.use('/qr', qrRoutes);
+router.use('/t', tokenValidationRoutes); // Validación QR por token (pública)
 
 // API info endpoint
 router.get('/', (req, res) => {
@@ -49,16 +50,16 @@ router.get('/', (req, res) => {
       },
       bars: {
         'GET /bars': 'Get all bars',
-        'GET /bars/stats': 'Get bar statistics',
         'GET /bars/my': 'Get my bars',
         'POST /bars': 'Create bar',
-        'GET /bars/:id': 'Get bar by ID',
-        'PUT /bars/:id': 'Update bar',
-        'PUT /bars/:id/deactivate': 'Deactivate bar',
-        'PUT /bars/:id/activate': 'Activate bar (admin)',
-        'DELETE /bars/:id': 'Delete bar (admin)',
-        'GET /bars/:id/settings': 'Get bar settings',
-        'PUT /bars/:id/settings': 'Update bar settings'
+        'POST /bars/:barId/tables': 'Create table with QR token',
+        'GET /bars/:barId/tables': 'Get bar tables',
+        'GET /bars/:barId/tables/:tableId/qr': 'Get QR for table',
+        'POST /bars/:barId/tables/:tableId/rotate-qr': 'Rotate QR token',
+        'GET /bars/:barId/tables-analytics': 'QR scan analytics'
+      },
+      qr: {
+        'GET /t/:token': 'Validate QR token (public)'
       }
     },
     timestamp: new Date().toISOString()

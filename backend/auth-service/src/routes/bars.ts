@@ -127,7 +127,7 @@ router.patch('/:id',
  * @desc    Deactivate bar
  * @access  Private (Bar Owner o Super Admin)
  */
-router.put('/:id/deactivate', 
+router.put('/:id/deactivate',
   authenticate,
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   rateLimitStrict,
@@ -139,7 +139,7 @@ router.put('/:id/deactivate',
  * @desc    Activate bar (Super Admin solo)
  * @access  Private (Super Admin)
  */
-router.put('/:id/activate', 
+router.put('/:id/activate',
   authenticate,
   requireRole([UserRole.ADMIN]),
   rateLimitStrict,
@@ -151,7 +151,7 @@ router.put('/:id/activate',
  * @desc    Eliminar bar (solo ADMIN)
  * @access  Privado (ADMIN)
  */
-router.delete('/:id', 
+router.delete('/:id',
   authenticate,
   requireRole([UserRole.ADMIN]),
   rateLimitStrict,
@@ -163,7 +163,7 @@ router.delete('/:id',
  * @desc    Get bar settings
  * @access  Privado (BAR_OWNER o ADMIN)
  */
-router.get('/:id/settings', 
+router.get('/:id/settings',
   authenticate,
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   getBarSettings
@@ -215,6 +215,28 @@ router.get('/:barId/tables/:tableId/qr',
   authenticate,
   requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
   BarController.generateTableQR
+);
+
+/**
+ * @route POST /api/bars/:barId/tables/:tableId/rotate-qr
+ * @desc Rotar token QR de una mesa (invalida el QR viejo)
+ * @access Private (Bar Owner/Admin)
+ */
+router.post('/:barId/tables/:tableId/rotate-qr',
+  authenticate,
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
+  BarController.rotateTableQR
+);
+
+/**
+ * @route GET /api/bars/:barId/tables-analytics
+ * @desc Obtener analytics de escaneos QR por mesa
+ * @access Private (Bar Owner/Admin)
+ */
+router.get('/:barId/tables-analytics',
+  authenticate,
+  requireRole([UserRole.BAR_OWNER, UserRole.ADMIN]),
+  BarController.getTableAnalytics
 );
 
 export default router;

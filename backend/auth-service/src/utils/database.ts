@@ -170,6 +170,34 @@ export const runMigrations = async () => {
       await client.query(`CREATE INDEX IF NOT EXISTS idx_qr_codes_bar_id ON qr_codes(bar_id)`);
       await client.query(`CREATE INDEX IF NOT EXISTS idx_qr_codes_table_number ON qr_codes(table_number)`);
 
+      // =========================================================
+      // Migración: agregar campos de token QR a tabla 'tables'
+      // =========================================================
+      await client.query(`ALTER TABLE tables ADD COLUMN IF NOT EXISTS qr_token VARCHAR(32) UNIQUE`);
+      await client.query(`ALTER TABLE tables ADD COLUMN IF NOT EXISTS qr_created_at TIMESTAMPTZ DEFAULT NOW()`);
+      await client.query(`ALTER TABLE tables ADD COLUMN IF NOT EXISTS qr_scan_count INTEGER DEFAULT 0`);
+      await client.query(`ALTER TABLE tables ADD COLUMN IF NOT EXISTS qr_last_scanned TIMESTAMPTZ`);
+      await client.query(`ALTER TABLE tables ADD COLUMN IF NOT EXISTS capacity INTEGER DEFAULT 4`);
+      await client.query(`ALTER TABLE tables ALTER COLUMN qr_code DROP NOT NULL`);
+      await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tables_qr_token ON tables(qr_token)`);
+
+      // Tabla de analytics para escaneos de QR
+      await client.query(
+        `CREATE TABLE IF NOT EXISTS qr_scans (
+          id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          table_id    UUID NOT NULL,
+          bar_id      UUID NOT NULL,
+          qr_token    VARCHAR(32) NOT NULL,
+          scanned_at  TIMESTAMPTZ DEFAULT NOW(),
+          user_agent  TEXT,
+          ip_address  VARCHAR(45),
+          CONSTRAINT fk_qr_scans_table FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE
+        )`
+      );
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_qr_scans_table_id ON qr_scans(table_id)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_qr_scans_bar_id ON qr_scans(bar_id)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_qr_scans_scanned_at ON qr_scans(scanned_at)`);
+
       logger.info('Database migrations completed');
     } finally {
       client.release();

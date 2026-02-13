@@ -26,8 +26,9 @@ interface QRGeneratorCanvasProps {
 interface QRData {
   id: string;
   tableNumber: number;
-  qrData: string;
-  qrUrl: string;
+  qrData: string; // URL for QR code
+  qrUrl: string; // Display URL
+  qrToken?: string;
   isActive: boolean;
   createdAt: Date;
   scannedCount?: number;
@@ -68,11 +69,11 @@ export default function QRGeneratorCanvas({
 
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
-  /** Construye la URL que se codifica en el QR */
-  const buildQRUrl = useCallback((tableNumber: number): string => {
+  /** Construye la URL que se codifica en el QR (ahora basada en token) */
+  const buildQRUrl = useCallback((token: string): string => {
     const base = typeof window !== 'undefined' ? window.location.origin : 'https://encoreapp.pro';
-    return `${base}/client/music?barId=${barId}&table=${tableNumber}`;
-  }, [barId]);
+    return `${base}/api/t/${token}`;
+  }, []);
 
   /** Verifica si una mesa ya tiene QR (local o del padre) */
   const tableHasQR = useCallback((tableNumber: number): boolean => {
@@ -81,7 +82,7 @@ export default function QRGeneratorCanvas({
     return inLocal || inParent;
   }, [generatedQRs, existingTableNumbers]);
 
-  /** Genera datos para una mesa específica */
+  /** Genera datos para una mesa específica llamando al backend */
   const generateQR = async (tableNumber: number) => {
     if (!barId) {
       showErrorToast('Bar ID no disponible');
@@ -95,15 +96,40 @@ export default function QRGeneratorCanvas({
 
     try {
       setIsGenerating(true);
-      const url = buildQRUrl(tableNumber);
+
+      const token = localStorage.getItem('token') || localStorage.getItem('encore_access_token');
+      if (!token) throw new Error('No hay sesión activa');
+
+      // Llamar al backend para crear la mesa y obtener el token
+      const response = await fetch(`http://localhost:3001/api/bars/${barId}/tables`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          table_number: tableNumber,
+          capacity: 4 // Valor por defecto
+        })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || 'Error al crear mesa');
+      }
+
+      const table = data.data;
+      const url = buildQRUrl(table.qr_token);
 
       const qrData: QRData = {
-        id: `qr-${tableNumber}-${Date.now()}`,
-        tableNumber,
+        id: table.id,
+        tableNumber: table.table_number,
         qrData: url,
         qrUrl: url,
-        isActive: true,
-        createdAt: new Date(),
+        qrToken: table.qr_token,
+        isActive: table.is_active,
+        createdAt: new Date(table.created_at),
         scannedCount: 0
       };
 
@@ -116,13 +142,13 @@ export default function QRGeneratorCanvas({
       showSuccessToast(`Código QR generado para Mesa ${tableNumber}`);
     } catch (error) {
       console.error('Error generating QR:', error);
-      showErrorToast('Error al generar código QR');
+      showErrorToast('Error al generar código QR: ' + (error instanceof Error ? error.message : 'Error desconocido'));
     } finally {
       setIsGenerating(false);
     }
   };
 
-  /** Genera QR para todas las mesas */
+  /** Genera QR para todas las mesas restantes hasta maxTables */
   const generateAllQRCodes = async () => {
     if (!barId) {
       showErrorToast('Bar ID no disponible');
@@ -131,27 +157,59 @@ export default function QRGeneratorCanvas({
 
     try {
       setIsGenerating(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('encore_access_token');
+      if (!token) throw new Error('No hay sesión activa');
+
       const newQRs: QRData[] = [];
+      let successCount = 0;
 
       for (let i = 1; i <= maxTables; i++) {
-        const url = buildQRUrl(i);
-        newQRs.push({
-          id: `qr-${i}-${Date.now()}`,
-          tableNumber: i,
-          qrData: url,
-          qrUrl: url,
-          isActive: true,
-          createdAt: new Date(),
-          scannedCount: 0
-        });
+        // Saltar si ya existe
+        if (tableHasQR(i)) continue;
+
+        try {
+          const response = await fetch(`http://localhost:3001/api/bars/${barId}/tables`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ table_number: i, capacity: 4 })
+          });
+
+          const data = await response.json();
+          if (data.success && data.data) {
+            const table = data.data;
+            const url = buildQRUrl(table.qr_token);
+            const qrData: QRData = {
+              id: table.id,
+              tableNumber: table.table_number,
+              qrData: url,
+              qrUrl: url,
+              qrToken: table.qr_token,
+              isActive: table.is_active,
+              createdAt: new Date(table.created_at),
+              scannedCount: 0
+            };
+            newQRs.push(qrData);
+            onGenerate?.(i, qrData);
+            successCount++;
+          }
+        } catch (err) {
+          console.error(`Error generating table ${i}:`, err);
+        }
       }
 
-      setGeneratedQRs(newQRs);
-      newQRs.forEach(qr => onGenerate?.(qr.tableNumber, qr));
-      showSuccessToast(`Se generaron ${maxTables} códigos QR`);
+      setGeneratedQRs(prev => [...prev, ...newQRs].sort((a, b) => a.tableNumber - b.tableNumber));
+
+      if (successCount > 0) {
+        showSuccessToast(`Se generaron ${successCount} códigos QR nuevos`);
+      } else {
+        showSuccessToast('No se generaron nuevos códigos (¿ya existían todos?)');
+      }
     } catch (error) {
       console.error('Error generating all QRs:', error);
-      showErrorToast('Error al generar todos los códigos QR');
+      showErrorToast('Error al generar los códigos QR');
     } finally {
       setIsGenerating(false);
     }
@@ -411,7 +469,7 @@ export default function QRGeneratorCanvas({
                   {renderQRCode(generatedQRs.find(qr => qr.tableNumber === selectedTable)!, qrConfig.size)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">
-                  {buildQRUrl(selectedTable)}
+                  {selectedQRs.find(qr => qr.id === generatedQRs.find(g => g.tableNumber === selectedTable)?.id)?.qrUrl || 'QR Code'}
                 </p>
               </div>
             </div>
